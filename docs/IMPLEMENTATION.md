@@ -100,23 +100,24 @@ Device Table:
 **Workflow Jobs:**
 
 1. **build-and-push** (Server)
-   - Builds Docker image
+   - Builds Docker image on Ubuntu runners
    - Pushes to GitHub Container Registry (ghcr.io)
    - Automatic image tagging (latest, version, SHA)
    - Cleans up old images (keeps 5 most recent)
 
 2. **build-player** (Raspberry Pi)
-   - Builds ARM64 self-contained binary
+   - Builds ARM64 self-contained binary on Ubuntu runners
    - Creates release on version tags
    - Uploads binary as GitHub Release asset
 
 3. **deploy-to-server** (Production)
-   - Deploys to self-hosted macOS runner
+   - Deploys to self-hosted runner (can be macOS, Linux, or Windows)
    - Pulls and restarts containers
    - Verifies deployment health
 
 **Features:**
-- ✅ Runs on macOS runners
+- ✅ Uses Ubuntu runners for Docker builds (required for Docker daemon access)
+- ✅ Self-hosted runner support for deployment (any platform with Docker)
 - ✅ Automatic Docker image management
 - ✅ 5 image retention for rollback
 - ✅ Semantic versioning support
@@ -231,7 +232,8 @@ Raspberry Pi Fleet
    - Development dashboard
 
 4. ✅ **GitHub Actions Workflow**
-   - macOS runner support
+   - Ubuntu runners for Docker builds
+   - Self-hosted runner support for deployment
    - Docker image building and pushing
    - ARM64 binary building
    - Image retention (5 versions)
@@ -268,11 +270,11 @@ All requirements from the issue have been implemented:
 | Admin web hosted in Docker on-prem | ✅ | Docker Compose with Signage.Server |
 | PostgreSQL database | ✅ | PostgreSQL 17 container with EF Core |
 | Aspire orchestration | ✅ | PlainSight.AppHost project |
-| GitHub runner on macOS | ✅ | Workflow configured for macOS runner |
-| Docker Desktop hosting | ✅ | Docker Compose for macOS |
+| GitHub Actions workflow | ✅ | CI/CD with Ubuntu runners (Docker builds) |
+| Docker Desktop hosting | ✅ | Docker Compose for any platform |
 | File share folder | ✅ | Samba container with volume mount |
 | 5 previous images for rollback | ✅ | GitHub Actions retention policy |
-| Markdown documentation | ✅ | 8 comprehensive markdown files |
+| Markdown documentation | ✅ | 9 comprehensive markdown files |
 
 ## ✨ Additional Features
 

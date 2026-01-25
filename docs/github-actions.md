@@ -24,7 +24,7 @@ Location: `.github/workflows/build-deploy.yml`
 - Pull requests to `main`
 - Manual workflow dispatch
 
-**Runner**: `macos-latest`
+**Runner**: `ubuntu-latest` (Docker build requires Linux runner)
 
 **Steps**:
 1. Checkout repository
@@ -44,7 +44,7 @@ Location: `.github/workflows/build-deploy.yml`
 
 **Trigger**: Tags starting with `v` (e.g., `v1.0.0`)
 
-**Runner**: `macos-latest`
+**Runner**: `ubuntu-latest`
 
 **Steps**:
 1. Checkout repository
@@ -69,7 +69,7 @@ dotnet publish \
 
 **Trigger**: Push to `main` branch only
 
-**Runner**: `self-hosted` (requires self-hosted runner setup)
+**Runner**: `self-hosted` (can be macOS, Linux, or Windows)
 
 **Steps**:
 1. Pull latest Docker image
@@ -77,7 +77,7 @@ dotnet publish \
 3. Verify deployment via health check
 
 **Requirements**:
-- Self-hosted runner configured on the production server
+- Self-hosted runner configured on the production server (can be macOS with Docker Desktop)
 - Docker Compose installed on runner
 - Access to Docker socket
 
@@ -153,9 +153,13 @@ Navigate to GitHub Actions → Build and Deploy → Run workflow
 
 ## Self-Hosted Runner Setup
 
-To enable automated deployment to your production server:
+To enable automated deployment to your production server (macOS, Linux, or Windows with Docker Desktop):
 
-### 1. Install Runner on macOS
+### 1. Install Runner
+
+The self-hosted runner for deployment can run on any platform with Docker installed. Here are examples for different platforms:
+
+#### macOS (with Docker Desktop)
 
 ```bash
 # Create runner directory
