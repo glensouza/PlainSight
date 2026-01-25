@@ -37,7 +37,7 @@ Location: `.github/workflows/build-deploy.yml`
 **Image Tags**:
 - `main` branch → `latest`
 - Tags `v1.0.0` → `1.0.0`, `1.0`
-- Commit SHA → `main-abc1234`
+- Commit SHA → `sha-abc1234`
 - PR number → `pr-123`
 
 ### 2. `build-player` (Raspberry Pi)
