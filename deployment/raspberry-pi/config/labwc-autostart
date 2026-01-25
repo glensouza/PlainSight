@@ -1,0 +1,8 @@
+#!/bin/bash
+# PlainSight Player Autostart Script for labwc
+
+# Disable screen sleep/power saving
+swayidle -w timeout 31536000 'wlopm --off \*' resume 'wlopm --on \*' &
+
+# Start PlainSight Player
+/opt/signage/Signage.Player &
