@@ -4,7 +4,7 @@ services:
     container_name: plainsight-postgres
     environment:
       POSTGRES_USER: plainsight
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plainsight123}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD environment variable is required}
       POSTGRES_DB: signagedb
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -27,7 +27,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__signagedb=Host=postgres;Database=signagedb;Username=plainsight;Password=${POSTGRES_PASSWORD:-plainsight123}
+      - ConnectionStrings__signagedb=Host=postgres;Database=signagedb;Username=plainsight;Password=${POSTGRES_PASSWORD}
     ports:
       - "8080:8080"
     volumes:
@@ -44,8 +44,8 @@ services:
     image: dperson/samba
     container_name: plainsight-samba
     environment:
-      - USER=pi;secure
-      - SHARE=signage;/share;yes;no;no;pi
+      - USER=${SMB_USER:?SMB_USER environment variable is required};${SMB_PASSWORD:?SMB_PASSWORD environment variable is required}
+      - SHARE=signage;/share;yes;no;no;${SMB_USER}
     volumes:
       - file_share:/share
     ports:

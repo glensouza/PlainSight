@@ -21,9 +21,14 @@ public class UpdateService
         try
         {
             _logger.LogWarning("Downloading update from {UpdateUrl}...", updateUrl);
+            _logger.LogWarning(
+                "WARNING: No integrity verification (checksum/signature) is performed. " +
+                "Use HTTPS and implement hash verification for production deployments.");
+            
             var tempPath = _executablePath + ".new";
 
             // 1. Download
+            // TODO: Add hash/signature verification before proceeding
             var data = await _http.GetByteArrayAsync(updateUrl);
             await File.WriteAllBytesAsync(tempPath, data);
 

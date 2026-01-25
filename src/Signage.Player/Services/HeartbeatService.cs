@@ -16,7 +16,7 @@ public class HeartbeatService
         _http = http;
         _logger = logger;
         _deviceId = Environment.MachineName;
-        _version = "1.0.0"; // This should be set during build
+        _version = typeof(HeartbeatService).Assembly.GetName().Version?.ToString() ?? "0.0.0";
     }
 
     public async Task<HeartbeatResponse?> SendHeartbeat(string? currentFile)

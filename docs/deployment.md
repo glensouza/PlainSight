@@ -20,17 +20,40 @@ cd PlainSight
 
 ### 2. Configure Environment Variables
 
-Create a `.env` file in the project root (optional):
+**IMPORTANT:** Environment variables are now required for security.
+
+Copy the example environment file:
 
 ```bash
-# PostgreSQL password
-POSTGRES_PASSWORD=your_secure_password_here
-
-# Server configuration
-ASPNETCORE_ENVIRONMENT=Production
+cp .env.example .env
 ```
 
-If you don't create a `.env` file, the default password `plainsight123` will be used.
+Edit `.env` and set secure passwords:
+
+```bash
+# PostgreSQL password (REQUIRED)
+POSTGRES_PASSWORD=your_secure_password_here
+
+# SMB credentials (REQUIRED)
+SMB_USER=your_smb_username
+SMB_PASSWORD=your_secure_smb_password
+```
+
+**Generate secure passwords:**
+
+```bash
+# On Linux/macOS
+openssl rand -base64 32
+
+# On Windows PowerShell
+[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }))
+```
+
+**Security Notes:**
+- Never commit `.env` files to version control (already in .gitignore)
+- Use strong, randomly generated passwords (minimum 20 characters)
+- Change default credentials immediately in production
+- Store passwords securely (e.g., password manager)
 
 ### 3. Start the Services
 

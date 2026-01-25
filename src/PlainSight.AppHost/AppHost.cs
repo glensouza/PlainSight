@@ -7,7 +7,7 @@ var postgres = builder.AddPostgres("postgres")
 var signageDb = postgres.AddDatabase("signagedb");
 
 // Add Signage Server with database
-var server = builder.AddProject<Projects.Signage_Server>("signage-server")
+builder.AddProject<Projects.Signage_Server>("signage-server")
     .WithReference(signageDb);
 
 builder.Build().Run();

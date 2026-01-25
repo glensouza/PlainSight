@@ -49,8 +49,9 @@ public class PlayerWorker : BackgroundService
                     {
                         _logger.LogInformation("Screenshot requested");
                         var screenshot = await _screenshot.CaptureScreenshot();
-                        // TODO: Upload screenshot to server
-                        _logger.LogInformation("Screenshot captured: {Size} bytes", screenshot.Length);
+                        _logger.LogWarning(
+                            "Screenshot captured (size: {Size} bytes), but upload to server is not implemented.",
+                            screenshot.Length);
                     }
                 }
 

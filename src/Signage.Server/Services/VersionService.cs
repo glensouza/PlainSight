@@ -13,8 +13,10 @@ public class VersionService
 
     public string GetTargetVersion(string deviceGroup)
     {
-        // This would typically query a database or configuration
-        // For now, return a default version
+        // TODO: Implement database-driven version management for canary deployments
+        // This should query a configuration table or version assignment table
+        // Example: SELECT TargetVersion FROM DeviceGroupVersions WHERE GroupName = @deviceGroup
+        _logger.LogWarning("Using hardcoded version - implement database-driven version management for production");
         return "1.0.0";
     }
 }

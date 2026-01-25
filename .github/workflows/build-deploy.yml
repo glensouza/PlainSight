@@ -110,12 +110,13 @@ jobs:
   deploy-to-server:
     runs-on: self-hosted
     needs: build-and-push
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Only run if DEPLOYMENT_PATH secret is configured
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOYMENT_PATH != ''
     
     steps:
     - name: Deploy to production server
       run: |
-        cd /path/to/plainsight
+        cd ${{ vars.DEPLOYMENT_PATH }}
         docker compose pull signage-server
         docker compose up -d signage-server
         

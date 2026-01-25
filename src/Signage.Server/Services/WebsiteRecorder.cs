@@ -16,6 +16,9 @@ public class WebsiteRecorder
         try
         {
             _logger.LogInformation("Converting URL to video: {Url}", url);
+            _logger.LogWarning(
+                "INCOMPLETE IMPLEMENTATION: This is a conceptual implementation. " +
+                "Production requires FFmpeg integration with Page.Screencast API.");
 
             // 1. Launch Headless Browser
             var browserFetcher = new BrowserFetcher();
@@ -29,13 +32,15 @@ public class WebsiteRecorder
             await page.GoToAsync(url, new NavigationOptions { WaitUntil = [WaitUntilNavigation.Networkidle0] });
 
             // 3. Inject JavaScript for Smooth Scrolling (conceptual)
+            // TODO: Implement actual scrolling logic based on durationSec
             await page.EvaluateFunctionAsync(@"() => {
                 // JS logic to scroll page down over 'durationSec' seconds
             }");
 
             // 4. Capture Frames & Encode (Conceptual)
-            // In production, pipe 'Page.Screencast' stream to FFmpeg
-            _logger.LogInformation("Video rendering complete: {OutputPath}", outputPath);
+            // TODO: In production, use Page.StartScreencastAsync() and pipe frames to FFmpeg
+            // Example: ffmpeg -f image2pipe -i - -c:v libx264 -preset fast -crf 23 output.mp4
+            _logger.LogWarning("Video rendering incomplete - FFmpeg integration required");
             
             return outputPath;
         }
