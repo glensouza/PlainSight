@@ -3,7 +3,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy solution and project files
-COPY ["PlainSight.sln", "./"]
+COPY ["PlainSight.slnx", "./"]
 COPY ["src/Signage.Server/Signage.Server.csproj", "src/Signage.Server/"]
 COPY ["src/Signage.Shared/Signage.Shared.csproj", "src/Signage.Shared/"]
 COPY ["src/PlainSight.ServiceDefaults/PlainSight.ServiceDefaults.csproj", "src/PlainSight.ServiceDefaults/"]
