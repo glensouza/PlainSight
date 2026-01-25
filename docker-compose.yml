@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: plainsight-postgres
+    environment:
+      POSTGRES_USER: plainsight
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD environment variable is required}
+      POSTGRES_DB: signagedb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - plainsight-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plainsight"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  signage-server:
+    build:
+      context: .
+      dockerfile: src/Signage.Server/Dockerfile
+    container_name: plainsight-server
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__signagedb=Host=postgres;Database=signagedb;Username=plainsight;Password=${POSTGRES_PASSWORD}
+    ports:
+      - "8080:8080"
+    volumes:
+      - file_share:/mnt/signage
+    networks:
+      - plainsight-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Samba file share for content distribution
+  samba:
+    image: dperson/samba
+    container_name: plainsight-samba
+    environment:
+      - USER=${SMB_USER:?SMB_USER environment variable is required};${SMB_PASSWORD:?SMB_PASSWORD environment variable is required}
+      - SHARE=signage;/share;yes;no;no;${SMB_USER}
+    volumes:
+      - file_share:/share
+    ports:
+      - "139:139"
+      - "445:445"
+    networks:
+      - plainsight-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  file_share:
+    driver: local
+
+networks:
+  plainsight-network:
+    driver: bridge
