@@ -3,21 +3,32 @@ using System.Drawing;
 using System.Text.Json;
 using Signage.Player.Photino.Services;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Signage.Player.Photino;
 
 public class Program
 {
     private static PhotinoWindow? _window;
-    private static PlaylistService? _playlistService;
-    private static HeartbeatService? _heartbeatService;
-    private static UpdateService? _updateService;
-    private static ScreenCaptureService? _screenshotService;
+    private static PlaylistService _playlistService = null!;
+    private static HeartbeatService _heartbeatService = null!;
+    private static UpdateService _updateService = null!;
+    private static ScreenCaptureService _screenshotService = null!;
     private static System.Timers.Timer? _heartbeatTimer;
     private static IConfiguration? _configuration;
+    private static HttpClient? _httpClient;
+    private static ILogger<Program>? _logger;
+    private static string _contentPath = string.Empty;
 
     public static void Main(string[] args)
     {
+        // Setup logging
+        var serviceCollection = new ServiceCollection();
+        serviceCollection.AddLogging(builder => builder.AddConsole());
+        var serviceProvider = serviceCollection.BuildServiceProvider();
+        _logger = serviceProvider.GetRequiredService<ILogger<Program>>();
+
         // Load configuration
         _configuration = new ConfigurationBuilder()
             .AddEnvironmentVariables()
@@ -25,24 +36,26 @@ public class Program
             .Build();
 
         string serverUrl = _configuration["ServerUrl"] ?? "https://localhost:7149/";
-        string contentPath = _configuration["ContentPath"] ?? "/mnt/signage/content";
+        _contentPath = _configuration["ContentPath"] ?? "/mnt/signage/content";
         
-        Console.WriteLine($"PlainSight Photino Player starting...");
-        Console.WriteLine($"Server URL: {serverUrl}");
-        Console.WriteLine($"Content Path: {contentPath}");
+        _logger.LogInformation("PlainSight Photino Player starting...");
+        _logger.LogInformation("Server URL: {ServerUrl}", serverUrl);
+        _logger.LogInformation("Content Path: {ContentPath}", _contentPath);
 
         // Initialize services
-        var httpClient = new HttpClient { BaseAddress = new Uri(serverUrl) };
-        _heartbeatService = new HeartbeatService(httpClient);
-        _updateService = new UpdateService(httpClient);
-        _screenshotService = new ScreenCaptureService();
-        _playlistService = new PlaylistService(contentPath);
+        _httpClient = new HttpClient { BaseAddress = new Uri(serverUrl) };
+        
+        var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
+        _heartbeatService = new HeartbeatService(_httpClient, loggerFactory.CreateLogger<HeartbeatService>());
+        _updateService = new UpdateService(_httpClient, loggerFactory.CreateLogger<UpdateService>());
+        _screenshotService = new ScreenCaptureService(loggerFactory.CreateLogger<ScreenCaptureService>());
+        _playlistService = new PlaylistService(_contentPath, loggerFactory.CreateLogger<PlaylistService>());
 
         // Get the path to the HTML file
         string htmlPath = Path.Combine(AppContext.BaseDirectory, "wwwroot", "index.html");
         if (!File.Exists(htmlPath))
         {
-            Console.Error.WriteLine($"ERROR: index.html not found at {htmlPath}");
+            _logger.LogError("ERROR: index.html not found at {HtmlPath}", htmlPath);
             Environment.Exit(1);
         }
 
@@ -63,6 +76,17 @@ public class Program
                 // Handle app:// URLs for local video playback
                 string filePath = url.Replace("app://", "");
                 
+                // Security: Validate path to prevent traversal attacks
+                string normalizedPath = Path.GetFullPath(filePath);
+                string normalizedContentPath = Path.GetFullPath(_contentPath);
+                
+                if (!normalizedPath.StartsWith(normalizedContentPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger?.LogWarning("Path traversal attempt blocked: {FilePath}", filePath);
+                    contentType = "text/plain";
+                    return new MemoryStream(System.Text.Encoding.UTF8.GetBytes("Access denied"));
+                }
+                
                 // Determine content type based on file extension
                 string extension = Path.GetExtension(filePath).ToLower();
                 contentType = VideoFormats.ContentTypes.GetValueOrDefault(extension, "application/octet-stream");
@@ -77,7 +101,16 @@ public class Program
             .RegisterWebMessageReceivedHandler((object? sender, string message) =>
             {
                 // Handle messages from JavaScript
-                Console.WriteLine($"Message from web: {message}");
+                if (message.StartsWith("PLAYLIST:"))
+                {
+                    // Message contains playlist data
+                    string jsonData = message.Substring("PLAYLIST:".Length);
+                    _logger?.LogInformation("Received playlist message with {Length} bytes", jsonData.Length);
+                }
+                else
+                {
+                    _logger?.LogInformation("Message from web: {Message}", message);
+                }
             })
             .Load(html);
 
@@ -91,28 +124,38 @@ public class Program
 
         // Show window and wait for close
         _window.WaitForClose();
+        
+        // Cleanup
+        Cleanup();
+    }
+
+    private static void Cleanup()
+    {
+        _heartbeatTimer?.Stop();
+        _heartbeatTimer?.Dispose();
+        _httpClient?.Dispose();
     }
 
     private static async Task LoadAndStartPlaylist()
     {
         try
         {
-            var playlist = await _playlistService!.GetPlaylistAsync();
+            var playlist = await _playlistService.GetPlaylistAsync();
             if (playlist.Count > 0)
             {
                 string playlistJson = JsonSerializer.Serialize(playlist);
-                // Use proper JavaScript method to pass data safely
-                _window?.SendWebMessage($"window.loadPlaylist({playlistJson})");
-                Console.WriteLine($"Loaded playlist with {playlist.Count} items");
+                // Send playlist data via web message
+                _window?.SendWebMessage($"PLAYLIST:{playlistJson}");
+                _logger?.LogInformation("Loaded playlist with {Count} items", playlist.Count);
             }
             else
             {
-                Console.WriteLine("Warning: Playlist is empty");
+                _logger?.LogWarning("Warning: Playlist is empty");
             }
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Failed to load playlist: {ex.Message}");
+            _logger?.LogError(ex, "Failed to load playlist");
         }
     }
 
@@ -131,31 +174,31 @@ public class Program
     {
         try
         {
-            string? currentFile = _playlistService?.GetCurrentFile();
-            var response = await _heartbeatService!.SendHeartbeat(currentFile);
+            string? currentFile = _playlistService.GetCurrentFile();
+            var response = await _heartbeatService.SendHeartbeat(currentFile);
 
             if (response != null)
             {
                 // Check for update
                 if (!string.IsNullOrEmpty(response.UpdateUrl))
                 {
-                    Console.WriteLine($"Update available at {response.UpdateUrl}");
-                    await _updateService!.PerformSelfUpdate(response.UpdateUrl);
+                    _logger?.LogInformation("Update available at {UpdateUrl}", response.UpdateUrl);
+                    await _updateService.PerformSelfUpdate(response.UpdateUrl);
                     // If we reach here, update failed
                 }
 
                 // Check for screenshot request
                 if (response.RequestScreenshot)
                 {
-                    Console.WriteLine("Screenshot requested");
-                    byte[] screenshot = await _screenshotService!.CaptureScreenshot();
-                    Console.WriteLine($"Screenshot captured (size: {screenshot.Length} bytes), but upload to server is not implemented.");
+                    _logger?.LogInformation("Screenshot requested");
+                    byte[] screenshot = await _screenshotService.CaptureScreenshot();
+                    _logger?.LogWarning("Screenshot captured (size: {Size} bytes), but upload to server is not implemented.", screenshot.Length);
                 }
             }
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Heartbeat error: {ex.Message}");
+            _logger?.LogError(ex, "Heartbeat error");
         }
     }
 }

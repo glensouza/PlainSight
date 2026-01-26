@@ -63,7 +63,7 @@
     </style>
 </head>
 <body>
-    <video id="video-player" autoplay loop muted></video>
+    <video id="video-player" autoplay muted></video>
     <div id="status"></div>
     <div id="error-message"></div>
     <div class="loading" id="loading">Loading content...</div>
@@ -88,7 +88,26 @@
         // Function to update status display
         function updateStatus(message) {
             const now = new Date().toLocaleTimeString();
-            status.innerHTML = `<strong>PlainSight Player</strong><br>${now}<br>${message}`;
+            
+            // Clear existing content
+            status.innerHTML = '';
+
+            // Add static title
+            const title = document.createElement('strong');
+            title.textContent = 'PlainSight Player';
+            status.appendChild(title);
+
+            // Line break
+            status.appendChild(document.createElement('br'));
+
+            // Timestamp
+            status.appendChild(document.createTextNode(now));
+
+            // Line break
+            status.appendChild(document.createElement('br'));
+
+            // Message (as text, not HTML)
+            status.appendChild(document.createTextNode(message));
         }
 
         // Function to show error
@@ -104,6 +123,17 @@
             errorMessage.style.display = 'none';
         }
 
+        // Function to validate filename (no path traversal)
+        function isValidFilename(filename) {
+            if (!filename || typeof filename !== 'string') return false;
+            // Check for path traversal attempts
+            if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+                console.error('Path traversal attempt blocked:', filename);
+                return false;
+            }
+            return true;
+        }
+
         // Function to play video from playlist
         function playVideo(index) {
             if (currentPlaylist.length === 0) {
@@ -113,6 +143,13 @@
 
             currentIndex = index % currentPlaylist.length;
             const videoFile = currentPlaylist[currentIndex];
+            
+            // Validate filename to prevent path traversal
+            if (!isValidFilename(videoFile)) {
+                showError('Invalid video filename: ' + videoFile);
+                return;
+            }
+            
             const videoPath = `app://${contentPath}/${videoFile}`;
 
             updateStatus(`Playing: ${videoFile} (${currentIndex + 1}/${currentPlaylist.length})`);
@@ -170,8 +207,33 @@
             }
         };
 
+        // Listen for messages from C#
+        window.chrome = window.chrome || {};
+        window.chrome.webview = window.chrome.webview || {};
+        window.chrome.webview.addEventListener = window.chrome.webview.addEventListener || function(event, handler) {
+            if (event === 'message') {
+                window.addEventListener('message', handler);
+            }
+        };
+        
+        // Handle messages from C#
+        if (window.external && window.external.receiveMessage) {
+            window.external.receiveMessage = function(message) {
+                if (message.startsWith('PLAYLIST:')) {
+                    const playlistJson = message.substring('PLAYLIST:'.length);
+                    window.loadPlaylist(playlistJson);
+                }
+            };
+        }
+
         // Function called from C# to play specific file
         window.playFile = function(filename) {
+            // Validate filename to prevent path traversal
+            if (!isValidFilename(filename)) {
+                showError('Invalid video filename: ' + filename);
+                return;
+            }
+            
             const videoPath = `app://${contentPath}/${filename}`;
             updateStatus(`Playing: ${filename}`);
             video.src = videoPath;

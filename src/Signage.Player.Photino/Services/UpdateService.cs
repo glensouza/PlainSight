@@ -1,8 +1,9 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace Signage.Player.Photino.Services;
 
-public class UpdateService(HttpClient http)
+public class UpdateService(HttpClient http, ILogger<UpdateService> logger)
 {
     private readonly string executablePath = Environment.ProcessPath ?? "/opt/signage/Signage.Player.Photino";
 
@@ -10,8 +11,8 @@ public class UpdateService(HttpClient http)
     {
         try
         {
-            Console.WriteLine($"Downloading update from {updateUrl}...");
-            Console.WriteLine(
+            logger.LogWarning("Downloading update from {UpdateUrl}...", updateUrl);
+            logger.LogWarning(
                 "WARNING: No integrity verification (checksum/signature) is performed. " +
                 "Use HTTPS and implement hash verification for production deployments.");
             
@@ -23,7 +24,7 @@ public class UpdateService(HttpClient http)
 
             if (!response.IsSuccessStatusCode)
             {
-                Console.WriteLine($"Update download failed: {(int)response.StatusCode} {response.ReasonPhrase}");
+                logger.LogWarning("Update download failed: {StatusCode} {ReasonPhrase}", (int)response.StatusCode, response.ReasonPhrase);
                 return; // Don't throw - update failure shouldn't crash the player
             }
 
@@ -42,17 +43,17 @@ public class UpdateService(HttpClient http)
             File.Move(tempPath, this.executablePath);
 
             // 4. Restart via Systemd
-            Console.WriteLine("Update applied. Exiting for restart...");
+            logger.LogWarning("Update applied. Exiting for restart...");
             Environment.Exit(0);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            Console.WriteLine($"Self-update cancelled for {updateUrl}");
+            logger.LogInformation("Self-update cancelled for {UpdateUrl}", updateUrl);
             return;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error performing self-update: {ex.Message}");
+            logger.LogError(ex, "Error performing self-update");
             // Don't rethrow - failure to update should be non-fatal
             return;
         }

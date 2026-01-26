@@ -1,8 +1,9 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace Signage.Player.Photino.Services;
 
-public class ScreenCaptureService
+public class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
 {
     public async Task<byte[]> CaptureScreenshot()
     {
@@ -10,7 +11,7 @@ public class ScreenCaptureService
         {
             if (!OperatingSystem.IsLinux())
             {
-                Console.WriteLine("Screenshot capture only supported on Linux");
+                logger.LogWarning("Screenshot capture only supported on Linux");
                 return [];
             }
 
@@ -25,7 +26,7 @@ public class ScreenCaptureService
             using Process? process = Process.Start(startInfo);
             if (process == null)
             {
-                Console.Error.WriteLine("Failed to start grim process");
+                logger.LogError("Failed to start grim process");
                 return [];
             }
 
@@ -33,11 +34,17 @@ public class ScreenCaptureService
             await process.StandardOutput.BaseStream.CopyToAsync(ms);
             await process.WaitForExitAsync();
 
+            if (process.ExitCode != 0)
+            {
+                logger.LogError("grim exited with code {ExitCode} while capturing screenshot", process.ExitCode);
+                return [];
+            }
+
             return ms.ToArray();
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error capturing screenshot: {ex.Message}");
+            logger.LogError(ex, "Error capturing screenshot");
             return [];
         }
     }

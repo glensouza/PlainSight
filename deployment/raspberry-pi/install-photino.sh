@@ -63,6 +63,7 @@ sudo chown pi:pi /opt/signage
 echo ""
 echo "WARNING: Downloading binary over HTTP (no integrity verification)"
 echo "For production, use HTTPS and verify checksums/signatures"
+echo "Recommendation: Set up HTTPS on your server and use a signed binary"
 echo ""
 read -p "Continue? (y/n): " CONTINUE
 if [ "$CONTINUE" != "y" ]; then
@@ -77,8 +78,8 @@ chmod +x /opt/signage/Signage.Player.Photino
 # 5. Create SMB credentials file
 echo "Creating SMB credentials file..."
 sudo bash -c "cat > /etc/samba/signage-credentials << EOF
-username=${SMB_USER}
-password=${SMB_PASSWORD}
+username=\"${SMB_USER}\"
+password=\"${SMB_PASSWORD}\"
 EOF"
 sudo chmod 600 /etc/samba/signage-credentials
 
@@ -128,11 +129,11 @@ WorkingDirectory=/opt/signage
 ExecStart=/opt/signage/Signage.Player.Photino
 Restart=always
 RestartSec=3
-Environment=DISPLAY=:0
-Environment=WAYLAND_DISPLAY=wayland-1
-Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
-Environment=ServerUrl=http://${SERVER_IP}:8080
-Environment=ContentPath=/mnt/signage/content
+Environment=\"DISPLAY=:0\"
+Environment=\"WAYLAND_DISPLAY=wayland-1\"
+Environment=\"DOTNET_CLI_TELEMETRY_OPTOUT=1\"
+Environment=\"ServerUrl=http://${SERVER_IP}:8080\"
+Environment=\"ContentPath=/mnt/signage/content\"
 
 [Install]
 WantedBy=graphical.target
@@ -158,8 +159,8 @@ cat > ~/.config/labwc/autostart << 'EOF'
 # Disable screen sleep/power saving
 swayidle -w timeout 31536000 'wlopm --off \*' resume 'wlopm --on \*' &
 
-# Start PlainSight Photino Player
-/opt/signage/Signage.Player.Photino &
+# Note: Player is started by systemd service (signage-photino.service)
+# This script only handles display power management
 EOF
 
 chmod +x ~/.config/labwc/autostart
