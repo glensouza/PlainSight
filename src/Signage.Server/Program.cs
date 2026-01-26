@@ -23,6 +23,10 @@ builder.Services.AddDbContext<SignageDbContext>(options =>
 builder.Services.AddSingleton<WebsiteRecorder>();
 builder.Services.AddSingleton<VersionService>();
 
+// Add HttpClient for calling our own API
+builder.Services.AddHttpClient();
+builder.Services.AddHttpContextAccessor();
+
 WebApplication app = builder.Build();
 
 // Migrate database at startup

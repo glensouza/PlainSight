@@ -1,0 +1,159 @@
+@page "/versions"
+@rendermode InteractiveServer
+@inject ILogger<Versions> Logger
+
+<PageTitle>Version Management</PageTitle>
+
+<h1>Version Management</h1>
+
+<p class="text-muted">Manage player software versions and canary deployments</p>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-box-seam"></i> Available Versions</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> Version management is currently using a simple configuration. 
+                    In production, versions would be uploaded via the API and stored in the database.
+                </div>
+                
+                <div class="list-group">
+                    @foreach (var version in availableVersions)
+                    {
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">Version @version.VersionNumber</h6>
+                                    <small class="text-muted">@version.ReleaseDate.ToString("yyyy-MM-dd HH:mm")</small>
+                                </div>
+                                <span class="badge bg-secondary">Available</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-diagram-3"></i> Group Version Assignments</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">Assign specific versions to device groups for canary deployments</p>
+                
+                @foreach (var assignment in groupAssignments)
+                {
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h6>@assignment.GroupName</h6>
+                            <div class="mb-2">
+                                <label class="form-label small">Target Version:</label>
+                                <select class="form-select form-select-sm" 
+                                        value="@assignment.TargetVersion"
+                                        @onchange="e => UpdateGroupVersion(assignment.GroupName, e.Value?.ToString() ?? assignment.TargetVersion)">
+                                    @foreach (var version in availableVersions)
+                                    {
+                                        <option value="@version.VersionNumber">
+                                            @version.VersionNumber
+                                        </option>
+                                    }
+                                </select>
+                            </div>
+                            <small class="text-muted">
+                                Current: <code>@assignment.TargetVersion</code>
+                            </small>
+                        </div>
+                    </div>
+                }
+                
+                <button class="btn btn-sm btn-outline-primary" @onclick="AddGroup">
+                    <i class="bi bi-plus-circle"></i> Add Group
+                </button>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-upload"></i> Upload New Version</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> This feature requires backend implementation for binary upload and storage.
+                </div>
+                <p class="small text-muted">
+                    New player versions should be compiled with:
+                    <code>dotnet publish -r linux-arm64 --self-contained -p:PublishSingleFile=true</code>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Canary Deployment Workflow</h5>
+    </div>
+    <div class="card-body">
+        <ol>
+            <li>Upload a new player version (e.g., 1.2.0)</li>
+            <li>Assign version 1.2.0 to a test group (e.g., "Lab")</li>
+            <li>Monitor the Lab devices via the Device Dashboard</li>
+            <li>Use the Screenshot feature to verify correct operation</li>
+            <li>Once verified, assign 1.2.0 to "All Devices" or "Production"</li>
+            <li>All devices will auto-update within 30-60 seconds</li>
+        </ol>
+    </div>
+</div>
+
+@code {
+    private class VersionInfo
+    {
+        public string VersionNumber { get; set; } = string.Empty;
+        public DateTime ReleaseDate { get; set; }
+    }
+    
+    private class GroupAssignment
+    {
+        public string GroupName { get; set; } = string.Empty;
+        public string TargetVersion { get; set; } = string.Empty;
+    }
+    
+    private List<VersionInfo> availableVersions = new()
+    {
+        new() { VersionNumber = "1.0.0", ReleaseDate = DateTime.UtcNow.AddDays(-30) },
+        new() { VersionNumber = "1.1.0", ReleaseDate = DateTime.UtcNow.AddDays(-15) },
+        new() { VersionNumber = "1.2.0", ReleaseDate = DateTime.UtcNow.AddDays(-1) },
+    };
+    
+    private List<GroupAssignment> groupAssignments = new()
+    {
+        new() { GroupName = "Default", TargetVersion = "1.0.0" },
+        new() { GroupName = "Lab", TargetVersion = "1.2.0" },
+        new() { GroupName = "Production", TargetVersion = "1.1.0" },
+    };
+    
+    private void UpdateGroupVersion(string groupName, string newVersion)
+    {
+        var assignment = groupAssignments.FirstOrDefault(a => a.GroupName == groupName);
+        if (assignment != null)
+        {
+            assignment.TargetVersion = newVersion;
+            Logger.LogInformation("Updated {GroupName} to version {Version}", groupName, newVersion);
+        }
+    }
+    
+    private void AddGroup()
+    {
+        var groupNumber = groupAssignments.Count + 1;
+        groupAssignments.Add(new GroupAssignment 
+        { 
+            GroupName = $"Group{groupNumber}", 
+            TargetVersion = availableVersions.First().VersionNumber 
+        });
+    }
+}
