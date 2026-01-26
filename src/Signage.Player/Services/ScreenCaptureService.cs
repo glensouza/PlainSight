@@ -3,26 +3,19 @@ using Microsoft.Extensions.Logging;
 
 namespace Signage.Player.Services;
 
-public class ScreenCaptureService
+public class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
 {
-    private readonly ILogger<ScreenCaptureService> _logger;
-
-    public ScreenCaptureService(ILogger<ScreenCaptureService> logger)
-    {
-        _logger = logger;
-    }
-
     public async Task<byte[]> CaptureScreenshot()
     {
         try
         {
             if (!OperatingSystem.IsLinux())
             {
-                _logger.LogWarning("Screenshot capture only supported on Linux");
-                return Array.Empty<byte>();
+                logger.LogWarning("Screenshot capture only supported on Linux");
+                return [];
             }
 
-            var startInfo = new ProcessStartInfo
+            ProcessStartInfo startInfo = new()
             {
                 FileName = "grim",
                 Arguments = "-", // Output to stdout
@@ -30,14 +23,14 @@ public class ScreenCaptureService
                 UseShellExecute = false
             };
 
-            using var process = Process.Start(startInfo);
+            using Process? process = Process.Start(startInfo);
             if (process == null)
             {
-                _logger.LogError("Failed to start grim process");
-                return Array.Empty<byte>();
+                logger.LogError("Failed to start grim process");
+                return [];
             }
 
-            using var ms = new MemoryStream();
+            using MemoryStream ms = new();
             await process.StandardOutput.BaseStream.CopyToAsync(ms);
             await process.WaitForExitAsync();
 
@@ -45,8 +38,8 @@ public class ScreenCaptureService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error capturing screenshot");
-            return Array.Empty<byte>();
+            logger.LogError(ex, "Error capturing screenshot");
+            return [];
         }
     }
 }

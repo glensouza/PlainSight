@@ -4,41 +4,31 @@ using Signage.Shared.Models;
 
 namespace Signage.Player.Services;
 
-public class HeartbeatService
+public class HeartbeatService(HttpClient http, ILogger<HeartbeatService> logger)
 {
-    private readonly HttpClient _http;
-    private readonly ILogger<HeartbeatService> _logger;
-    private readonly string _deviceId;
-    private readonly string _version;
-
-    public HeartbeatService(HttpClient http, ILogger<HeartbeatService> logger)
-    {
-        _http = http;
-        _logger = logger;
-        _deviceId = Environment.MachineName;
-        _version = typeof(HeartbeatService).Assembly.GetName().Version?.ToString() ?? "0.0.0";
-    }
+    private readonly string deviceId = Environment.MachineName;
+    private readonly string version = typeof(HeartbeatService).Assembly.GetName().Version?.ToString() ?? "0.0.0";
 
     public async Task<HeartbeatResponse?> SendHeartbeat(string? currentFile)
     {
         try
         {
-            var telemetry = new DeviceTelemetryDto
+            DeviceTelemetryDto telemetry = new()
             {
-                DeviceId = _deviceId,
-                AppVersion = _version,
+                DeviceId = this.deviceId,
+                AppVersion = this.version,
                 CurrentFileName = currentFile,
                 Timestamp = DateTime.UtcNow
             };
 
-            var response = await _http.PostAsJsonAsync("/api/device/heartbeat", telemetry);
+            HttpResponseMessage response = await http.PostAsJsonAsync("/api/device/heartbeat", telemetry);
             response.EnsureSuccessStatusCode();
 
             return await response.Content.ReadFromJsonAsync<HeartbeatResponse>();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error sending heartbeat");
+            logger.LogError(ex, "Error sending heartbeat");
             return null;
         }
     }

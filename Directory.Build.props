@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <!--
+    Pseudocode / Plan (detailed):
+    1. Purpose: Globally suppress analyzer rule CA1873 for the entire solution so every project inherits the setting.
+    2. Approach:
+       - Create a solution-level MSBuild file named Directory.Build.props at the solution root.
+       - Inside it, append "CA1873" to the existing $(NoWarn) property so we do not overwrite any project's current suppressions.
+       - This ensures the analyzer warning CA1873 is treated as ignored across all projects that import Directory.Build.props (default behavior).
+    3. Steps to apply:
+       - Add this file to the repository root (next to the .sln file).
+       - Save and rebuild the solution in Visual Studio; CA1873 diagnostics will be suppressed.
+    4. Notes:
+       - If any project explicitly overrides NoWarn, ensure it still preserves the inherited value or merges with it.
+       - This suppresses the analyzer across builds; if you prefer a code-based suppression, create GlobalSuppressions.cs per project instead.
+  -->
+  <PropertyGroup>
+    <!-- Append CA1873 to project NoWarn list so it's suppressed globally -->
+    <NoWarn>$(NoWarn);CA1873</NoWarn>
+  </PropertyGroup>
+</Project>

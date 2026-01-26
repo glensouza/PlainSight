@@ -3,7 +3,7 @@ using Signage.Server.Components;
 using Signage.Server.Data;
 using Signage.Server.Services;
 
-var builder = WebApplication.CreateBuilder(args);
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // Add service defaults & Aspire service discovery.
 builder.AddServiceDefaults();
@@ -23,7 +23,14 @@ builder.Services.AddDbContext<SignageDbContext>(options =>
 builder.Services.AddSingleton<WebsiteRecorder>();
 builder.Services.AddSingleton<VersionService>();
 
-var app = builder.Build();
+WebApplication app = builder.Build();
+
+// Migrate database at startup
+using (IServiceScope scope = app.Services.CreateScope())
+{
+    SignageDbContext dbContext = scope.ServiceProvider.GetRequiredService<SignageDbContext>();
+    dbContext.Database.Migrate();
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

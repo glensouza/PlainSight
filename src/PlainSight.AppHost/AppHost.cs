@@ -1,13 +1,16 @@
-var builder = DistributedApplication.CreateBuilder(args);
+IDistributedApplicationBuilder builder = DistributedApplication.CreateBuilder(args);
 
-// Add PostgreSQL database
-var postgres = builder.AddPostgres("postgres")
+// Add PostgreSQL database with PgAdmin
+IResourceBuilder<PostgresServerResource> postgres = builder.AddPostgres("postgres")
+    .WithPgAdmin()
     .WithLifetime(ContainerLifetime.Persistent);
 
-var signageDb = postgres.AddDatabase("signagedb");
+
+IResourceBuilder<PostgresDatabaseResource> signageDb = postgres.AddDatabase("signagedb");
 
 // Add Signage Server with database
 builder.AddProject<Projects.Signage_Server>("signage-server")
+    .WaitFor(signageDb)
     .WithReference(signageDb);
 
 builder.Build().Run();

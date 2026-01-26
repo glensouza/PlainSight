@@ -3,13 +3,9 @@ using Signage.Shared.Models;
 
 namespace Signage.Server.Data;
 
-public class SignageDbContext : DbContext
+public class SignageDbContext(DbContextOptions<SignageDbContext> options) : DbContext(options)
 {
-    public SignageDbContext(DbContextOptions<SignageDbContext> options) : base(options)
-    {
-    }
-
-    public DbSet<Device> Devices => Set<Device>();
+    public DbSet<Device> Devices => this.Set<Device>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

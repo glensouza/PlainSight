@@ -1,57 +1,60 @@
-using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace Signage.Player.Services;
 
-public class UpdateService
+public class UpdateService(HttpClient http, ILogger<UpdateService> logger)
 {
-    private readonly HttpClient _http;
-    private readonly ILogger<UpdateService> _logger;
-    private readonly string _executablePath;
+    private readonly string executablePath = Environment.ProcessPath ?? "/opt/signage/Signage.Player";
 
-    public UpdateService(HttpClient http, ILogger<UpdateService> logger)
-    {
-        _http = http;
-        _logger = logger;
-        _executablePath = Environment.ProcessPath ?? "/opt/signage/Signage.Player";
-    }
-
-    public async Task PerformSelfUpdate(string updateUrl)
+    public async Task PerformSelfUpdate(string updateUrl, CancellationToken cancellationToken = default)
     {
         try
         {
-            _logger.LogWarning("Downloading update from {UpdateUrl}...", updateUrl);
-            _logger.LogWarning(
+            logger.LogWarning("Downloading update from {UpdateUrl}...", updateUrl);
+            logger.LogWarning(
                 "WARNING: No integrity verification (checksum/signature) is performed. " +
                 "Use HTTPS and implement hash verification for production deployments.");
             
-            var tempPath = _executablePath + ".new";
+            string tempPath = this.executablePath + ".new";
 
             // 1. Download
+            // Use a request so we can inspect the status code before reading the body
+            using var response = await http.GetAsync(updateUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("Update download failed: {StatusCode} {ReasonPhrase}", (int)response.StatusCode, response.ReasonPhrase);
+                return; // Don't throw - update failure shouldn't crash the player
+            }
+
             // TODO: Add hash/signature verification before proceeding
-            var data = await _http.GetByteArrayAsync(updateUrl);
-            await File.WriteAllBytesAsync(tempPath, data);
+            byte[] data = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            await File.WriteAllBytesAsync(tempPath, data, cancellationToken);
 
             // 2. Permissions (Linux)
             if (OperatingSystem.IsLinux())
             {
-                File.SetUnixFileMode(tempPath, 
-                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | 
-                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute);
+                File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute);
             }
 
             // 3. Swap Binaries (Linux allows renaming running files)
-            File.Move(_executablePath, _executablePath + ".bak", overwrite: true);
-            File.Move(tempPath, _executablePath);
+            File.Move(this.executablePath, this.executablePath + ".bak", overwrite: true);
+            File.Move(tempPath, this.executablePath);
 
             // 4. Restart via Systemd
-            _logger.LogWarning("Update applied. Exiting for restart...");
+            logger.LogWarning("Update applied. Exiting for restart...");
             Environment.Exit(0);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogInformation("Self-update cancelled for {UpdateUrl}", updateUrl);
+            return;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error performing self-update");
-            throw;
+            logger.LogError(ex, "Error performing self-update");
+            // Don't rethrow - failure to update should be non-fatal
+            return;
         }
     }
 }

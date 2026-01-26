@@ -8,29 +8,17 @@ namespace Signage.Server.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class DeviceController : ControllerBase
+public class DeviceController(
+    SignageDbContext context,
+    VersionService versionService,
+    ILogger<DeviceController> logger) : ControllerBase
 {
-    private readonly SignageDbContext _context;
-    private readonly VersionService _versionService;
-    private readonly ILogger<DeviceController> _logger;
-
-    public DeviceController(
-        SignageDbContext context,
-        VersionService versionService,
-        ILogger<DeviceController> logger)
-    {
-        _context = context;
-        _versionService = versionService;
-        _logger = logger;
-    }
-
     [HttpPost("heartbeat")]
     public async Task<IActionResult> Heartbeat([FromBody] DeviceTelemetryDto data)
     {
         try
         {
-            var device = await _context.Devices
-                .FirstOrDefaultAsync(d => d.DeviceId == data.DeviceId);
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == data.DeviceId);
 
             if (device == null)
             {
@@ -40,7 +28,7 @@ public class DeviceController : ControllerBase
                     Name = $"Device-{data.DeviceId}",
                     Group = "Default"
                 };
-                _context.Devices.Add(device);
+                context.Devices.Add(device);
             }
 
             // Update Status
@@ -48,12 +36,12 @@ public class DeviceController : ControllerBase
             device.CurrentVersion = data.AppVersion;
             device.CurrentlyPlaying = data.CurrentFileName;
 
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
 
             // Check for "Canary" Update assignment
-            var targetVersion = _versionService.GetTargetVersion(device.Group);
+            string targetVersion = versionService.GetTargetVersion(device.Group);
 
-            var response = new HeartbeatResponse
+            HeartbeatResponse response = new()
             {
                 // Command Flags
                 RequestScreenshot = device.ScreenshotRequested,
@@ -63,40 +51,41 @@ public class DeviceController : ControllerBase
             };
 
             // Reset screenshot request
-            if (device.ScreenshotRequested)
+            if (!device.ScreenshotRequested)
             {
-                device.ScreenshotRequested = false;
-                await _context.SaveChangesAsync();
+                return this.Ok(response);
             }
 
-            return Ok(response);
+            device.ScreenshotRequested = false;
+            await context.SaveChangesAsync();
+
+            return this.Ok(response);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing heartbeat from device {DeviceId}", data.DeviceId);
-            return StatusCode(500, "Internal server error");
+            logger.LogError(ex, "Error processing heartbeat from device {DeviceId}", data.DeviceId);
+            return this.StatusCode(500, "Internal server error");
         }
     }
 
     [HttpGet]
     public async Task<IActionResult> GetDevices()
     {
-        var devices = await _context.Devices.ToListAsync();
-        return Ok(devices);
+        List<Device> devices = await context.Devices.ToListAsync();
+        return this.Ok(devices);
     }
 
     [HttpPost("{deviceId}/screenshot")]
     public async Task<IActionResult> RequestScreenshot(string deviceId)
     {
-        var device = await _context.Devices
-            .FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+        Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
 
         if (device == null)
-            return NotFound();
+            return this.NotFound();
 
         device.ScreenshotRequested = true;
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
 
-        return Ok();
+        return this.Ok();
     }
 }
