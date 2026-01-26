@@ -42,12 +42,20 @@ public class ContentController(
 
             logger.LogInformation("Starting website render: {Url}", request.Url);
 
-            // Generate output filename
-            string fileName = $"rendered_{DateTime.UtcNow:yyyyMMddHHmmss}.mp4";
+            // Generate output filename with GUID for uniqueness
+            string fileName = $"rendered_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}.mp4";
             string outputPath = Path.Combine("/mnt/signage", fileName);
 
             // Render website to video (this is conceptual - needs FFmpeg integration)
             await recorder.ConvertUrlToVideoAsync(request.Url, request.DurationSeconds, outputPath);
+
+            // Get actual file size after rendering
+            long fileSize = 0;
+            if (System.IO.File.Exists(outputPath))
+            {
+                var fileInfo = new FileInfo(outputPath);
+                fileSize = fileInfo.Length;
+            }
 
             // Create content item
             var contentItem = new ContentItem
@@ -55,7 +63,7 @@ public class ContentController(
                 Name = $"Rendered: {new Uri(request.Url).Host}",
                 FileName = fileName,
                 Type = ContentType.RenderedWebsite,
-                FileSizeBytes = 0, // Would be populated after actual rendering
+                FileSizeBytes = fileSize,
                 DurationSeconds = request.DurationSeconds,
                 UploadedAt = DateTime.UtcNow,
                 SourceUrl = request.Url,

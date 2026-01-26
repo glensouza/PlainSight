@@ -24,6 +24,9 @@
                             <label class="form-label">Upload Video or Image</label>
                             <input class="form-control" type="file" accept="video/*,image/*" @ref="fileInput" />
                             <small class="text-muted">Supported: MP4, AVI, MOV, PNG, JPG</small>
+                            <div class="alert alert-warning alert-sm mt-2 mb-0 py-1 px-2">
+                                <small><i class="bi bi-exclamation-triangle"></i> File upload UI requires JavaScript interop - use API endpoint directly for now</small>
+                            </div>
                         </div>
                         <button class="btn btn-primary" @onclick="UploadFile" disabled="@uploading">
                             @if (uploading)
@@ -163,9 +166,13 @@ else
         uploading = true;
         try
         {
-            // TODO: Implement actual file upload using IJSRuntime to read file
-            Logger.LogWarning("File upload not yet implemented - requires JavaScript interop");
-            await Task.Delay(1000); // Simulate upload
+            // File upload requires JavaScript interop to read file from browser
+            // This would be implemented using IJSRuntime to:
+            // 1. Read the file as byte array or stream
+            // 2. POST to /api/content/upload endpoint
+            // 3. Refresh the content list
+            Logger.LogWarning("File upload requires JavaScript interop implementation");
+            await Task.CompletedTask;
         }
         finally
         {
