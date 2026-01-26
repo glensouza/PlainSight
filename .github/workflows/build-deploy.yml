@@ -57,11 +57,36 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Clean up old images (keep 5 most recent)
+    - name: Check if package exists
       if: github.event_name != 'pull_request'
+      id: check-package
+      continue-on-error: true
+      run: |
+        # URL-encode the package name (replace / with %2F)
+        PACKAGE_NAME=$(echo "${{ env.IMAGE_NAME }}" | sed 's/\//%2F/g')
+        # Try org endpoint first, then user endpoint
+        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/orgs/${{ github.repository_owner }}/packages/container/${PACKAGE_NAME}")
+        if [ "$RESPONSE" = "404" ]; then
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/users/${{ github.repository_owner }}/packages/container/${PACKAGE_NAME}")
+        fi
+        if [ "$RESPONSE" = "200" ]; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "::warning::Package not found - skipping cleanup"
+        fi
+
+    - name: Clean up old images (keep 5 most recent)
+      if: github.event_name != 'pull_request' && steps.check-package.outputs.exists == 'true'
       uses: actions/delete-package-versions@v5
       with:
-        package-name: 'signage-server'
+        package-name: ${{ env.IMAGE_NAME }}
         package-type: 'container'
         min-versions-to-keep: 5
         delete-only-untagged-versions: 'false'
