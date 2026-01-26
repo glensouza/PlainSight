@@ -150,6 +150,57 @@ public class ScreenCaptureService
 }
 ```
 
+### 2b. Signage.Player.Photino (Raspberry Pi Client with UI)
+
+**Technology**: .NET 8 + Photino.NET 4.0.16
+
+**Responsibilities**:
+- Display video content in native fullscreen window
+- Auto-play and loop videos from SMB share
+- Report telemetry to server
+- Self-update when new versions available
+- Capture screenshots on demand
+
+**Key Components**:
+
+#### PhotinoWindow
+Native windowing with HTML5 content:
+```csharp
+var window = new PhotinoWindow()
+    .SetTitle("PlainSight Player")
+    .SetFullScreen(true)
+    .SetChromeless(true)
+    .RegisterCustomSchemeHandler("app", ...)
+    .Load(html);
+```
+
+#### PlaylistService
+Manages video playlist:
+```csharp
+public class PlaylistService
+{
+    public async Task<List<string>> GetPlaylistAsync()
+    {
+        // Read playlist.json or scan directory
+        // Return list of video files
+    }
+}
+```
+
+#### HTML5 Video Player
+Embedded in Photino window:
+- Auto-loop and playlist management
+- Error handling and recovery
+- Debug status overlay (Ctrl+D)
+- Custom scheme handler for local files (`app://`)
+
+**Advantages over Console Player**:
+- Native video playback (no external dependencies)
+- Automatic fullscreen window management
+- Built-in playlist support
+- Visual debug interface
+- Smoother transitions between videos
+
 ### 3. Database (PostgreSQL)
 
 **Schema**:

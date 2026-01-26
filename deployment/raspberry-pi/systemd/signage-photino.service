@@ -1,0 +1,20 @@
+[Unit]
+Description=PlainSight Digital Signage Player (Photino)
+After=network-online.target mnt-signage.mount
+Wants=mnt-signage.mount
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/signage
+ExecStart=/opt/signage/Signage.Player.Photino
+Restart=always
+RestartSec=3
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
+Environment=ServerUrl=http://SERVER_IP:8080
+Environment=ContentPath=/mnt/signage/content
+
+[Install]
+WantedBy=graphical.target

@@ -52,20 +52,28 @@ curl -sSL https://raw.githubusercontent.com/glensouza/PlainSight/main/deployment
    - Heartbeat reporting
    - Self-updating
    
-3. **Infrastructure**
+3. **Signage.Player.Photino** - Raspberry Pi client with UI (.NET 8 + Photino.NET)
+   - Native video playback with Photino windowing
+   - Fullscreen kiosk mode
+   - HTML5 video player interface
+   - SMB content streaming
+   - Heartbeat reporting and self-updating
+   
+4. **Infrastructure**
    - PostgreSQL database
    - Samba file share
    - .NET Aspire orchestration
 
 ### Technology Stack
 
-- .NET 10 (LTS)
+- .NET 10 (LTS) and .NET 8
 - ASP.NET Core & Blazor
 - Entity Framework Core
 - PostgreSQL
 - Docker & Docker Compose
 - .NET Aspire
 - PuppeteerSharp
+- Photino.NET (lightweight cross-platform desktop framework)
 
 ## 🔧 System Requirements
 
@@ -109,6 +117,10 @@ docker build -t plainsight-server -f src/Signage.Server/Dockerfile .
 
 # Build Player for Raspberry Pi
 dotnet publish src/Signage.Player/Signage.Player.csproj \
+  -r linux-arm64 --self-contained -p:PublishSingleFile=true
+
+# Build Photino Player for Raspberry Pi
+dotnet publish src/Signage.Player.Photino/Signage.Player.Photino.csproj \
   -r linux-arm64 --self-contained -p:PublishSingleFile=true
 ```
 
