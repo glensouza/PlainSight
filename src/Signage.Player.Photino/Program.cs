@@ -60,9 +60,13 @@ public class Program
             .SetTop(0)
             .RegisterCustomSchemeHandler("app", (object sender, string scheme, string url, out string contentType) =>
             {
-                contentType = "video/mp4";
                 // Handle app:// URLs for local video playback
                 string filePath = url.Replace("app://", "");
+                
+                // Determine content type based on file extension
+                string extension = Path.GetExtension(filePath).ToLower();
+                contentType = VideoFormats.ContentTypes.GetValueOrDefault(extension, "application/octet-stream");
+                
                 if (File.Exists(filePath))
                 {
                     return File.OpenRead(filePath);
@@ -97,7 +101,8 @@ public class Program
             if (playlist.Count > 0)
             {
                 string playlistJson = JsonSerializer.Serialize(playlist);
-                _window?.SendWebMessage($"window.loadPlaylist('{playlistJson.Replace("'", "\\'")}')");
+                // Use proper JavaScript method to pass data safely
+                _window?.SendWebMessage($"window.loadPlaylist({playlistJson})");
                 Console.WriteLine($"Loaded playlist with {playlist.Count} items");
             }
             else

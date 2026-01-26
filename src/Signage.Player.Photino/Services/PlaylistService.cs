@@ -33,9 +33,8 @@ public class PlaylistService
             // If no playlist.json, scan directory for video files
             if (Directory.Exists(_contentPath))
             {
-                var videoExtensions = new[] { ".mp4", ".webm", ".mkv", ".avi", ".mov" };
                 _playlist = Directory.GetFiles(_contentPath)
-                    .Where(f => videoExtensions.Contains(Path.GetExtension(f).ToLower()))
+                    .Where(f => VideoFormats.SupportedExtensions.Contains(Path.GetExtension(f).ToLower()))
                     .Select(f => Path.GetFileName(f))
                     .OrderBy(f => f)
                     .ToList();
