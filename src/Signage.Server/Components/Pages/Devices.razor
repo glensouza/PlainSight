@@ -95,6 +95,8 @@ else
     </div>
 }
 
+@implements IDisposable
+
 @code {
     private List<Signage.Shared.Models.Device>? devices;
     private HashSet<string> requestingScreenshot = new();
@@ -154,8 +156,6 @@ else
         }
         finally
         {
-            // Remove from requesting set after 3 seconds
-            await Task.Delay(3000);
             requestingScreenshot.Remove(deviceId);
             StateHasChanged();
         }

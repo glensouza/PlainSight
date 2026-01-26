@@ -54,10 +54,11 @@
                             <div class="mb-2">
                                 <label class="form-label small">Target Version:</label>
                                 <select class="form-select form-select-sm" 
+                                        value="@assignment.TargetVersion"
                                         @onchange="e => UpdateGroupVersion(assignment.GroupName, e.Value?.ToString() ?? assignment.TargetVersion)">
                                     @foreach (var version in availableVersions)
                                     {
-                                        <option value="@version.VersionNumber" selected="@(version.VersionNumber == assignment.TargetVersion)">
+                                        <option value="@version.VersionNumber">
                                             @version.VersionNumber
                                         </option>
                                     }
