@@ -59,9 +59,10 @@ jobs:
 
     - name: Clean up old images (keep 5 most recent)
       if: github.event_name != 'pull_request'
+      continue-on-error: true
       uses: actions/delete-package-versions@v5
       with:
-        package-name: 'signage-server'
+        package-name: 'plainsight/signage-server'
         package-type: 'container'
         min-versions-to-keep: 5
         delete-only-untagged-versions: 'false'
