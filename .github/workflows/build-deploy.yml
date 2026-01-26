@@ -120,16 +120,31 @@ jobs:
           -p:DebugSymbols=false \
           -o ./publish/player
 
-    - name: Create artifact archive
+    - name: Build Photino Player for Raspberry Pi (ARM64)
+      run: |
+        dotnet publish src/Signage.Player.Photino/Signage.Player.Photino.csproj \
+          -c Release \
+          -r linux-arm64 \
+          --self-contained \
+          -p:PublishSingleFile=true \
+          -p:DebugType=None \
+          -p:DebugSymbols=false \
+          -o ./publish/player-photino
+
+    - name: Create artifact archives
       run: |
         cd ./publish/player
         tar -czf ../signage-player-${{ github.ref_name }}.tar.gz *
+        cd ../player-photino
+        tar -czf ../signage-player-photino-${{ github.ref_name }}.tar.gz *
         cd ../..
 
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v2
       with:
-        files: ./publish/signage-player-${{ github.ref_name }}.tar.gz
+        files: |
+          ./publish/signage-player-${{ github.ref_name }}.tar.gz
+          ./publish/signage-player-photino-${{ github.ref_name }}.tar.gz
         generate_release_notes: true
 
   deploy-to-server:
