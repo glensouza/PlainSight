@@ -2,6 +2,7 @@
   <Project Path="src/PlainSight.AppHost/PlainSight.AppHost.csproj" />
   <Project Path="src/PlainSight.ServiceDefaults/PlainSight.ServiceDefaults.csproj" />
   <Project Path="src/Signage.Player/Signage.Player.csproj" />
+  <Project Path="src/Signage.Player.Photino/Signage.Player.Photino.csproj" />
   <Project Path="src/Signage.Server/Signage.Server.csproj" />
   <Project Path="src/Signage.Shared/Signage.Shared.csproj" />
 </Solution>
