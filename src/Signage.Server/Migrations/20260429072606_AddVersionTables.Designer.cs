@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Signage.Server.Data;
@@ -11,9 +12,11 @@ using Signage.Server.Data;
 namespace Signage.Server.Migrations
 {
     [DbContext(typeof(SignageDbContext))]
-    partial class SignageDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260429072606_AddVersionTables")]
+    partial class AddVersionTables
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -127,14 +130,6 @@ namespace Signage.Server.Migrations
                         .IsUnique();
 
                     b.ToTable("DeviceGroupVersions");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1,
-                            GroupName = "Default",
-                            TargetVersion = "1.0.0"
-                        });
                 });
 
             modelBuilder.Entity("Signage.Shared.Models.PlayerVersion", b =>

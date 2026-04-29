@@ -13,7 +13,7 @@ Implementation plan for completing incomplete features and improving the app. Is
 
 ## Phase 2 — Complete Incomplete Features
 
-- [ ] **[#13](https://github.com/glensouza/PlainSight/issues/13) Database-driven version management and canary deployments**
+- [x] **[#13](https://github.com/glensouza/PlainSight/issues/13) Database-driven version management and canary deployments**
   `VersionService` is hardcoded to `"1.0.0"`. Add `DeviceGroupVersion` table, update `VersionService` to query it, rebuild the Versions Blazor page against real data, and add a version binary upload endpoint.
 
 - [ ] **[#14](https://github.com/glensouza/PlainSight/issues/14) Complete screenshot pipeline: player upload, server storage, admin preview**
