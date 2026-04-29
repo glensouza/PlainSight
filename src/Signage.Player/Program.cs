@@ -31,10 +31,12 @@ app.MapDefaultEndpoints();
 // Redirect root to /player so the Aspire dashboard endpoint link works directly
 app.MapGet("/", () => Results.Redirect("/player"));
 
-// Serve the HTML5 video player page
-app.MapGet("/player", () =>
+// Serve the HTML5 video player page.
+// IWebHostEnvironment.WebRootPath resolves to the wwwroot folder correctly
+// in both development (source tree) and production (publish directory).
+app.MapGet("/player", (IWebHostEnvironment env) =>
 {
-    string htmlPath = Path.Combine(AppContext.BaseDirectory, "wwwroot", "index.html");
+    string htmlPath = Path.Combine(env.WebRootPath, "index.html");
     return Results.File(htmlPath, "text/html; charset=utf-8");
 });
 
