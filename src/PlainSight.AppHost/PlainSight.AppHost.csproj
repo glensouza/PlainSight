@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Signage.Server\Signage.Server.csproj" />
+    <ProjectReference Include="..\Signage.Player\Signage.Player.csproj" />
   </ItemGroup>
 
   <ItemGroup>

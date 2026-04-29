@@ -1,17 +1,20 @@
 using System.Diagnostics;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 
 namespace Signage.Player.Services;
 
 public class KioskService(
     IHostApplicationLifetime lifetime,
-    IConfiguration config,
+    IServer server,
     ILogger<KioskService> logger) : IHostedService
 {
     private Process? _chromiumProcess;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        // Wait for Kestrel to be fully listening before launching the browser.
+        // Register after ApplicationStarted so Kestrel has bound its port
+        // and IServerAddressesFeature contains the real URL.
         lifetime.ApplicationStarted.Register(LaunchChromium);
         return Task.CompletedTask;
     }
@@ -39,14 +42,17 @@ public class KioskService(
 
     private void LaunchChromium()
     {
-        int port = config.GetValue<int>("PlayerPort", 5555);
-        string url = $"http://localhost:{port}/player";
+        // Read the actual bound address from Kestrel — works whether the port
+        // was set by our config, Aspire's dynamic allocation, or ASPNETCORE_URLS.
+        IServerAddressesFeature? addressFeature = server.Features.Get<IServerAddressesFeature>();
+        string baseUrl = addressFeature?.Addresses.FirstOrDefault() ?? "http://localhost:5555";
+        string playerUrl = $"{baseUrl}/player";
 
         if (!OperatingSystem.IsLinux())
         {
             logger.LogInformation(
                 "Not running on Linux — skipping Chromium launch. " +
-                "Open {Url} in a browser to test the player.", url);
+                "Open {Url} in a browser to test the player.", playerUrl);
             return;
         }
 
@@ -57,7 +63,7 @@ public class KioskService(
             "--disable-infobars",
             "--disable-restore-session-state",
             "--autoplay-policy=no-user-gesture-required",
-            $"\"{url}\""
+            $"\"{playerUrl}\""
         ]);
 
         logger.LogInformation("Launching {Browser} {Args}", browser, args);
