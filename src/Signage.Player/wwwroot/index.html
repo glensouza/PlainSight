@@ -74,9 +74,12 @@
         let currentPlaylist = [];
         let currentIndex = 0;
 
-        // Ctrl+D toggles the debug overlay
+        // Debug overlay: opt-in via ?debugOverlay=1, toggle with Ctrl+Alt+D.
+        // Ctrl+D is reserved by Chromium (bookmarks) and would surface UI in kiosk mode.
+        const debugOverlayEnabled = new URLSearchParams(window.location.search).get('debugOverlay') === '1';
         document.addEventListener('keydown', e => {
-            if (e.ctrlKey && e.key === 'd') {
+            if (debugOverlayEnabled && e.ctrlKey && e.altKey && e.key.toLowerCase() === 'd') {
+                e.preventDefault();
                 statusEl.style.display = statusEl.style.display === 'none' ? 'block' : 'none';
             }
         });

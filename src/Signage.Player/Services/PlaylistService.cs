@@ -31,10 +31,20 @@ public class PlaylistService
                 {
                     foreach (string item in data.Items)
                     {
-                        if (IsValidFilename(item))
-                            newPlaylist.Add(item);
-                        else
+                        if (!IsValidFilename(item))
+                        {
                             _logger.LogWarning("Skipping invalid filename in playlist.json: {Filename}", item);
+                            continue;
+                        }
+
+                        string ext = Path.GetExtension(item).ToLowerInvariant();
+                        if (!VideoFormats.SupportedExtensions.Contains(ext))
+                        {
+                            _logger.LogWarning("Skipping unsupported file type in playlist.json: {Filename}", item);
+                            continue;
+                        }
+
+                        newPlaylist.Add(item);
                     }
                 }
             }

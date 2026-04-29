@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Signage.Player;
 using Signage.Player.Services;
 
@@ -49,6 +50,8 @@ app.MapGet("/", () => Results.Redirect("/player"));
 app.MapGet("/player", (IWebHostEnvironment env) =>
 {
     string htmlPath = Path.Combine(env.WebRootPath, "index.html");
+    if (!File.Exists(htmlPath))
+        return Results.NotFound();
     return Results.File(htmlPath, "text/html; charset=utf-8");
 });
 
@@ -61,10 +64,18 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
         return Results.BadRequest("Invalid filename");
     }
 
-    string filePath = Path.GetFullPath(Path.Combine(contentPath, filename));
-    string normalizedContentPath = Path.GetFullPath(contentPath);
+    string ext = Path.GetExtension(filename).ToLowerInvariant();
+    if (string.IsNullOrEmpty(ext) || !VideoFormats.SupportedExtensions.Contains(ext))
+    {
+        logger.LogWarning("Unsupported content type blocked for filename: {Filename}", filename);
+        return Results.BadRequest("Unsupported file type");
+    }
 
-    if (!filePath.StartsWith(normalizedContentPath, StringComparison.OrdinalIgnoreCase))
+    string normalizedContentPath = Path.GetFullPath(contentPath);
+    string filePath = Path.GetFullPath(Path.Combine(normalizedContentPath, filename));
+    string relPath = Path.GetRelativePath(normalizedContentPath, filePath);
+
+    if (Path.IsPathRooted(relPath) || relPath.StartsWith(".."))
     {
         logger.LogWarning("Path traversal attempt blocked for filename: {Filename}", filename);
         return Results.BadRequest("Invalid filename");
@@ -73,7 +84,6 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
     if (!File.Exists(filePath))
         return Results.NotFound();
 
-    string ext = Path.GetExtension(filename).ToLowerInvariant();
     string contentType = VideoFormats.ContentTypes.GetValueOrDefault(ext, "application/octet-stream");
     return Results.File(filePath, contentType, enableRangeProcessing: true);
 });
@@ -85,9 +95,16 @@ app.MapGet("/api/playlist", (PlaylistService playlist) =>
 // Browser page reports which file it is currently playing
 app.MapPost("/api/player/now-playing", async (HttpContext ctx, PlaylistService playlist) =>
 {
-    NowPlayingRequest? body = await ctx.Request.ReadFromJsonAsync<NowPlayingRequest>();
-    playlist.SetCurrentFile(body?.Filename);
-    return Results.Ok();
+    try
+    {
+        NowPlayingRequest? body = await ctx.Request.ReadFromJsonAsync<NowPlayingRequest>(ctx.RequestAborted);
+        playlist.SetCurrentFile(body?.Filename);
+        return Results.Ok();
+    }
+    catch (Exception ex) when (ex is JsonException or BadHttpRequestException)
+    {
+        return Results.BadRequest("Invalid request body");
+    }
 });
 
 await app.RunAsync();

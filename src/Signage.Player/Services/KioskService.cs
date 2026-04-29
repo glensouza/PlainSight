@@ -21,13 +21,16 @@ public class KioskService(
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_chromiumProcess == null || _chromiumProcess.HasExited)
+        if (_chromiumProcess == null)
             return;
 
         try
         {
-            _chromiumProcess.Kill(entireProcessTree: true);
-            await _chromiumProcess.WaitForExitAsync(cancellationToken);
+            if (!_chromiumProcess.HasExited)
+            {
+                _chromiumProcess.Kill(entireProcessTree: true);
+                await _chromiumProcess.WaitForExitAsync(cancellationToken);
+            }
         }
         catch (Exception ex)
         {
