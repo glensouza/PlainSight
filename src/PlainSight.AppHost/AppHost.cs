@@ -15,10 +15,9 @@ IResourceBuilder<ProjectResource> signageServer = builder.AddProject<Signage_Ser
     .WaitFor(signageDb)
     .WithReference(signageDb);
 
-// Add Signage Player — WithHttpEndpoint() lets Aspire assign a free port
-// dynamically (sets ASPNETCORE_URLS) so there are no fixed-port conflicts.
+// Aspire discovers the player's HTTP endpoint from launchSettings.json
+// (profile "http", applicationUrl http://localhost:5200).
 builder.AddProject<Signage_Player>("signage-player")
-    .WithHttpEndpoint(name: "http")
     .WithReference(signageServer)
     .WaitFor(signageServer);
 
