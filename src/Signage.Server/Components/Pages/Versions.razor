@@ -90,6 +90,12 @@
                     <label class="form-label">Release notes <span class="text-muted">(optional)</span></label>
                     <input class="form-control" placeholder="What changed?" @bind="uploadNotes" />
                 </div>
+                @if (uploading)
+                {
+                    <div class="progress mb-3" style="height: 10px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                    </div>
+                }
                 @if (uploadError != null)
                 {
                     <div class="alert alert-danger py-2">@uploadError</div>
@@ -280,17 +286,22 @@
     private async Task DeleteVersion(int id)
     {
         deletingId = id;
+        loadError = null;
         try
         {
             HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/versions/{id}");
             if (response.IsSuccessStatusCode)
                 await LoadAll();
             else
-                loadError = $"Delete failed ({(int)response.StatusCode})";
+            {
+                string body = await response.Content.ReadAsStringAsync();
+                loadError = $"Delete failed ({(int)response.StatusCode}): {body}";
+            }
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error deleting version {Id}", id);
+            loadError = "Delete failed — see logs for details.";
         }
         finally
         {
@@ -307,7 +318,10 @@
                 new { TargetVersion = targetVersion });
 
             if (!response.IsSuccessStatusCode)
-                groupError = $"Save failed ({(int)response.StatusCode})";
+            {
+                string body = await response.Content.ReadAsStringAsync();
+                groupError = $"Save failed ({(int)response.StatusCode}): {body}";
+            }
             else
                 groupError = null;
 
@@ -316,6 +330,7 @@
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error saving group version for {Group}", groupName);
+            groupError = "Save failed — check server logs.";
         }
     }
 
@@ -323,7 +338,9 @@
     {
         if (string.IsNullOrWhiteSpace(newGroupName) || versions == null || versions.Count == 0) return;
 
-        string defaultVersion = versions[0].VersionNumber;
+        // Default to the version assigned to the 'Default' group, or fallback to the first version
+        string defaultVersion = groups?.FirstOrDefault(g => g.GroupName == "Default")?.TargetVersion 
+                               ?? versions[0].VersionNumber;
         groupError = null;
 
         try
@@ -360,11 +377,15 @@
             if (response.IsSuccessStatusCode)
                 await LoadAll();
             else
-                groupError = $"Delete failed ({(int)response.StatusCode})";
+            {
+                string body = await response.Content.ReadAsStringAsync();
+                groupError = $"Delete failed ({(int)response.StatusCode}): {body}";
+            }
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error deleting group {Group}", groupName);
+            groupError = "Delete failed.";
         }
     }
 

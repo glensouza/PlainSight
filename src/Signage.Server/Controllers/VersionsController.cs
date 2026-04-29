@@ -31,6 +31,9 @@ public class VersionsController(
         [FromForm] string? notes,
         CancellationToken cancellationToken)
     {
+        if (file == null || file.Length == 0)
+            return this.BadRequest("A non-empty file is required");
+
         if (string.IsNullOrWhiteSpace(versionNumber) ||
             versionNumber.Contains('/') || versionNumber.Contains('\\') || versionNumber.Contains(".."))
             return this.BadRequest("Invalid version number");
@@ -45,24 +48,45 @@ public class VersionsController(
         string safeFileName = $"signage-player-{versionNumber}";
         string destPath = Path.Combine(UpdatesPath, safeFileName);
 
-        await using (FileStream fs = System.IO.File.Create(destPath))
+        if (System.IO.File.Exists(destPath))
+            return this.Conflict("Binary file already exists on disk");
+
+        try
         {
-            await file.CopyToAsync(fs, cancellationToken);
+            await using (FileStream fs = new(destPath, FileMode.CreateNew))
+            {
+                await file.CopyToAsync(fs, cancellationToken);
+            }
+        }
+        catch (IOException ex)
+        {
+            logger.LogError(ex, "Error writing binary to disk: {Path}", destPath);
+            return this.StatusCode(500, "Error saving file to disk");
         }
 
-        PlayerVersion version = new()
+        try
         {
-            VersionNumber = versionNumber,
-            FileName = safeFileName,
-            FileSizeBytes = file.Length,
-            UploadedAt = DateTime.UtcNow,
-            Notes = notes
-        };
-        context.PlayerVersions.Add(version);
-        await context.SaveChangesAsync(cancellationToken);
+            PlayerVersion version = new()
+            {
+                VersionNumber = versionNumber,
+                FileName = safeFileName,
+                FileSizeBytes = file.Length,
+                UploadedAt = DateTime.UtcNow,
+                Notes = notes
+            };
+            context.PlayerVersions.Add(version);
+            await context.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation("Uploaded version {Version} ({Size} bytes)", versionNumber, file.Length);
-        return this.Ok(version);
+            logger.LogInformation("Uploaded version {Version} ({Size} bytes)", versionNumber, file.Length);
+            return this.Ok(version);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Database error saving version {Version} — cleaning up file", versionNumber);
+            if (System.IO.File.Exists(destPath))
+                System.IO.File.Delete(destPath);
+            throw;
+        }
     }
 
     [HttpDelete("{id:int}")]
@@ -71,6 +95,11 @@ public class VersionsController(
         PlayerVersion? version = await context.PlayerVersions.FindAsync([id], cancellationToken);
         if (version == null)
             return this.NotFound();
+
+        // Check if any group is still using this version
+        bool inUse = await context.DeviceGroupVersions.AnyAsync(g => g.TargetVersion == version.VersionNumber, cancellationToken);
+        if (inUse)
+            return this.BadRequest($"Version {version.VersionNumber} is still assigned to one or more groups");
 
         string filePath = Path.Combine(UpdatesPath, version.FileName);
         if (System.IO.File.Exists(filePath))
@@ -101,6 +130,12 @@ public class VersionsController(
         if (string.IsNullOrWhiteSpace(groupName) || string.IsNullOrWhiteSpace(request.TargetVersion))
             return this.BadRequest("Group name and target version are required");
 
+        // Validate version exists
+        bool versionExists = await context.PlayerVersions
+            .AnyAsync(v => v.VersionNumber == request.TargetVersion, cancellationToken);
+        if (!versionExists)
+            return this.BadRequest($"Version {request.TargetVersion} does not exist");
+
         DeviceGroupVersion? existing = await context.DeviceGroupVersions
             .FirstOrDefaultAsync(g => g.GroupName == groupName, cancellationToken);
 
@@ -119,6 +154,9 @@ public class VersionsController(
     [HttpDelete("groups/{groupName}")]
     public async Task<IActionResult> DeleteGroupAssignment(string groupName, CancellationToken cancellationToken)
     {
+        if (groupName == "Default")
+            return this.BadRequest("The Default group assignment cannot be deleted");
+
         DeviceGroupVersion? existing = await context.DeviceGroupVersions
             .FirstOrDefaultAsync(g => g.GroupName == groupName, cancellationToken);
 
@@ -128,36 +166,6 @@ public class VersionsController(
         context.DeviceGroupVersions.Remove(existing);
         await context.SaveChangesAsync(cancellationToken);
         return this.NoContent();
-    }
-}
-
-// Separate route to avoid conflict with /api/versions/{id:int}
-[ApiController]
-[Route("api/updates")]
-public class UpdatesController(
-    SignageDbContext context,
-    IConfiguration configuration,
-    ILogger<UpdatesController> logger) : ControllerBase
-{
-    private string UpdatesPath => configuration["UpdatesPath"] ?? "/mnt/signage/updates";
-
-    [HttpGet("{version}/binary")]
-    public async Task<IActionResult> DownloadBinary(string version, CancellationToken cancellationToken)
-    {
-        PlayerVersion? record = await context.PlayerVersions
-            .FirstOrDefaultAsync(v => v.VersionNumber == version, cancellationToken);
-
-        if (record == null)
-            return this.NotFound();
-
-        string filePath = Path.Combine(UpdatesPath, record.FileName);
-        if (!System.IO.File.Exists(filePath))
-        {
-            logger.LogError("Binary file missing for version {Version}: {Path}", version, filePath);
-            return this.NotFound();
-        }
-
-        return this.PhysicalFile(filePath, "application/octet-stream", record.FileName);
     }
 }
 

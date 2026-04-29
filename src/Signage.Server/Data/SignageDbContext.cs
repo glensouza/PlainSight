@@ -56,6 +56,14 @@ public class SignageDbContext(DbContextOptions<SignageDbContext> options) : DbCo
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.GroupName).IsUnique();
+
+            // Seed Default group
+            entity.HasData(new DeviceGroupVersion
+            {
+                Id = 1,
+                GroupName = "Default",
+                TargetVersion = "1.0.0"
+            });
         });
     }
 }

@@ -8,13 +8,15 @@ public class VersionService(SignageDbContext context, ILogger<VersionService> lo
 {
     public async Task<string> GetTargetVersionAsync(string deviceGroup, CancellationToken cancellationToken = default)
     {
-        DeviceGroupVersion? exact = await context.DeviceGroupVersions
-            .FirstOrDefaultAsync(g => g.GroupName == deviceGroup, cancellationToken);
+        List<DeviceGroupVersion> assignments = await context.DeviceGroupVersions
+            .Where(g => g.GroupName == deviceGroup || g.GroupName == "Default")
+            .ToListAsync(cancellationToken);
+
+        DeviceGroupVersion? exact = assignments.FirstOrDefault(g => g.GroupName == deviceGroup);
         if (exact != null)
             return exact.TargetVersion;
 
-        DeviceGroupVersion? fallback = await context.DeviceGroupVersions
-            .FirstOrDefaultAsync(g => g.GroupName == "Default", cancellationToken);
+        DeviceGroupVersion? fallback = assignments.FirstOrDefault(g => g.GroupName == "Default");
         if (fallback != null)
             return fallback.TargetVersion;
 
