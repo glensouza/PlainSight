@@ -6,7 +6,7 @@ Implementation plan for completing incomplete features and improving the app. Is
 
 ## Phase 1 — Cleanup & Consolidation
 
-- [ ] **[#12](https://github.com/glensouza/PlainSight/issues/12) Remove Signage.Player.Photino; add Chromium kiosk player**
+- [x] **[#12](https://github.com/glensouza/PlainSight/issues/12) Remove Signage.Player.Photino; add Chromium kiosk player**
   Remove the Photino project (net8.0 pin, niche dependency). Replace its display functionality inside `Signage.Player` using an embedded Kestrel HTTP server + `chromium-browser --kiosk`. Port the HTML5 video/playlist page as an embedded resource. Removes the only net8.0 project from the solution.
 
 ---
