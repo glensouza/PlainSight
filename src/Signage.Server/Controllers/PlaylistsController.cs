@@ -42,7 +42,7 @@ public class PlaylistsController(
     {
         try
         {
-            var playlist = new Playlist
+            Playlist playlist = new()
             {
                 Name = dto.Name,
                 Description = dto.Description,
@@ -125,7 +125,7 @@ public class PlaylistsController(
         {
             int nextOrder = playlist.Items.Any() ? playlist.Items.Max(i => i.Order) + 1 : 1;
 
-            var playlistItem = new PlaylistItem
+            PlaylistItem playlistItem = new()
             {
                 PlaylistId = playlistId,
                 ContentItemId = dto.ContentItemId,

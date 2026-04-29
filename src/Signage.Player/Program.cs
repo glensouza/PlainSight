@@ -12,11 +12,23 @@ string contentPath = builder.Configuration["ContentPath"] ?? "/mnt/signage/conte
 // On the Pi without Aspire, override ServerUrl in appsettings or env to the real address.
 string serverUrl = builder.Configuration["ServerUrl"] ?? "http://signage-server";
 
+// Remove the Polly resilience handlers that AddServiceDefaults adds to all clients.
+// HeartbeatService and UpdateService have their own failure handling — the
+// PlayerWorker loop retries every 30 seconds. Polly's 10s attempt timeout
+// and retries just produce misleading noise in the logs.
+#pragma warning disable EXTEXP0001
 builder.Services.AddHttpClient<HeartbeatService>(client =>
-    client.BaseAddress = new Uri(serverUrl));
+{
+    client.BaseAddress = new Uri(serverUrl);
+    client.Timeout = TimeSpan.FromSeconds(25);
+}).RemoveAllResilienceHandlers();
 
 builder.Services.AddHttpClient<UpdateService>(client =>
-    client.BaseAddress = new Uri(serverUrl));
+{
+    client.BaseAddress = new Uri(serverUrl);
+    client.Timeout = TimeSpan.FromSeconds(60);
+}).RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
 
 builder.Services.AddSingleton<ScreenCaptureService>();
 builder.Services.AddSingleton(sp =>

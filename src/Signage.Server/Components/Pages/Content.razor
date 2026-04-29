@@ -3,6 +3,7 @@
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Navigation
 @inject ILogger<Content> Logger
+@using Signage.Shared.Models
 @implements IDisposable
 
 <PageTitle>Content Library</PageTitle>
@@ -98,15 +99,15 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (var item in contentItems)
+                @foreach (ContentItem item in contentItems)
                 {
                     <tr>
                         <td>
-                            @if (item.Type == Signage.Shared.Models.ContentType.Video)
+                            @if (item.Type == ContentType.Video)
                             {
                                 <span class="badge bg-primary"><i class="bi bi-play-circle"></i> Video</span>
                             }
-                            else if (item.Type == Signage.Shared.Models.ContentType.Image)
+                            else if (item.Type == ContentType.Image)
                             {
                                 <span class="badge bg-success"><i class="bi bi-image"></i> Image</span>
                             }
@@ -133,11 +134,11 @@ else
 }
 
 @code {
-    private List<Signage.Shared.Models.ContentItem>? contentItems;
+    private List<ContentItem>? contentItems;
     private HttpClient? httpClient;
     private ElementReference fileInput;
-    private bool uploading = false;
-    private bool rendering = false;
+    private bool uploading;
+    private bool rendering;
     private string renderUrl = "";
     private int renderDuration = 30;
 
@@ -152,12 +153,12 @@ else
     {
         try
         {
-            contentItems = await httpClient!.GetFromJsonAsync<List<Signage.Shared.Models.ContentItem>>("/api/content");
+            contentItems = await httpClient!.GetFromJsonAsync<List<ContentItem>>("/api/content");
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error loading content");
-            contentItems = new List<Signage.Shared.Models.ContentItem>();
+            contentItems = new List<ContentItem>();
         }
     }
 
@@ -191,7 +192,7 @@ else
         rendering = true;
         try
         {
-            var response = await httpClient!.PostAsJsonAsync("/api/content/render", new
+            HttpResponseMessage response = await httpClient!.PostAsJsonAsync("/api/content/render", new
             {
                 Url = renderUrl,
                 DurationSeconds = renderDuration
@@ -219,7 +220,7 @@ else
     {
         try
         {
-            var response = await httpClient!.DeleteAsync($"/api/content/{id}");
+            HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/content/{id}");
             if (response.IsSuccessStatusCode)
             {
                 await LoadContent();

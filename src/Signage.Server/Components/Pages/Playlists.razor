@@ -3,6 +3,7 @@
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Navigation
 @inject ILogger<Playlists> Logger
+@using Signage.Shared.Models
 @implements IDisposable
 
 <PageTitle>Playlists</PageTitle>
@@ -65,7 +66,7 @@ else if (!playlists.Any())
 else
 {
     <div class="row">
-        @foreach (var playlist in playlists)
+        @foreach (Playlist playlist in playlists)
         {
             <div class="col-md-6 mb-3">
                 <div class="card">
@@ -131,7 +132,7 @@ else
                     @if (selectedPlaylist.Items.Any())
                     {
                         <div class="list-group">
-                            @foreach (var item in selectedPlaylist.Items.OrderBy(i => i.Order))
+                            @foreach (PlaylistItem item in selectedPlaylist.Items.OrderBy(i => i.Order))
                             {
                                 <div class="list-group-item d-flex justify-content-between align-items-center">
                                     <div>
@@ -159,15 +160,15 @@ else
 }
 
 @code {
-    private List<Signage.Shared.Models.Playlist>? playlists;
+    private List<Playlist>? playlists;
     private HttpClient? httpClient;
-    private bool showCreateForm = false;
+    private bool showCreateForm;
     private int? editingPlaylistId;
     private string playlistName = "";
     private string playlistDescription = "";
     private bool playlistIsActive = true;
     private int? managingPlaylistId;
-    private Signage.Shared.Models.Playlist? selectedPlaylist;
+    private Playlist? selectedPlaylist;
 
     protected override async Task OnInitializedAsync()
     {
@@ -180,12 +181,12 @@ else
     {
         try
         {
-            playlists = await httpClient!.GetFromJsonAsync<List<Signage.Shared.Models.Playlist>>("/api/playlists");
+            playlists = await httpClient!.GetFromJsonAsync<List<Playlist>>("/api/playlists");
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error loading playlists");
-            playlists = new List<Signage.Shared.Models.Playlist>();
+            playlists = new List<Playlist>();
         }
     }
 
@@ -200,7 +201,7 @@ else
 
     private void EditPlaylist(int id)
     {
-        var playlist = playlists?.FirstOrDefault(p => p.Id == id);
+        Playlist? playlist = playlists?.FirstOrDefault(p => p.Id == id);
         if (playlist != null)
         {
             showCreateForm = true;
@@ -261,7 +262,7 @@ else
     {
         try
         {
-            var response = await httpClient!.DeleteAsync($"/api/playlists/{id}");
+            HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/playlists/{id}");
             if (response.IsSuccessStatusCode)
             {
                 await LoadPlaylists();
@@ -278,7 +279,7 @@ else
         managingPlaylistId = playlistId;
         try
         {
-            selectedPlaylist = await httpClient!.GetFromJsonAsync<Signage.Shared.Models.Playlist>($"/api/playlists/{playlistId}");
+            selectedPlaylist = await httpClient!.GetFromJsonAsync<Playlist>($"/api/playlists/{playlistId}");
         }
         catch (Exception ex)
         {
@@ -296,7 +297,7 @@ else
     {
         try
         {
-            var response = await httpClient!.DeleteAsync($"/api/playlists/items/{playlistItemId}");
+            HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/playlists/items/{playlistItemId}");
             if (response.IsSuccessStatusCode && managingPlaylistId.HasValue)
             {
                 await ManagePlaylistItems(managingPlaylistId.Value);
