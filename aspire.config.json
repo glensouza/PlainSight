@@ -1,0 +1,5 @@
+{
+  "appHost": {
+    "path": "src/PlainSight.AppHost/PlainSight.AppHost.csproj"
+  }
+}

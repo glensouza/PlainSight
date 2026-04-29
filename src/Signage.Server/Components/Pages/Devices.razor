@@ -37,9 +37,9 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (var device in devices)
+                @foreach (Device device in devices)
                 {
-                    var isOnline = IsDeviceOnline(device.LastSeen);
+                    bool isOnline = IsDeviceOnline(device.LastSeen);
                     <tr class="@(isOnline ? "" : "table-secondary")">
                         <td>
                             @if (isOnline)
@@ -94,13 +94,13 @@ else
         <span class="ms-2 text-muted">Auto-refreshing every 5 seconds</span>
     </div>
 }
-
+@using Signage.Shared.Models
 @implements IDisposable
 
 @code {
-    private List<Signage.Shared.Models.Device>? devices;
+    private List<Device>? devices;
     private HashSet<string> requestingScreenshot = new();
-    private System.Threading.Timer? refreshTimer;
+    private Timer? refreshTimer;
     private HttpClient? httpClient;
 
     protected override async Task OnInitializedAsync()
@@ -112,7 +112,7 @@ else
         await LoadDevices();
         
         // Auto-refresh every 5 seconds
-        refreshTimer = new System.Threading.Timer(async _ =>
+        refreshTimer = new Timer(async _ =>
         {
             await InvokeAsync(async () =>
             {
@@ -126,12 +126,12 @@ else
     {
         try
         {
-            devices = await httpClient!.GetFromJsonAsync<List<Signage.Shared.Models.Device>>("/api/device");
+            devices = await httpClient!.GetFromJsonAsync<List<Device>>("/api/device");
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error loading devices");
-            devices = new List<Signage.Shared.Models.Device>();
+            devices = new List<Device>();
         }
     }
 
@@ -140,7 +140,7 @@ else
         requestingScreenshot.Add(deviceId);
         try
         {
-            var response = await httpClient!.PostAsync($"/api/device/{deviceId}/screenshot", null);
+            HttpResponseMessage response = await httpClient!.PostAsync($"/api/device/{deviceId}/screenshot", null);
             if (response.IsSuccessStatusCode)
             {
                 Logger.LogInformation("Screenshot requested for device {DeviceId}", deviceId);
@@ -169,7 +169,7 @@ else
 
     private string GetTimeSince(DateTime lastSeen)
     {
-        var timeSpan = DateTime.UtcNow - lastSeen;
+        TimeSpan timeSpan = DateTime.UtcNow - lastSeen;
         
         if (timeSpan.TotalSeconds < 60)
             return $"{(int)timeSpan.TotalSeconds}s ago";

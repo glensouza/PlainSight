@@ -1,11 +1,12 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.1.0">
+<Project Sdk="Aspire.AppHost.Sdk/13.2.4">
 
   <ItemGroup>
     <ProjectReference Include="..\Signage.Server\Signage.Server.csproj" />
+    <ProjectReference Include="..\Signage.Player\Signage.Player.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.1.0" />
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.2.4" />
   </ItemGroup>
 
   <PropertyGroup>

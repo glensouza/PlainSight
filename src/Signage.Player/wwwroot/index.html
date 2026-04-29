@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlainSight Player</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background-color: #000;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+
+        #video-player {
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+            background-color: #000;
+        }
+
+        #status {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.85);
+            color: #00ff00;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            display: none;
+            white-space: pre;
+        }
+
+        #error-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(255, 0, 0, 0.8);
+            color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 16px;
+            display: none;
+            max-width: 80%;
+            text-align: center;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 24px;
+        }
+    </style>
+</head>
+<body>
+    <video id="video-player" autoplay muted></video>
+    <div id="status"></div>
+    <div id="error-message"></div>
+    <div id="loading">Loading content...</div>
+
+    <script>
+        const video = document.getElementById('video-player');
+        const statusEl = document.getElementById('status');
+        const errorEl = document.getElementById('error-message');
+        const loadingEl = document.getElementById('loading');
+
+        let currentPlaylist = [];
+        let currentIndex = 0;
+
+        // Debug overlay: opt-in via ?debugOverlay=1, toggle with Ctrl+Alt+D.
+        // Ctrl+D is reserved by Chromium (bookmarks) and would surface UI in kiosk mode.
+        const debugOverlayEnabled = new URLSearchParams(window.location.search).get('debugOverlay') === '1';
+        document.addEventListener('keydown', e => {
+            if (debugOverlayEnabled && e.ctrlKey && e.altKey && e.key.toLowerCase() === 'd') {
+                e.preventDefault();
+                statusEl.style.display = statusEl.style.display === 'none' ? 'block' : 'none';
+            }
+        });
+
+        function updateStatus(message) {
+            statusEl.textContent = `PlainSight Player\n${new Date().toLocaleTimeString()}\n${message}`;
+        }
+
+        function showError(message) {
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+            loadingEl.style.display = 'none';
+            updateStatus('ERROR: ' + message);
+        }
+
+        function hideError() {
+            errorEl.style.display = 'none';
+        }
+
+        function isValidFilename(name) {
+            if (!name || typeof name !== 'string') return false;
+            if (name.includes('..') || name.includes('/') || name.includes('\\')) {
+                console.error('Path traversal attempt blocked:', name);
+                return false;
+            }
+            return true;
+        }
+
+        async function reportNowPlaying(filename) {
+            try {
+                await fetch('/api/player/now-playing', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename })
+                });
+            } catch (_) { /* non-critical */ }
+        }
+
+        function playVideo(index) {
+            if (currentPlaylist.length === 0) {
+                showError('No content available — check content path on server');
+                return;
+            }
+
+            currentIndex = index % currentPlaylist.length;
+            const filename = currentPlaylist[currentIndex];
+
+            if (!isValidFilename(filename)) {
+                showError('Invalid video filename: ' + filename);
+                return;
+            }
+
+            const src = `/content/${encodeURIComponent(filename)}`;
+            updateStatus(`Playing: ${filename} (${currentIndex + 1}/${currentPlaylist.length})`);
+
+            video.src = src;
+            video.load();
+            video.play()
+                .then(() => {
+                    hideError();
+                    loadingEl.style.display = 'none';
+                    reportNowPlaying(filename);
+                })
+                .catch(err => {
+                    console.error('Playback error:', err);
+                    showError(`Failed to play: ${filename}`);
+                });
+        }
+
+        video.addEventListener('ended', () => {
+            currentIndex = (currentIndex + 1) % Math.max(currentPlaylist.length, 1);
+            playVideo(currentIndex);
+        });
+
+        video.addEventListener('error', () => {
+            console.error('Video error — trying next in 3s');
+            showError('Video error. Trying next...');
+            setTimeout(() => {
+                currentIndex = (currentIndex + 1) % Math.max(currentPlaylist.length, 1);
+                playVideo(currentIndex);
+            }, 3000);
+        });
+
+        async function loadPlaylistFromServer() {
+            try {
+                const res = await fetch('/api/playlist');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const incoming = await res.json();
+
+                if (JSON.stringify(incoming) === JSON.stringify(currentPlaylist)) return;
+
+                currentPlaylist = incoming;
+
+                if (currentPlaylist.length === 0) {
+                    showError('Playlist is empty — add content to the content path');
+                    return;
+                }
+
+                updateStatus(`Playlist updated: ${currentPlaylist.length} item(s)`);
+
+                // Only restart from the beginning if the player is idle
+                if (video.paused || video.ended || video.error) {
+                    playVideo(0);
+                }
+            } catch (err) {
+                updateStatus('Waiting for playlist...');
+            }
+        }
+
+        // Initial load then poll every 30 seconds
+        loadPlaylistFromServer();
+        setInterval(loadPlaylistFromServer, 30000);
+
+        updateStatus('Waiting for content...');
+    </script>
+</body>
+</html>

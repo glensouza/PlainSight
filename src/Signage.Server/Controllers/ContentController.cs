@@ -53,12 +53,12 @@ public class ContentController(
             long fileSize = 0;
             if (System.IO.File.Exists(outputPath))
             {
-                var fileInfo = new FileInfo(outputPath);
+                FileInfo fileInfo = new(outputPath);
                 fileSize = fileInfo.Length;
             }
 
             // Create content item
-            var contentItem = new ContentItem
+            ContentItem contentItem = new()
             {
                 Name = $"Rendered: {new Uri(request.Url).Host}",
                 FileName = fileName,
@@ -104,7 +104,7 @@ public class ContentController(
                 ? ContentType.Video 
                 : ContentType.Image;
 
-            var contentItem = new ContentItem
+            ContentItem contentItem = new()
             {
                 Name = Path.GetFileNameWithoutExtension(file.FileName),
                 FileName = fileName,

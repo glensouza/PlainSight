@@ -21,7 +21,7 @@
                 </div>
                 
                 <div class="list-group">
-                    @foreach (var version in availableVersions)
+                    @foreach (VersionInfo version in availableVersions)
                     {
                         <div class="list-group-item">
                             <div class="d-flex justify-content-between align-items-center">
@@ -46,7 +46,7 @@
             <div class="card-body">
                 <p class="text-muted small">Assign specific versions to device groups for canary deployments</p>
                 
-                @foreach (var assignment in groupAssignments)
+                @foreach (GroupAssignment assignment in groupAssignments)
                 {
                     <div class="card mb-3">
                         <div class="card-body">
@@ -56,7 +56,7 @@
                                 <select class="form-select form-select-sm" 
                                         value="@assignment.TargetVersion"
                                         @onchange="e => UpdateGroupVersion(assignment.GroupName, e.Value?.ToString() ?? assignment.TargetVersion)">
-                                    @foreach (var version in availableVersions)
+                                    @foreach (VersionInfo version in availableVersions)
                                     {
                                         <option value="@version.VersionNumber">
                                             @version.VersionNumber
@@ -139,7 +139,7 @@
     
     private void UpdateGroupVersion(string groupName, string newVersion)
     {
-        var assignment = groupAssignments.FirstOrDefault(a => a.GroupName == groupName);
+        GroupAssignment? assignment = groupAssignments.FirstOrDefault(a => a.GroupName == groupName);
         if (assignment != null)
         {
             assignment.TargetVersion = newVersion;
@@ -149,7 +149,7 @@
     
     private void AddGroup()
     {
-        var groupNumber = groupAssignments.Count + 1;
+        int groupNumber = groupAssignments.Count + 1;
         groupAssignments.Add(new GroupAssignment 
         { 
             GroupName = $"Group{groupNumber}", 
