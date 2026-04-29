@@ -9,6 +9,8 @@ public class SignageDbContext(DbContextOptions<SignageDbContext> options) : DbCo
     public DbSet<ContentItem> ContentItems => this.Set<ContentItem>();
     public DbSet<Playlist> Playlists => this.Set<Playlist>();
     public DbSet<PlaylistItem> PlaylistItems => this.Set<PlaylistItem>();
+    public DbSet<PlayerVersion> PlayerVersions => this.Set<PlayerVersion>();
+    public DbSet<DeviceGroupVersion> DeviceGroupVersions => this.Set<DeviceGroupVersion>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -42,6 +44,18 @@ public class SignageDbContext(DbContextOptions<SignageDbContext> options) : DbCo
                 .WithMany()
                 .HasForeignKey(e => e.ContentItemId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<PlayerVersion>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.VersionNumber).IsUnique();
+        });
+
+        modelBuilder.Entity<DeviceGroupVersion>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.GroupName).IsUnique();
         });
     }
 }

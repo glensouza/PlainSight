@@ -14,11 +14,11 @@ public class DeviceController(
     ILogger<DeviceController> logger) : ControllerBase
 {
     [HttpPost("heartbeat")]
-    public async Task<IActionResult> Heartbeat([FromBody] DeviceTelemetryDto data)
+    public async Task<IActionResult> Heartbeat([FromBody] DeviceTelemetryDto data, CancellationToken cancellationToken)
     {
         try
         {
-            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == data.DeviceId);
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == data.DeviceId, cancellationToken);
 
             if (device == null)
             {
@@ -36,10 +36,10 @@ public class DeviceController(
             device.CurrentVersion = data.AppVersion;
             device.CurrentlyPlaying = data.CurrentFileName;
 
-            await context.SaveChangesAsync();
+            await context.SaveChangesAsync(cancellationToken);
 
             // Check for "Canary" Update assignment
-            string targetVersion = versionService.GetTargetVersion(device.Group);
+            string targetVersion = await versionService.GetTargetVersionAsync(device.Group, cancellationToken);
 
             HeartbeatResponse response = new()
             {
@@ -57,7 +57,7 @@ public class DeviceController(
             }
 
             device.ScreenshotRequested = false;
-            await context.SaveChangesAsync();
+            await context.SaveChangesAsync(cancellationToken);
 
             return this.Ok(response);
         }
@@ -69,22 +69,22 @@ public class DeviceController(
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetDevices()
+    public async Task<IActionResult> GetDevices(CancellationToken cancellationToken)
     {
-        List<Device> devices = await context.Devices.ToListAsync();
+        List<Device> devices = await context.Devices.ToListAsync(cancellationToken);
         return this.Ok(devices);
     }
 
     [HttpPost("{deviceId}/screenshot")]
-    public async Task<IActionResult> RequestScreenshot(string deviceId)
+    public async Task<IActionResult> RequestScreenshot(string deviceId, CancellationToken cancellationToken)
     {
-        Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+        Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, cancellationToken);
 
         if (device == null)
             return this.NotFound();
 
         device.ScreenshotRequested = true;
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
 
         return this.Ok();
     }

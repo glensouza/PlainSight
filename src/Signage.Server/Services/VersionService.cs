@@ -1,13 +1,24 @@
+using Microsoft.EntityFrameworkCore;
+using Signage.Server.Data;
+using Signage.Shared.Models;
+
 namespace Signage.Server.Services;
 
-public class VersionService(ILogger<VersionService> logger)
+public class VersionService(SignageDbContext context, ILogger<VersionService> logger)
 {
-    public string GetTargetVersion(string deviceGroup)
+    public async Task<string> GetTargetVersionAsync(string deviceGroup, CancellationToken cancellationToken = default)
     {
-        // TODO: Implement database-driven version management for canary deployments
-        // This should query a configuration table or version assignment table
-        // Example: SELECT TargetVersion FROM DeviceGroupVersions WHERE GroupName = @deviceGroup
-        logger.LogWarning("Using hardcoded version - implement database-driven version management for production");
+        DeviceGroupVersion? exact = await context.DeviceGroupVersions
+            .FirstOrDefaultAsync(g => g.GroupName == deviceGroup, cancellationToken);
+        if (exact != null)
+            return exact.TargetVersion;
+
+        DeviceGroupVersion? fallback = await context.DeviceGroupVersions
+            .FirstOrDefaultAsync(g => g.GroupName == "Default", cancellationToken);
+        if (fallback != null)
+            return fallback.TargetVersion;
+
+        logger.LogWarning("No version assignment found for group {Group} or Default — using 1.0.0", deviceGroup);
         return "1.0.0";
     }
 }

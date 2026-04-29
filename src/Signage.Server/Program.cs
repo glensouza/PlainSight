@@ -21,7 +21,7 @@ builder.Services.AddDbContext<SignageDbContext>(options =>
 
 // Add custom services
 builder.Services.AddSingleton<WebsiteRecorder>();
-builder.Services.AddSingleton<VersionService>();
+builder.Services.AddScoped<VersionService>();
 
 // Add HttpClient for calling our own API
 builder.Services.AddHttpClient();
