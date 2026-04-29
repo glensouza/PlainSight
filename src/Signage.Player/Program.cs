@@ -23,6 +23,9 @@ builder.Services.AddHostedService<PlayerWorker>();
 
 WebApplication app = builder.Build();
 
+// Redirect root to /player so the Aspire dashboard endpoint link works directly
+app.MapGet("/", () => Results.Redirect("/player"));
+
 // Serve the HTML5 video player page
 app.MapGet("/player", () =>
 {
