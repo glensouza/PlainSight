@@ -19,7 +19,7 @@ public class UpdateService(HttpClient http, ILogger<UpdateService> logger)
 
             // 1. Download
             // Use a request so we can inspect the status code before reading the body
-            using var response = await http.GetAsync(updateUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using HttpResponseMessage response = await http.GetAsync(updateUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -48,13 +48,11 @@ public class UpdateService(HttpClient http, ILogger<UpdateService> logger)
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             logger.LogInformation("Self-update cancelled for {UpdateUrl}", updateUrl);
-            return;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error performing self-update");
             // Don't rethrow - failure to update should be non-fatal
-            return;
         }
     }
 }

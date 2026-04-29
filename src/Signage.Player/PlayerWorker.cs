@@ -9,41 +9,46 @@ public class PlayerWorker(
     HeartbeatService heartbeat,
     UpdateService update,
     ScreenCaptureService screenshot,
+    PlaylistService playlist,
     ILogger<PlayerWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("PlainSight Player started");
 
+        // Load initial playlist before the browser page polls for it
+        await playlist.RefreshAsync(stoppingToken);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                // Send heartbeat
-                HeartbeatResponse? response = await heartbeat.SendHeartbeat(null);
+                HeartbeatResponse? response = await heartbeat.SendHeartbeat(playlist.GetCurrentFile(), stoppingToken);
 
                 if (response != null)
                 {
-                    // Check for update
                     if (!string.IsNullOrEmpty(response.UpdateUrl))
                     {
                         logger.LogInformation("Update available at {UpdateUrl}", response.UpdateUrl);
-                        await update.PerformSelfUpdate(response.UpdateUrl);
-                        // If we reach here, update failed
+                        await update.PerformSelfUpdate(response.UpdateUrl, stoppingToken);
                     }
 
-                    // Check for screenshot request
                     if (response.RequestScreenshot)
                     {
                         logger.LogInformation("Screenshot requested");
-                        byte[] screenshot1 = await screenshot.CaptureScreenshot();
-                        logger.LogWarning("Screenshot captured (size: {Size} bytes), but upload to server is not implemented.", screenshot1.Length);
+                        byte[] screenshotBytes = await screenshot.CaptureScreenshot();
+                        logger.LogWarning(
+                            "Screenshot captured ({Size} bytes) — upload not yet implemented (see issue #14)",
+                            screenshotBytes.Length);
                     }
                 }
 
-                // Wait before next heartbeat
+                // Refresh playlist on the same cadence as the heartbeat
+                await playlist.RefreshAsync(stoppingToken);
+
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error in player loop");
