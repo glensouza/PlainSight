@@ -3,11 +3,14 @@ using Signage.Player.Services;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
-string serverUrl = builder.Configuration["ServerUrl"] ?? "https://localhost:7149/";
-string contentPath = builder.Configuration["ContentPath"] ?? "/mnt/signage/content";
-int playerPort = builder.Configuration.GetValue<int>("PlayerPort", 5555);
+// Aspire service discovery, OpenTelemetry, health checks
+builder.AddServiceDefaults();
 
-builder.WebHost.UseUrls($"http://localhost:{playerPort}");
+string contentPath = builder.Configuration["ContentPath"] ?? "/mnt/signage/content";
+
+// Under Aspire the ServerUrl resolves via service discovery ("http://signage-server").
+// On the Pi without Aspire, override ServerUrl in appsettings or env to the real address.
+string serverUrl = builder.Configuration["ServerUrl"] ?? "http://signage-server";
 
 builder.Services.AddHttpClient<HeartbeatService>(client =>
     client.BaseAddress = new Uri(serverUrl));
@@ -22,6 +25,8 @@ builder.Services.AddHostedService<KioskService>();
 builder.Services.AddHostedService<PlayerWorker>();
 
 WebApplication app = builder.Build();
+
+app.MapDefaultEndpoints();
 
 // Redirect root to /player so the Aspire dashboard endpoint link works directly
 app.MapGet("/", () => Results.Redirect("/player"));

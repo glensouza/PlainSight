@@ -11,11 +11,14 @@ IResourceBuilder<PostgresServerResource> postgres = builder.AddPostgres("postgre
 IResourceBuilder<PostgresDatabaseResource> signageDb = postgres.AddDatabase("signagedb");
 
 // Add Signage Server with database
-builder.AddProject<Signage_Server>("signage-server")
+IResourceBuilder<ProjectResource> signageServer = builder.AddProject<Signage_Server>("signage-server")
     .WaitFor(signageDb)
     .WithReference(signageDb);
 
-// Add Signage Player (embedded Kestrel + Chromium kiosk on Linux)
-builder.AddProject<Signage_Player>("signage-player");
+// Add Signage Player — reference signage-server so Aspire injects its URL
+// for service discovery (resolves "http://signage-server" in HeartbeatService)
+builder.AddProject<Signage_Player>("signage-player")
+    .WithReference(signageServer)
+    .WaitFor(signageServer);
 
 builder.Build().Run();

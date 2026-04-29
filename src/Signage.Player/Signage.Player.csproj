@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Signage.Shared\Signage.Shared.csproj" />
+    <ProjectReference Include="..\PlainSight.ServiceDefaults\PlainSight.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>
