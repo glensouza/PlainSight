@@ -30,16 +30,25 @@ public class ContentSyncService(
         int added = 0;
         int removed = 0;
 
-        // Remove DB entries whose file no longer exists — clear playlist references first (Restrict FK)
-        foreach (ContentItem item in dbItems.Where(i => !diskFiles.Contains(i.FileName)))
+        // Remove DB entries whose file no longer exists
+        var itemsToRemove = dbItems.Where(i => !diskFiles.Contains(i.FileName)).ToList();
+        if (itemsToRemove.Any())
         {
-            List<PlaylistItem> refs = await context.PlaylistItems
-                .Where(pi => pi.ContentItemId == item.Id)
+            var itemIdsToRemove = itemsToRemove.Select(i => i.Id).ToList();
+
+            // Batch clear playlist references first
+            var refs = await context.PlaylistItems
+                .Where(pi => itemIdsToRemove.Contains(pi.ContentItemId))
                 .ToListAsync(cancellationToken);
+
             context.PlaylistItems.RemoveRange(refs);
-            context.ContentItems.Remove(item);
-            removed++;
-            logger.LogInformation("Sync removed missing content: {FileName}", item.FileName);
+            context.ContentItems.RemoveRange(itemsToRemove);
+
+            foreach (var item in itemsToRemove)
+            {
+                logger.LogInformation("Sync removed missing content: {FileName}", item.FileName);
+                removed++;
+            }
         }
 
         // Add DB entries for files found on disk but not yet tracked

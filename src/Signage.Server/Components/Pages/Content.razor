@@ -329,6 +329,7 @@ else
     private string newName = "";
     private string newFileName = "";
     private ContentItem? itemToDelete;
+    private readonly CancellationTokenSource cts = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -369,7 +370,7 @@ else
             {
                 NewName = newName,
                 NewFileName = newFileName
-            });
+            }, cts.Token);
 
             if (response.IsSuccessStatusCode)
             {
@@ -408,10 +409,10 @@ else
         syncing = true;
         try
         {
-            HttpResponseMessage response = await httpClient!.PostAsync("/api/content/sync", null);
+            HttpResponseMessage response = await httpClient!.PostAsync("/api/content/sync", null, cts.Token);
             if (response.IsSuccessStatusCode)
             {
-                SyncResult? result = await response.Content.ReadFromJsonAsync<SyncResult>();
+                SyncResult? result = await response.Content.ReadFromJsonAsync<SyncResult>(cts.Token);
                 if (result != null && (result.Added > 0 || result.Removed > 0))
                     syncMessage = $"Folder sync: +{result.Added} added, -{result.Removed} removed from library";
             }
@@ -431,7 +432,7 @@ else
     {
         try
         {
-            contentItems = await httpClient!.GetFromJsonAsync<List<ContentItem>>("/api/content");
+            contentItems = await httpClient!.GetFromJsonAsync<List<ContentItem>>("/api/content", cts.Token);
         }
         catch (Exception ex)
         {
@@ -462,7 +463,7 @@ else
             using MultipartFormDataContent formData = new();
             formData.Add(streamContent, "file", selectedFile.Name);
 
-            HttpResponseMessage response = await httpClient!.PostAsync("/api/content/upload", formData);
+            HttpResponseMessage response = await httpClient!.PostAsync("/api/content/upload", formData, cts.Token);
             if (response.IsSuccessStatusCode)
             {
                 selectedFile = null;
@@ -495,7 +496,7 @@ else
             {
                 Url = renderUrl,
                 DurationSeconds = renderDuration
-            });
+            }, cts.Token);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -503,7 +504,7 @@ else
                 return;
             }
 
-            RenderJobResponse? job = await response.Content.ReadFromJsonAsync<RenderJobResponse>();
+            RenderJobResponse? job = await response.Content.ReadFromJsonAsync<RenderJobResponse>(cts.Token);
             if (job == null) { renderSubmitError = "Invalid server response"; return; }
 
             renderJobs.Add(new RenderJobState { JobId = job.JobId, Url = renderUrl, DurationSeconds = renderDuration });
@@ -521,12 +522,13 @@ else
 
     private async Task PollAllJobsAsync()
     {
+        if (isPolling) return;
         isPolling = true;
         try
         {
-            while (renderJobs.Any(j => j.Status is "Queued" or "Processing"))
+            while (renderJobs.Any(j => j.Status is "Queued" or "Processing") && !cts.IsCancellationRequested)
             {
-                await Task.Delay(2000);
+                await Task.Delay(2000, cts.Token);
 
                 bool anyFinished = false;
                 foreach (RenderJobState job in renderJobs.Where(j => j.Status is "Queued" or "Processing").ToList())
@@ -534,7 +536,7 @@ else
                     try
                     {
                         RenderStatusResponse? status = await httpClient!.GetFromJsonAsync<RenderStatusResponse>(
-                            $"/api/content/render/{job.JobId}");
+                            $"/api/content/render/{job.JobId}", cts.Token);
                         if (status == null) continue;
 
                         job.Status = status.Status;
@@ -542,20 +544,20 @@ else
                         if (status.Status is "Done" or "Failed")
                             anyFinished = true;
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         Logger.LogWarning(ex, "Error polling job {JobId}", job.JobId);
                     }
                 }
 
-                await InvokeAsync(async () =>
+                if (anyFinished)
                 {
-                    if (anyFinished)
-                        await LoadContent();
-                    StateHasChanged();
-                });
+                    await LoadContent();
+                }
+                StateHasChanged();
             }
         }
+        catch (OperationCanceledException) { }
         finally
         {
             isPolling = false;
@@ -566,16 +568,22 @@ else
     {
         try
         {
-            HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/content/{id}");
+            HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/content/{id}", cts.Token);
             if (response.IsSuccessStatusCode)
             {
                 itemToDelete = null;
                 await LoadContent();
             }
+            else
+            {
+                string error = await response.Content.ReadAsStringAsync(cts.Token);
+                uploadError = $"Delete failed: {error}";
+            }
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error deleting content");
+            uploadError = ex.Message;
         }
     }
 
@@ -592,5 +600,9 @@ else
         return $"{len:0.##} {sizes[order]}";
     }
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+        cts.Cancel();
+        cts.Dispose();
+    }
 }

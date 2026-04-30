@@ -38,6 +38,10 @@ public static class ContentApi
             if (string.IsNullOrWhiteSpace(request.Url))
                 return Results.BadRequest("URL is required");
 
+            // Server-side validation for duration
+            if (request.DurationSeconds is < 5 or > 300)
+                return Results.BadRequest("Duration must be between 5 and 300 seconds");
+
             string contentPath = configuration["ContentPath"] ?? "/mnt/signage";
             Directory.CreateDirectory(contentPath);
 
@@ -81,12 +85,17 @@ public static class ContentApi
                 if (file == null || file.Length == 0)
                     return Results.BadRequest("No file provided");
 
+                // Sanitize filename to prevent path traversal
+                string safeOriginalName = Path.GetFileName(file.FileName);
                 string contentPath = configuration["ContentPath"] ?? "/mnt/signage";
                 Directory.CreateDirectory(contentPath);
 
-                string fileName = $"{DateTime.UtcNow:yyyyMMddHHmmss}_{file.FileName}";
+                string fileName = $"{DateTime.UtcNow:yyyyMMddHHmmss}_{safeOriginalName}";
                 string filePath = Path.Combine(contentPath, fileName);
-                string tempPath = filePath + ".tmp";
+                
+                // Use .tmp.ext to preserve extension for muxer detection but still be ignored by sync
+                string extension = Path.GetExtension(fileName);
+                string tempPath = Path.Combine(contentPath, Guid.NewGuid().ToString("N") + ".tmp" + extension);
 
                 using (FileStream stream = new(tempPath, FileMode.Create))
                 {
@@ -110,7 +119,7 @@ public static class ContentApi
                 {
                     contentItem = new ContentItem
                     {
-                        Name = Path.GetFileNameWithoutExtension(file.FileName),
+                        Name = Path.GetFileNameWithoutExtension(safeOriginalName),
                         FileName = fileName,
                         Type = contentType,
                         FileSizeBytes = file.Length,
@@ -122,7 +131,7 @@ public static class ContentApi
                 else
                 {
                     // Update existing
-                    contentItem.Name = Path.GetFileNameWithoutExtension(file.FileName);
+                    contentItem.Name = Path.GetFileNameWithoutExtension(safeOriginalName);
                     contentItem.Type = contentType;
                     contentItem.FileSizeBytes = file.Length;
                     contentItem.DurationSeconds = contentType == ContentType.Video ? 10 : 5;
@@ -153,6 +162,12 @@ public static class ContentApi
             {
                 string contentPath = configuration["ContentPath"] ?? "/mnt/signage";
                 string filePath = Path.Combine(contentPath, item.FileName);
+                
+                // Robust path check
+                string fullPath = Path.GetFullPath(filePath);
+                if (!fullPath.StartsWith(Path.GetFullPath(contentPath)))
+                    return Results.BadRequest("Invalid file path");
+
                 if (File.Exists(filePath))
                     File.Delete(filePath);
 
@@ -172,7 +187,10 @@ public static class ContentApi
         group.MapGet("/file/{fileName}", (string fileName, IConfiguration configuration) =>
         {
             string contentPath = configuration["ContentPath"] ?? "/mnt/signage";
-            string filePath = Path.Combine(contentPath, fileName);
+            
+            // Sanitize input
+            string safeFileName = Path.GetFileName(fileName);
+            string filePath = Path.Combine(contentPath, safeFileName);
 
             if (!File.Exists(filePath))
                 return Results.NotFound();
@@ -183,7 +201,7 @@ public static class ContentApi
             if (!fullPath.StartsWith(fullContentPath))
                 return Results.BadRequest("Invalid file path");
 
-            string contentType = Path.GetExtension(fileName).ToLowerInvariant() switch
+            string contentType = Path.GetExtension(safeFileName).ToLowerInvariant() switch
             {
                 ".mp4" => "video/mp4",
                 ".webm" => "video/webm",
@@ -204,6 +222,12 @@ public static class ContentApi
             if (item == null)
                 return Results.NotFound();
 
+            string contentPath = configuration["ContentPath"] ?? "/mnt/signage";
+            string oldFileName = item.FileName;
+            string? newFileName = null;
+            string? oldPath = null;
+            string? newPath = null;
+
             try
             {
                 // 1. Handle Display Name change
@@ -213,19 +237,25 @@ public static class ContentApi
                 }
 
                 // 2. Handle Filename change (actual file on disk)
-                if (!string.IsNullOrWhiteSpace(request.NewFileName) && request.NewFileName != item.FileName)
+                if (!string.IsNullOrWhiteSpace(request.NewFileName) && request.NewFileName != oldFileName)
                 {
+                    // Sanitize input
+                    string sanitizedInput = Path.GetFileName(request.NewFileName);
+                    
                     // Ensure the new filename has an extension if the old one did
-                    string oldExt = Path.GetExtension(item.FileName);
-                    string newFileName = request.NewFileName;
+                    string oldExt = Path.GetExtension(oldFileName);
+                    newFileName = sanitizedInput;
                     if (!newFileName.EndsWith(oldExt, StringComparison.OrdinalIgnoreCase))
                     {
                         newFileName += oldExt;
                     }
 
-                    string contentPath = configuration["ContentPath"] ?? "/mnt/signage";
-                    string oldPath = Path.Combine(contentPath, item.FileName);
-                    string newPath = Path.Combine(contentPath, newFileName);
+                    oldPath = Path.Combine(contentPath, oldFileName);
+                    newPath = Path.Combine(contentPath, newFileName);
+
+                    // Robust path check
+                    if (!Path.GetFullPath(newPath).StartsWith(Path.GetFullPath(contentPath)))
+                        return Results.BadRequest("Invalid new filename");
 
                     if (File.Exists(oldPath))
                     {
@@ -238,16 +268,22 @@ public static class ContentApi
                     }
                     else
                     {
-                        // Even if file is missing, we update the DB record to match requested name
                         item.FileName = newFileName;
                     }
                 }
 
+                // Atomic DB update
                 await context.SaveChangesAsync();
                 return Results.Ok(item);
             }
             catch (Exception ex)
             {
+                // Revert file move if DB fails
+                if (oldPath != null && newPath != null && File.Exists(newPath) && !File.Exists(oldPath))
+                {
+                    try { File.Move(newPath, oldPath); } catch { /* ignore revert error */ }
+                }
+
                 logger.LogError(ex, "Error renaming content item {Id}", id);
                 return Results.Problem("Error renaming content", statusCode: 500);
             }
