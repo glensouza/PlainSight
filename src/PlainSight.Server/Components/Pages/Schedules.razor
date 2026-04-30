@@ -1,0 +1,514 @@
+@page "/schedules"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ILogger<Schedules> Logger
+@using PlainSight.Shared.Models
+@implements IDisposable
+
+<PageTitle>Schedules — PlainSight</PageTitle>
+
+<div class="page-header d-flex justify-content-between align-items-end">
+    <div>
+        <h1>Content Schedule</h1>
+        <p class="text-muted mb-0">Define which playlists play on specific days and times</p>
+    </div>
+    <button class="btn btn-primary" @onclick="ShowCreateSchedule">
+        <i class="bi bi-calendar-plus me-1"></i> New Schedule
+    </button>
+</div>
+
+@if (loadError != null)
+{
+    <div class="alert alert-danger mb-4"><i class="bi bi-exclamation-triangle"></i> @loadError</div>
+}
+
+<div class="card mb-4">
+    <div class="card-body p-0">
+        @if (schedules == null)
+        {
+            <div class="p-4 text-center">
+                <div class="spinner-border text-primary" role="status"></div>
+                <div class="mt-2 text-muted">Loading schedules...</div>
+            </div>
+        }
+        else if (schedules.Count == 0)
+        {
+            <div class="p-5 text-center">
+                <i class="bi bi-calendar-x text-muted display-4"></i>
+                <p class="mt-3 text-muted">No schedules defined yet. Create one to get started.</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Target Groups</th>
+                            <th>Playlist</th>
+                            <th>Schedule Type</th>
+                            <th>Time Range</th>
+                            <th>Priority</th>
+                            <th>Status</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in schedules)
+                        {
+                            <tr>
+                                <td><strong>@s.Name</strong></td>
+                                <td>
+                                    @if (s.TargetGroups == null || s.TargetGroups.Count == 0)
+                                    {
+                                        <span class="badge bg-secondary">All Groups</span>
+                                    }
+                                    else
+                                    {
+                                        <div class="d-flex gap-1 flex-wrap" style="max-width: 250px;">
+                                            @foreach (var tg in s.TargetGroups)
+                                            {
+                                                <span class="badge bg-info text-dark">@tg.GroupName</span>
+                                            }
+                                        </div>
+                                    }
+                                </td>
+                                <td><i class="bi bi-collection-play me-1"></i> @s.Playlist?.Name</td>
+                                <td>
+                                    @if (s.ScheduledDate.HasValue)
+                                    {
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                                            <i class="bi bi-calendar-event me-1"></i> @s.ScheduledDate.Value.ToString("yyyy-MM-dd")
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <div class="d-flex gap-1 flex-wrap" style="max-width: 200px;">
+                                            @foreach (var day in GetActiveDays(s.DaysOfWeek))
+                                            {
+                                                <span class="badge bg-light text-dark border">@day</span>
+                                            }
+                                        </div>
+                                    }
+                                </td>
+                                <td>
+                                    <code>@s.StartTime.ToString("HH:mm")</code> – <code>@s.EndTime.ToString("HH:mm")</code>
+                                </td>
+                                <td>@s.Priority</td>
+                                <td>
+                                    @if (s.IsActive)
+                                    {
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle">Active</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Inactive</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => EditSchedule(s)">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteSchedule(s.Id)">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@if (showModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content shadow-lg border-0">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(editingId.HasValue ? "Edit Schedule" : "New Schedule")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <div class="col-md-8">
+                            <label class="form-label">Schedule Name</label>
+                            <input class="form-control" @bind="model.Name" placeholder="e.g. Morning Lobby Loop" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Priority</label>
+                            <input type="number" class="form-control" @bind="model.Priority" />
+                            <small class="text-muted">Higher number wins on overlap</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-12">
+                            <label class="form-label d-block">Target Device Groups</label>
+                            <div class="dropdown" style="position: relative;">
+                                <button class="group-dropdown-btn dropdown-toggle w-100 d-flex justify-content-between align-items-center rounded" 
+                                        type="button" @onclick="ToggleGroupDropdown">
+                                    <span>
+                                        @if (model.TargetGroups.Count == 0)
+                                        {
+                                            <span class="text-muted">All Groups (Global)</span>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var gName in model.TargetGroups)
+                                            {
+                                                <span class="badge bg-primary me-1">@gName</span>
+                                            }
+                                        }
+                                    </span>
+                                </button>
+                                <div class="group-dropdown-menu w-100 shadow @(showGroupDropdown ? "show" : "")" 
+                                     style="position: absolute; top: 100%; left: 0; z-index: 1000; display: @(showGroupDropdown ? "block" : "none");"
+                                     @onclick:stopPropagation="true">
+                                    <button class="group-item-btn" type="button" @onclick="() => { model.TargetGroups.Clear(); showGroupDropdown = false; }">
+                                        <i class="bi @(model.TargetGroups.Count == 0 ? "bi-check-circle-fill text-primary" : "bi-circle") me-2"></i>
+                                        <strong>All Groups (Global)</strong>
+                                    </button>
+                                    <hr class="dropdown-divider my-1">
+                                    @if (groups == null)
+                                    {
+                                        <div class="px-3 py-2 text-muted small"><span class="spinner-border spinner-border-sm me-1"></span> Loading groups...</div>
+                                    }
+                                    else if (groups.Count == 0)
+                                    {
+                                        <div class="px-3 py-2 text-muted small">No groups found. Manage them in <a href="versions" @onclick="CloseModal">Versions</a>.</div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var g in groups)
+                                        {
+                                            <button class="group-item-btn" type="button" @onclick="() => ToggleGroup(g.GroupName)">
+                                                <i class="bi @(model.TargetGroups.Contains(g.GroupName) ? "bi-check-square-fill text-primary" : "bi-square") me-2"></i>
+                                                @g.GroupName
+                                            </button>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                            <small class="text-muted">Choose specific groups or leave as "Global" to target all devices.</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Playlist</label>
+                            <select class="form-select" @bind="model.PlaylistId">
+                                <option value="0">Select a playlist...</option>
+                                @if (playlists != null)
+                                {
+                                    @foreach (var p in playlists)
+                                    {
+                                        <option value="@p.Id">@p.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label d-block">Recurrence</label>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="scheduleType" id="typeRecurring" 
+                                       checked="@(!model.UseSpecificDate)" @onchange="() => model.UseSpecificDate = false">
+                                <label class="form-check-label" for="typeRecurring">Recurring Days</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="scheduleType" id="typeOneTime" 
+                                       checked="@(model.UseSpecificDate)" @onchange="() => model.UseSpecificDate = true">
+                                <label class="form-check-label" for="typeOneTime">One-time</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (model.UseSpecificDate)
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Scheduled Date</label>
+                            <input type="date" class="form-control" 
+                                   value="@model.ScheduledDate?.ToString("yyyy-MM-dd")" 
+                                   @onchange="e => { if (DateOnly.TryParse(e.Value?.ToString(), out var d)) model.ScheduledDate = d; }" />
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mb-3">
+                            <label class="form-label d-block">Days of Week</label>
+                            <div class="btn-group w-100" role="group">
+                                @foreach (DayOfWeekFlags day in Enum.GetValues<DayOfWeekFlags>())
+                                {
+                                    if (day == DayOfWeekFlags.None || day == DayOfWeekFlags.All) continue;
+                                    
+                                    <input type="checkbox" class="btn-check" id="btncheck-@day" autocomplete="off"
+                                           checked="@((model.DaysOfWeek & day) != 0)"
+                                           @onchange="() => ToggleDay(day)">
+                                    <label class="btn btn-outline-primary" for="btncheck-@day">@day.ToString().Substring(0, 3)</label>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Start Time</label>
+                            <input type="time" class="form-control" 
+                                   value="@model.StartTime.ToString("HH:mm")" 
+                                   @onchange="e => { if (TimeOnly.TryParse(e.Value?.ToString(), out var t)) model.StartTime = t; }" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">End Time</label>
+                            <input type="time" class="form-control" 
+                                   value="@model.EndTime.ToString("HH:mm")" 
+                                   @onchange="e => { if (TimeOnly.TryParse(e.Value?.ToString(), out var t)) model.EndTime = t; }" />
+                        </div>
+                    </div>
+
+                    <div class="form-check form-switch mt-4">
+                        <input class="form-check-input" type="checkbox" id="isActiveSwitch" @bind="model.IsActive">
+                        <label class="form-check-label" for="isActiveSwitch">Schedule is active</label>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveSchedule" 
+                            disabled="@(!IsValid() || saving)">
+                        @if (saving)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        <i class="bi bi-check-lg me-1"></i> Save Schedule
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Schedule>? schedules;
+    private List<Playlist>? playlists;
+    private List<DeviceGroupVersion>? groups;
+    private HttpClient? httpClient;
+    private string? loadError;
+
+    private bool showModal;
+    private bool showGroupDropdown;
+    private int? editingId;
+    private bool saving;
+    private ScheduleModel model = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        httpClient = HttpClientFactory.CreateClient();
+        httpClient.BaseAddress = new Uri(Navigation.BaseUri);
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        loadError = null;
+        try
+        {
+            schedules = await httpClient!.GetFromJsonAsync<List<Schedule>>("/api/schedules");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading schedules");
+            loadError = "Failed to load schedules.";
+        }
+
+        try
+        {
+            playlists = await httpClient!.GetFromJsonAsync<List<Playlist>>("/api/playlists");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading playlists");
+            if (loadError == null) loadError = "Failed to load playlists.";
+        }
+
+        try
+        {
+            groups = await httpClient!.GetFromJsonAsync<List<DeviceGroupVersion>>("/api/versions/groups");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading groups");
+            if (loadError == null) loadError = "Failed to load device groups.";
+        }
+    }
+
+    private void ShowCreateSchedule()
+    {
+        editingId = null;
+        model = new ScheduleModel();
+        showModal = true;
+    }
+
+    private void EditSchedule(Schedule s)
+    {
+        editingId = s.Id;
+        model = new ScheduleModel
+        {
+            Name = s.Name,
+            PlaylistId = s.PlaylistId,
+            TargetGroups = s.TargetGroups?.Select(tg => tg.GroupName).ToList() ?? new List<string>(),
+            DaysOfWeek = s.DaysOfWeek,
+            ScheduledDate = s.ScheduledDate,
+            UseSpecificDate = s.ScheduledDate.HasValue,
+            StartTime = s.StartTime,
+            EndTime = s.EndTime,
+            Priority = s.Priority,
+            IsActive = s.IsActive
+        };
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        showGroupDropdown = false;
+    }
+
+    private void ToggleGroupDropdown()
+    {
+        showGroupDropdown = !showGroupDropdown;
+    }
+
+    private void ToggleDay(DayOfWeekFlags day)
+    {
+        if ((model.DaysOfWeek & day) != 0)
+            model.DaysOfWeek &= ~day;
+        else
+            model.DaysOfWeek |= day;
+    }
+
+    private void ToggleGroup(string groupName)
+    {
+        if (model.TargetGroups.Contains(groupName))
+            model.TargetGroups.Remove(groupName);
+        else
+            model.TargetGroups.Add(groupName);
+    }
+
+    private bool IsValid()
+    {
+        if (string.IsNullOrWhiteSpace(model.Name) || model.PlaylistId == 0)
+            return false;
+
+        if (model.UseSpecificDate)
+            return model.ScheduledDate.HasValue;
+        
+        return model.DaysOfWeek != DayOfWeekFlags.None;
+    }
+
+    private async Task SaveSchedule()
+    {
+        if (!IsValid()) return;
+
+        saving = true;
+        try
+        {
+            // Clear specific fields based on type before sending
+            var payload = new 
+            {
+                model.Name,
+                model.PlaylistId,
+                model.TargetGroups,
+                DaysOfWeek = model.UseSpecificDate ? DayOfWeekFlags.None : model.DaysOfWeek,
+                ScheduledDate = model.UseSpecificDate ? model.ScheduledDate : null,
+                model.StartTime,
+                model.EndTime,
+                model.Priority,
+                model.IsActive
+            };
+
+            HttpResponseMessage response;
+            if (editingId.HasValue)
+                response = await httpClient!.PutAsJsonAsync($"/api/schedules/{editingId}", payload);
+            else
+                response = await httpClient!.PostAsJsonAsync("/api/schedules", payload);
+
+            if (response.IsSuccessStatusCode)
+            {
+                showModal = false;
+                await LoadData();
+            }
+            else
+            {
+                string body = await response.Content.ReadAsStringAsync();
+                loadError = $"Failed to save schedule: {body}";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving schedule");
+            loadError = "Error saving schedule.";
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private async Task DeleteSchedule(int id)
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete this schedule?");
+        if (!confirmed) return;
+
+        try
+        {
+            var response = await httpClient!.DeleteAsync($"/api/schedules/{id}");
+            if (response.IsSuccessStatusCode)
+                await LoadData();
+            else
+                loadError = "Failed to delete schedule.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error deleting schedule {Id}", id);
+            loadError = "Failed to delete schedule.";
+        }
+    }
+
+    private List<string> GetActiveDays(DayOfWeekFlags flags)
+    {
+        if (flags == DayOfWeekFlags.All) return new List<string> { "Daily" };
+        
+        var days = new List<string>();
+        foreach (DayOfWeekFlags day in Enum.GetValues<DayOfWeekFlags>())
+        {
+            if (day == DayOfWeekFlags.None || day == DayOfWeekFlags.All) continue;
+            if ((flags & day) != 0)
+                days.Add(day.ToString().Substring(0, 3));
+        }
+        return days;
+    }
+
+    public void Dispose()
+    {
+        httpClient?.Dispose();
+    }
+
+    private class ScheduleModel
+    {
+        public string Name { get; set; } = "";
+        public int PlaylistId { get; set; }
+        public List<string> TargetGroups { get; set; } = new();
+        public bool UseSpecificDate { get; set; }
+        public DayOfWeekFlags DaysOfWeek { get; set; } = DayOfWeekFlags.All;
+        public DateOnly? ScheduledDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public TimeOnly StartTime { get; set; } = new TimeOnly(0, 0);
+        public TimeOnly EndTime { get; set; } = new TimeOnly(23, 59);
+        public int Priority { get; set; } = 1;
+        public bool IsActive { get; set; } = true;
+    }
+}

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace PlainSight.Shared.Models;
 
 public class Playlist
@@ -22,6 +24,7 @@ public class PlaylistItem
     public int? OverrideDurationSeconds { get; set; } // Optional override for this playlist
     
     // Navigation properties
+    [JsonIgnore]
     public Playlist Playlist { get; set; } = null!;
     public ContentItem ContentItem { get; set; } = null!;
 }

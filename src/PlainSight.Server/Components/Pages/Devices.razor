@@ -60,7 +60,23 @@ else
                         </td>
                         <td><code>@device.DeviceId</code></td>
                         <td>@device.Name</td>
-                        <td><span class="badge bg-primary">@device.Group</span></td>
+                        <td>
+                            <select class="form-select form-select-sm"
+                                    value="@device.Group"
+                                    @onchange="e => ChangeGroup(device.DeviceId, e.Value?.ToString() ?? device.Group)">
+                                @if (groups != null)
+                                {
+                                    @foreach (var g in groups)
+                                    {
+                                        <option value="@g.GroupName">@g.GroupName</option>
+                                    }
+                                }
+                                else
+                                {
+                                    <option value="@device.Group">@device.Group</option>
+                                }
+                            </select>
+                        </td>
                         <td>
                             <span title="@device.LastSeen.ToString("yyyy-MM-dd HH:mm:ss")">
                                 @GetTimeSince(device.LastSeen)
@@ -159,6 +175,7 @@ else
 
 @code {
     private List<Device>? devices;
+    private List<DeviceGroupVersion>? groups;
     private HashSet<string> requestingScreenshot = new();
     private HashSet<string> resettingApiKey = new();
     private Timer? refreshTimer;
@@ -188,11 +205,33 @@ else
         try
         {
             devices = await httpClient!.GetFromJsonAsync<List<Device>>("/api/device");
+            groups = await httpClient!.GetFromJsonAsync<List<DeviceGroupVersion>>("/api/versions/groups");
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error loading devices");
+            Logger.LogError(ex, "Error loading devices or groups");
             devices = new List<Device>();
+        }
+    }
+
+    private async Task ChangeGroup(string deviceId, string newGroup)
+    {
+        try
+        {
+            HttpResponseMessage response = await httpClient!.PutAsJsonAsync($"/api/device/{deviceId}/group", new { Group = newGroup });
+            if (response.IsSuccessStatusCode)
+            {
+                Logger.LogInformation("Device {DeviceId} moved to group {Group}", deviceId, newGroup);
+                await LoadDevices();
+            }
+            else
+            {
+                Logger.LogWarning("Failed to change group for device {DeviceId}", deviceId);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error changing group for device {DeviceId}", deviceId);
         }
     }
 

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
@@ -43,6 +44,12 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 builder.Services.AddCascadingAuthenticationState();
 
+// Configure JSON options for Minimal APIs to handle object cycles
+builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
+{
+    options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+});
+
 // Add custom services
 builder.Services.AddSingleton<WebsiteRecorder>();
 builder.Services.AddSingleton<RenderQueue>();
@@ -50,6 +57,7 @@ builder.Services.AddHostedService<RenderWorkerService>();
 builder.Services.AddScoped<ContentSyncService>();
 builder.Services.AddHostedService<ContentSyncWorkerService>();
 builder.Services.AddScoped<VersionService>();
+builder.Services.AddScoped<ScheduleService>();
 
 // Add HttpClient for calling our own API and the players
 builder.Services.AddHttpClient();
@@ -136,6 +144,7 @@ app.MapDefaultEndpoints();
 app.MapContentApi();
 app.MapDeviceApi();
 app.MapPlaylistApi();
+app.MapScheduleApi();
 app.MapUpdateApi();
 app.MapVersionApi();
 

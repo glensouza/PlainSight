@@ -73,6 +73,24 @@ public class PlaylistService
         }
     }
 
+    public void UpdatePlaylist(List<string> filenames)
+    {
+        List<string> validFiles = filenames
+            .Where(f => IsValidFilename(f))
+            .Where(f => VideoFormats.SupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+            .ToList();
+
+        lock (_lock)
+        {
+            // Only update and log if the playlist has actually changed
+            if (!_playlist.SequenceEqual(validFiles))
+            {
+                _playlist = validFiles;
+                _logger.LogInformation("Playlist updated via heartbeat: {Count} item(s)", _playlist.Count);
+            }
+        }
+    }
+
     public IReadOnlyList<string> GetCurrentPlaylist()
     {
         lock (_lock)

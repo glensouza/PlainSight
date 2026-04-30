@@ -149,15 +149,35 @@
                                     </button>
                                 </div>
                                 <div class="mt-1">
+                                    <label class="small text-muted mb-0">Target Version</label>
                                     <select class="form-select form-select-sm"
                                             value="@g.TargetVersion"
-                                            @onchange="e => SaveGroupVersion(g.GroupName, e.Value?.ToString() ?? g.TargetVersion)"
-                                            disabled="@(versions == null || versions.Count == 0)">
+                                            @onchange="e => SaveGroupVersion(g.GroupName, e.Value?.ToString() ?? g.TargetVersion, g.DefaultPlaylistId)"
+                                            disabled="@(versions == null)">
                                         @if (versions != null)
                                         {
+                                            @if (!versions.Any(v => v.VersionNumber == g.TargetVersion))
+                                            {
+                                                <option value="@g.TargetVersion">@g.TargetVersion (Missing)</option>
+                                            }
                                             @foreach (PlayerVersion v in versions)
                                             {
                                                 <option value="@v.VersionNumber">@v.VersionNumber</option>
+                                            }
+                                        }
+                                    </select>
+                                </div>
+                                <div class="mt-1">
+                                    <label class="small text-muted mb-0">Default Playlist</label>
+                                    <select class="form-select form-select-sm"
+                                            value="@g.DefaultPlaylistId"
+                                            @onchange="e => SaveGroupVersion(g.GroupName, g.TargetVersion, int.TryParse(e.Value?.ToString(), out int id) ? id : null)">
+                                        <option value="">(None)</option>
+                                        @if (playlists != null)
+                                        {
+                                            @foreach (Playlist p in playlists)
+                                            {
+                                                <option value="@p.Id">@p.Name</option>
                                             }
                                         }
                                     </select>
@@ -170,7 +190,7 @@
                         <input class="form-control" placeholder="New group name" @bind="newGroupName" />
                         <button class="btn btn-outline-primary"
                                 @onclick="AddGroup"
-                                disabled="@(string.IsNullOrWhiteSpace(newGroupName) || versions == null || versions.Count == 0)">
+                                disabled="@(string.IsNullOrWhiteSpace(newGroupName) || versions == null)">
                             <i class="bi bi-plus-circle"></i> Add
                         </button>
                     </div>
@@ -203,6 +223,7 @@
 @code {
     private List<PlayerVersion>? versions;
     private List<DeviceGroupVersion>? groups;
+    private List<Playlist>? playlists;
     private HttpClient? httpClient;
 
     private string uploadVersion = string.Empty;
@@ -229,6 +250,7 @@
         {
             versions = await httpClient!.GetFromJsonAsync<List<PlayerVersion>>("/api/versions");
             groups = await httpClient!.GetFromJsonAsync<List<DeviceGroupVersion>>("/api/versions/groups");
+            playlists = await httpClient!.GetFromJsonAsync<List<Playlist>>("/api/playlists");
             loadError = null;
         }
         catch (Exception ex)
@@ -310,13 +332,13 @@
         }
     }
 
-    private async Task SaveGroupVersion(string groupName, string targetVersion)
+    private async Task SaveGroupVersion(string groupName, string targetVersion, int? defaultPlaylistId)
     {
         try
         {
             HttpResponseMessage response = await httpClient!.PutAsJsonAsync(
                 $"/api/versions/groups/{Uri.EscapeDataString(groupName)}",
-                new { TargetVersion = targetVersion });
+                new { TargetVersion = targetVersion, DefaultPlaylistId = defaultPlaylistId });
 
             if (!response.IsSuccessStatusCode)
             {
@@ -337,18 +359,19 @@
 
     private async Task AddGroup()
     {
-        if (string.IsNullOrWhiteSpace(newGroupName) || versions == null || versions.Count == 0) return;
+        if (string.IsNullOrWhiteSpace(newGroupName)) return;
 
-        // Default to the version assigned to the 'Default' group, or fallback to the first version
+        // Default to the version assigned to the 'Default' group, or fallback to the first version or 1.0.0
         string defaultVersion = groups?.FirstOrDefault(g => g.GroupName == "Default")?.TargetVersion 
-                               ?? versions[0].VersionNumber;
+                               ?? (versions?.Count > 0 ? versions[0].VersionNumber : "1.0.0");
+        int? defaultPlaylistId = groups?.FirstOrDefault(g => g.GroupName == "Default")?.DefaultPlaylistId;
         groupError = null;
 
         try
         {
             HttpResponseMessage response = await httpClient!.PutAsJsonAsync(
                 $"/api/versions/groups/{Uri.EscapeDataString(newGroupName.Trim())}",
-                new { TargetVersion = defaultVersion });
+                new { TargetVersion = defaultVersion, DefaultPlaylistId = defaultPlaylistId });
 
             if (response.IsSuccessStatusCode)
             {
@@ -395,7 +418,7 @@
         if (bytes >= 1024 * 1024)
             return $"{bytes / 1024.0 / 1024.0:F1} MB";
         if (bytes >= 1024)
-            return $"{bytes / 1024.0:F1} KB";
+            return $"{bytes / 1024.0 / 1024.0:F1} KB";
         return $"{bytes} B";
     }
 
