@@ -29,6 +29,12 @@ builder.Services.AddHttpClient<UpdateService>(client =>
     client.BaseAddress = new Uri(serverUrl);
     client.Timeout = TimeSpan.FromSeconds(60);
 }).RemoveAllResilienceHandlers();
+
+builder.Services.AddHttpClient<ScreenshotUploadService>(client =>
+{
+    client.BaseAddress = new Uri(serverUrl);
+    client.Timeout = TimeSpan.FromSeconds(30);
+}).RemoveAllResilienceHandlers();
 #pragma warning restore EXTEXP0001
 
 builder.Services.AddSingleton<ScreenCaptureService>();

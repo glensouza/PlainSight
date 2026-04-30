@@ -9,6 +9,7 @@ public class PlayerWorker(
     HeartbeatService heartbeat,
     UpdateService update,
     ScreenCaptureService screenshot,
+    ScreenshotUploadService screenshotUpload,
     PlaylistService playlist,
     ILogger<PlayerWorker> logger) : BackgroundService
 {
@@ -37,9 +38,10 @@ public class PlayerWorker(
                     {
                         logger.LogInformation("Screenshot requested");
                         byte[] screenshotBytes = await screenshot.CaptureScreenshot();
-                        logger.LogWarning(
-                            "Screenshot captured ({Size} bytes) — upload not yet implemented (see issue #14)",
-                            screenshotBytes.Length);
+                        if (screenshotBytes.Length > 0)
+                            await screenshotUpload.UploadAsync(screenshotBytes, stoppingToken);
+                        else
+                            logger.LogWarning("Screenshot capture returned empty result; skipping upload");
                     }
                 }
 
