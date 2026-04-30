@@ -100,7 +100,7 @@ public static class DeviceApi
                         byte[] bytes = await response.Content.ReadAsByteArrayAsync(ct);
                         if (bytes.Length > 0)
                         {
-                            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/signage/screenshots";
+                            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
                             string deviceDir = Path.Combine(screenshotsRoot, deviceId);
                             Directory.CreateDirectory(deviceDir);
 
@@ -162,7 +162,7 @@ public static class DeviceApi
             if (file.Length > maxBytes)
                 return Results.BadRequest("Screenshot exceeds 25 MB limit");
 
-            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/signage/screenshots";
+            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
             string fullScreenshotsRoot = Path.GetFullPath(screenshotsRoot);
             string deviceDir = Path.Combine(screenshotsRoot, deviceId);
             string fullDeviceDir = Path.GetFullPath(deviceDir);
@@ -229,7 +229,7 @@ public static class DeviceApi
                 return Results.NotFound();
 
             // Guard against a poisoned DB path escaping ScreenshotsPath
-            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/signage/screenshots";
+            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
             string fullScreenshotsRoot = Path.GetFullPath(screenshotsRoot);
             string fullStoredPath = Path.GetFullPath(device.LatestScreenshotPath);
             if (!fullStoredPath.StartsWith(fullScreenshotsRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))

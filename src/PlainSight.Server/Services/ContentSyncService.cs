@@ -12,7 +12,7 @@ public class ContentSyncService(
     private static readonly string[] SupportedExtensions =
         [".mp4", ".avi", ".mov", ".mkv", ".webm", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"];
 
-    private string ContentPath => configuration["ContentPath"] ?? "/mnt/signage";
+    private string ContentPath => configuration["ContentPath"] ?? "/mnt/plainsight";
 
     public async Task<(int Added, int Removed)> SyncAsync(CancellationToken cancellationToken = default)
     {

@@ -19,7 +19,7 @@ public static class UpdateApi
             if (record == null)
                 return Results.NotFound();
 
-            string updatesPath = configuration["UpdatesPath"] ?? "/mnt/signage/updates";
+            string updatesPath = configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
             string filePath = Path.Combine(updatesPath, record.FileName);
             if (!File.Exists(filePath))
             {

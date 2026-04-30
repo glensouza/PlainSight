@@ -31,7 +31,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - file_share:/mnt/signage
+      - file_share:/mnt/plainsight
     networks:
       - plainsight-network
     depends_on:
@@ -45,7 +45,7 @@ services:
     container_name: plainsight-samba
     environment:
       - USER=${SMB_USER:?SMB_USER environment variable is required};${SMB_PASSWORD:?SMB_PASSWORD environment variable is required}
-      - SHARE=signage;/share;yes;no;no;${SMB_USER}
+      - SHARE=plainsight;/share;yes;no;no;${SMB_USER}
     volumes:
       - file_share:/share
     ports:

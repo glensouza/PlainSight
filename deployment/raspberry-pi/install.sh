@@ -2,7 +2,7 @@
 set -e
 
 # PlainSight Raspberry Pi Installation Script
-# This script provisions a fresh Raspberry Pi for PlainSight digital signage
+# This script provisions a fresh Raspberry Pi for PlainSight digital plainsight
 
 echo "================================================"
 echo "  PlainSight Digital Signage Player Installer"
@@ -53,7 +53,7 @@ sudo apt install -y \
 # 3. Create directories
 echo "Creating application directories..."
 sudo mkdir -p /opt/plainsight
-sudo mkdir -p /mnt/signage
+sudo mkdir -p /mnt/plainsight
 sudo mkdir -p /etc/samba
 sudo chown pi:pi /opt/plainsight
 
@@ -84,14 +84,14 @@ sudo chmod 600 /etc/samba/plainsight-credentials
 echo "Configuring systemd services..."
 
 # SMB mount
-sudo bash -c "cat > /etc/systemd/system/mnt-signage.mount << EOF
+sudo bash -c "cat > /etc/systemd/system/mnt-plainsight.mount << EOF
 [Unit]
 Description=Mount Remote Signage Assets
 After=network-online.target
 
 [Mount]
-What=//${SERVER_IP}/signage
-Where=/mnt/signage
+What=//${SERVER_IP}/plainsight
+Where=/mnt/plainsight
 Type=cifs
 Options=credentials=/etc/samba/plainsight-credentials,ro,vers=3.0
 
@@ -100,12 +100,12 @@ WantedBy=multi-user.target
 EOF"
 
 # Automount
-sudo bash -c "cat > /etc/systemd/system/mnt-signage.automount << EOF
+sudo bash -c "cat > /etc/systemd/system/mnt-plainsight.automount << EOF
 [Unit]
 Description=Automount Signage Share
 
 [Automount]
-Where=/mnt/signage
+Where=/mnt/plainsight
 TimeoutIdleSec=0
 
 [Install]
@@ -116,8 +116,8 @@ EOF"
 sudo bash -c "cat > /etc/systemd/system/plainsight.service << EOF
 [Unit]
 Description=PlainSight Digital Signage Player
-After=network-online.target mnt-signage.mount
-Wants=mnt-signage.mount
+After=network-online.target mnt-plainsight.mount
+Wants=mnt-plainsight.mount
 
 [Service]
 Type=simple
@@ -164,7 +164,7 @@ chmod +x ~/.config/labwc/autostart
 # 7. Enable services
 echo "Enabling systemd services..."
 sudo systemctl daemon-reload
-sudo systemctl enable mnt-signage.automount
+sudo systemctl enable mnt-plainsight.automount
 sudo systemctl enable plainsight.service
 
 echo ""

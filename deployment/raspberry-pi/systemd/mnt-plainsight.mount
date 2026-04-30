@@ -1,0 +1,12 @@
+[Unit]
+Description=Mount Remote PlainSight Assets
+After=network-online.target
+
+[Mount]
+What=//SERVER_IP/plainsight
+Where=/mnt/plainsight
+Type=cifs
+Options=credentials=/etc/samba/plainsight-credentials,ro,vers=3.0
+
+[Install]
+WantedBy=multi-user.target

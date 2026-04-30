@@ -1,8 +1,7 @@
 [Unit]
-Description=Automount Signage Share
-
+Description=Automount PlainSight Share
 [Automount]
-Where=/mnt/signage
+Where=/mnt/plainsight
 TimeoutIdleSec=0
 
 [Install]

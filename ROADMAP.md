@@ -36,7 +36,7 @@ Implementation plan for completing incomplete features and improving the app. Is
 
 ## Phase 4 — Reliability
 
-- [ ] **[#18](https://github.com/glensouza/PlainSight/issues/18) Local content cache with SMB fallback**
+- [x] **[#18](https://github.com/glensouza/PlainSight/issues/18) Local content cache with SMB fallback**
   Players stream directly from the SMB mount — a network drop means a blank screen. Add `CacheService` that syncs content to `/var/cache/plainsight/content/` and serves from cache when SMB is unavailable. Kestrel serves from cache, not from the mount directly. *(Depends on #12)*
 
 ---
@@ -88,7 +88,7 @@ Implementation plan for completing incomplete features and improving the app. Is
 | 4 | #16 | Standalone; should land before the app is exposed externally | ✅ Done |
 | 5 | #14 | Depends on #12 | ✅ Done |
 | 6 | #17 | Depends on #16 | |
-| 7 | #18 | Depends on #12 | |
+| 7 | #18 | Depends on #12 | ✅ Done |
 | 8 | #20 | Standalone; no blockers | |
 | 9 | #19 | Depends on #13 | |
 | 10 | #21 | Depends on #14 | |

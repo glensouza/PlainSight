@@ -42,7 +42,7 @@ public static class ContentApi
             if (request.DurationSeconds is < 5 or > 300)
                 return Results.BadRequest("Duration must be between 5 and 300 seconds");
 
-            string contentPath = configuration["ContentPath"] ?? "/mnt/signage";
+            string contentPath = configuration["ContentPath"] ?? "/mnt/plainsight";
             Directory.CreateDirectory(contentPath);
 
             string fileName = $"rendered_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}.mp4";
@@ -87,7 +87,7 @@ public static class ContentApi
 
                 // Sanitize filename to prevent path traversal
                 string safeOriginalName = Path.GetFileName(file.FileName);
-                string contentPath = configuration["ContentPath"] ?? "/mnt/signage";
+                string contentPath = configuration["ContentPath"] ?? "/mnt/plainsight";
                 Directory.CreateDirectory(contentPath);
 
                 string fileName = $"{DateTime.UtcNow:yyyyMMddHHmmss}_{safeOriginalName}";
@@ -160,7 +160,7 @@ public static class ContentApi
 
             try
             {
-                string contentPath = configuration["ContentPath"] ?? "/mnt/signage";
+                string contentPath = configuration["ContentPath"] ?? "/mnt/plainsight";
                 string filePath = Path.Combine(contentPath, item.FileName);
                 
                 // Robust path check
@@ -186,7 +186,7 @@ public static class ContentApi
         // NEW: Preview feature
         group.MapGet("/file/{fileName}", (string fileName, IConfiguration configuration) =>
         {
-            string contentPath = configuration["ContentPath"] ?? "/mnt/signage";
+            string contentPath = configuration["ContentPath"] ?? "/mnt/plainsight";
             
             // Sanitize input
             string safeFileName = Path.GetFileName(fileName);
@@ -222,7 +222,7 @@ public static class ContentApi
             if (item == null)
                 return Results.NotFound();
 
-            string contentPath = configuration["ContentPath"] ?? "/mnt/signage";
+            string contentPath = configuration["ContentPath"] ?? "/mnt/plainsight";
             string oldFileName = item.FileName;
             string? newFileName = null;
             string? oldPath = null;

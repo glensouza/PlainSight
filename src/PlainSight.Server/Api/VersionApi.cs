@@ -34,10 +34,10 @@ public static class VersionApi
             if (exists)
                 return Results.Conflict($"Version {versionNumber} already exists");
 
-            string updatesPath = configuration["UpdatesPath"] ?? "/mnt/signage/updates";
+            string updatesPath = configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
             Directory.CreateDirectory(updatesPath);
 
-            string safeFileName = $"signage-player-{versionNumber}";
+            string safeFileName = $"plainsight-player-{versionNumber}";
             string destPath = Path.Combine(updatesPath, safeFileName);
 
             if (File.Exists(destPath))
@@ -93,7 +93,7 @@ public static class VersionApi
             if (inUse)
                 return Results.BadRequest($"Version {version.VersionNumber} is still assigned to one or more groups");
 
-            string updatesPath = configuration["UpdatesPath"] ?? "/mnt/signage/updates";
+            string updatesPath = configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
             string filePath = Path.Combine(updatesPath, version.FileName);
             if (File.Exists(filePath))
                 File.Delete(filePath);
