@@ -7,7 +7,10 @@ namespace PlainSight.Player.Services;
 public class HeartbeatService(HttpClient http, ILogger<HeartbeatService> logger)
 {
     private readonly string deviceId = Environment.MachineName;
-    private readonly string version = typeof(HeartbeatService).Assembly.GetName().Version?.ToString() ?? "0.0.0";
+    private readonly string version = FormatVersion(typeof(HeartbeatService).Assembly.GetName().Version);
+
+    private static string FormatVersion(Version? v) =>
+        v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "0.0.0";
 
     public async Task<HeartbeatResponse?> SendHeartbeat(string? currentFile, CancellationToken cancellationToken = default)
     {
