@@ -8,10 +8,31 @@
 
 <PageTitle>Content Library — PlainSight</PageTitle>
 
-<div class="page-header">
-    <h1>Content Library</h1>
-    <p class="text-muted mb-0">Manage media files and rendered content for your digital signage</p>
+<div class="page-header d-flex align-items-center justify-content-between">
+    <div>
+        <h1>Content Library</h1>
+        <p class="text-muted mb-0">Manage media files and rendered content for your digital signage</p>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary" @onclick="RunSync" disabled="@syncing">
+        @if (syncing)
+        {
+            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        }
+        else
+        {
+            <i class="bi bi-arrow-repeat"></i>
+        }
+        <span> Sync folder</span>
+    </button>
 </div>
+
+@if (syncMessage != null)
+{
+    <div class="alert alert-info alert-dismissible py-2 mt-2 mb-0" role="alert">
+        <i class="bi bi-info-circle"></i> @syncMessage
+        <button type="button" class="btn-close" @onclick="() => syncMessage = null"></button>
+    </div>
+}
 
 <div class="row mb-4">
     <div class="col-md-12">
@@ -24,13 +45,16 @@
                     <div class="col-md-6">
                         <div class="mb-3">
                             <label class="form-label">Upload Video or Image</label>
-                            <input class="form-control" type="file" accept="video/*,image/*" @ref="fileInput" />
-                            <small class="text-muted">Supported: MP4, AVI, MOV, PNG, JPG</small>
-                            <div class="alert alert-warning alert-sm mt-2 mb-0 py-1 px-2">
-                                <small><i class="bi bi-exclamation-triangle"></i> File upload UI requires JavaScript interop - use API endpoint directly for now</small>
-                            </div>
+                            <InputFile class="form-control" accept="video/*,image/*" OnChange="HandleFileSelected" />
+                            <small class="text-muted">Supported: MP4, AVI, MOV, PNG, JPG — max 500 MB</small>
                         </div>
-                        <button class="btn btn-primary" @onclick="UploadFile" disabled="@uploading">
+                        @if (uploadError != null)
+                        {
+                            <div class="alert alert-danger py-1 px-2 mb-2">
+                                <small><i class="bi bi-exclamation-triangle"></i> @uploadError</small>
+                            </div>
+                        }
+                        <button class="btn btn-primary" @onclick="UploadFile" disabled="@(uploading || selectedFile == null)">
                             @if (uploading)
                             {
                                 <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
@@ -53,17 +77,15 @@
                                 <div class="mb-2">
                                     <input type="number" class="form-control form-control-sm" placeholder="Duration (seconds)" @bind="renderDuration" min="5" max="300" />
                                 </div>
-                                <button class="btn btn-sm btn-outline-primary" @onclick="RenderWebsite" disabled="@rendering">
-                                    @if (rendering)
-                                    {
-                                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                                        <span>Rendering...</span>
-                                    }
-                                    else
-                                    {
-                                        <i class="bi bi-camera-video"></i>
-                                        <span>Render to Video</span>
-                                    }
+                                @if (renderSubmitError != null)
+                                {
+                                    <div class="alert alert-danger py-1 px-2 mb-2">
+                                        <small><i class="bi bi-exclamation-triangle"></i> @renderSubmitError</small>
+                                    </div>
+                                }
+                                <button class="btn btn-sm btn-outline-primary" @onclick="SubmitRender">
+                                    <i class="bi bi-camera-video"></i>
+                                    <span>Queue Render</span>
                                 </button>
                             </div>
                         </div>
@@ -73,6 +95,59 @@
         </div>
     </div>
 </div>
+
+@if (renderJobs.Count > 0)
+{
+    <div class="card mb-4">
+        <div class="card-header">
+            <h6 class="mb-0"><i class="bi bi-clock-history"></i> Render Queue</h6>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <tbody>
+                    @foreach (RenderJobState job in renderJobs)
+                    {
+                        <tr>
+                            <td class="ps-3">
+                                @if (job.Status is "Queued" or "Processing")
+                                {
+                                    <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
+                                }
+                                else if (job.Status == "Done")
+                                {
+                                    <i class="bi bi-check-circle-fill text-success"></i>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-x-circle-fill text-danger"></i>
+                                }
+                            </td>
+                            <td><small class="text-truncate d-inline-block" style="max-width:300px">@job.Url</small></td>
+                            <td><small>@job.DurationSeconds s</small></td>
+                            <td>
+                                <span class="badge @(job.Status switch { "Done" => "bg-success", "Failed" => "bg-danger", "Processing" => "bg-primary", _ => "bg-secondary" })">
+                                    @job.Status
+                                </span>
+                                @if (job.Error != null)
+                                {
+                                    <small class="text-danger ms-1">@job.Error</small>
+                                }
+                            </td>
+                            <td>
+                                @if (job.Status is "Done" or "Failed")
+                                {
+                                    <button class="btn btn-sm btn-link py-0" @onclick="() => renderJobs.Remove(job)">
+                                        <i class="bi bi-x"></i>
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
 
 @if (contentItems == null)
 {
@@ -123,9 +198,17 @@ else
                         <td>@FormatFileSize(item.FileSizeBytes)</td>
                         <td>@item.UploadedAt.ToString("yyyy-MM-dd HH:mm")</td>
                         <td>
-                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteContent(item.Id)">
-                                <i class="bi bi-trash"></i> Delete
-                            </button>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary" @onclick="() => PreviewContent(item)" title="Preview">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <button class="btn btn-outline-secondary" @onclick="() => StartRename(item)" title="Rename">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-outline-danger" @onclick="() => ConfirmDelete(item)" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 }
@@ -134,19 +217,213 @@ else
     </div>
 }
 
+@if (renamingItem != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Rename Content</h5>
+                    <button type="button" class="btn-close" @onclick="CancelRename"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Display Name</label>
+                        <input type="text" class="form-control" @bind="newName" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">File Name (on disk)</label>
+                        <input type="text" class="form-control" @bind="newFileName" />
+                        <small class="text-muted">Extension will be preserved automatically.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CancelRename">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="PerformRename">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (itemToDelete != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog shadow-lg">
+            <div class="modal-content border-danger">
+                <div class="modal-header bg-danger text-white py-2">
+                    <h5 class="modal-title fs-6">Confirm Delete</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => itemToDelete = null"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0">Are you sure you want to delete <strong>@itemToDelete.Name</strong>?</p>
+                    <p class="text-danger mb-0"><small><i class="bi bi-exclamation-triangle"></i> This will permanently remove the file from disk.</small></p>
+                </div>
+                <div class="modal-footer py-1">
+                    <button type="button" class="btn btn-sm btn-secondary" @onclick="() => itemToDelete = null">Cancel</button>
+                    <button type="button" class="btn btn-sm btn-danger" @onclick="() => DeleteContent(itemToDelete.Id)">Delete Permanently</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (previewItem != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.8);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0">
+                <div class="modal-header py-2">
+                    <h6 class="modal-title text-truncate">@previewItem.Name</h6>
+                    <button type="button" class="btn-close" @onclick="ClosePreview"></button>
+                </div>
+                <div class="modal-body p-0 bg-dark d-flex align-items-center justify-content-center" style="min-height: 400px;">
+                    @if (previewItem.Type == ContentType.Image)
+                    {
+                        <img src="/api/content/file/@previewItem.FileName" class="img-fluid" style="max-height: 70vh;" />
+                    }
+                    else
+                    {
+                        <video controls autoplay class="w-100" style="max-height: 70vh;">
+                            <source src="/api/content/file/@previewItem.FileName" type="@GetVideoType(previewItem.FileName)" />
+                            Your browser does not support the video tag.
+                        </video>
+                    }
+                </div>
+                <div class="modal-footer py-1">
+                    <small class="text-muted">@previewItem.FileName (@FormatFileSize(previewItem.FileSizeBytes))</small>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
+    private record RenderJobResponse(string JobId, string Status);
+    private record RenderStatusResponse(string JobId, string Status, string? Error, int? ContentItemId);
+    private record SyncResult(int Added, int Removed);
+
+    private sealed class RenderJobState
+    {
+        public string JobId { get; set; } = "";
+        public string Url { get; set; } = "";
+        public int DurationSeconds { get; set; }
+        public string Status { get; set; } = "Queued";
+        public string? Error { get; set; }
+    }
+
     private List<ContentItem>? contentItems;
     private HttpClient? httpClient;
-    private ElementReference fileInput;
     private bool uploading;
-    private bool rendering;
+    private bool syncing;
+    private IBrowserFile? selectedFile;
+    private string? uploadError;
     private string renderUrl = "";
     private int renderDuration = 30;
+    private string? renderSubmitError;
+    private string? syncMessage;
+    private List<RenderJobState> renderJobs = new();
+    private bool isPolling;
+    private ContentItem? previewItem;
+    private ContentItem? renamingItem;
+    private string newName = "";
+    private string newFileName = "";
+    private ContentItem? itemToDelete;
 
     protected override async Task OnInitializedAsync()
     {
         httpClient = HttpClientFactory.CreateClient();
         httpClient.BaseAddress = new Uri(Navigation.BaseUri);
+        await RunSync();
+    }
+
+    private void PreviewContent(ContentItem item)
+    {
+        previewItem = item;
+    }
+
+    private void ClosePreview()
+    {
+        previewItem = null;
+    }
+
+    private void StartRename(ContentItem item)
+    {
+        renamingItem = item;
+        newName = item.Name;
+        newFileName = Path.GetFileNameWithoutExtension(item.FileName);
+    }
+
+    private void CancelRename()
+    {
+        renamingItem = null;
+    }
+
+    private async Task PerformRename()
+    {
+        if (renamingItem == null) return;
+
+        try
+        {
+            HttpResponseMessage response = await httpClient!.PatchAsJsonAsync($"/api/content/{renamingItem.Id}/rename", new
+            {
+                NewName = newName,
+                NewFileName = newFileName
+            });
+
+            if (response.IsSuccessStatusCode)
+            {
+                renamingItem = null;
+                await LoadContent();
+            }
+            else
+            {
+                string error = await response.Content.ReadAsStringAsync();
+                uploadError = $"Rename failed: {error}";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error renaming content");
+            uploadError = ex.Message;
+        }
+    }
+
+    private void ConfirmDelete(ContentItem item)
+    {
+        itemToDelete = item;
+    }
+
+    private string GetVideoType(string fileName)
+    {
+        return Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".webm" => "video/webm",
+            _ => "video/mp4"
+        };
+    }
+
+    private async Task RunSync()
+    {
+        syncing = true;
+        try
+        {
+            HttpResponseMessage response = await httpClient!.PostAsync("/api/content/sync", null);
+            if (response.IsSuccessStatusCode)
+            {
+                SyncResult? result = await response.Content.ReadFromJsonAsync<SyncResult>();
+                if (result != null && (result.Added > 0 || result.Removed > 0))
+                    syncMessage = $"Folder sync: +{result.Added} added, -{result.Removed} removed from library";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Content sync failed");
+        }
+        finally
+        {
+            syncing = false;
+        }
         await LoadContent();
     }
 
@@ -163,18 +440,43 @@ else
         }
     }
 
+    private void HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+        uploadError = null;
+    }
+
     private async Task UploadFile()
     {
+        if (selectedFile == null) return;
+
         uploading = true;
+        uploadError = null;
         try
         {
-            // File upload requires JavaScript interop to read file from browser
-            // This would be implemented using IJSRuntime to:
-            // 1. Read the file as byte array or stream
-            // 2. POST to /api/content/upload endpoint
-            // 3. Refresh the content list
-            Logger.LogWarning("File upload requires JavaScript interop implementation");
-            await Task.CompletedTask;
+            const long maxAllowedSize = 512L * 1024 * 1024; // 512 MB
+            using StreamContent streamContent = new(selectedFile.OpenReadStream(maxAllowedSize));
+            streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                string.IsNullOrEmpty(selectedFile.ContentType) ? "application/octet-stream" : selectedFile.ContentType);
+
+            using MultipartFormDataContent formData = new();
+            formData.Add(streamContent, "file", selectedFile.Name);
+
+            HttpResponseMessage response = await httpClient!.PostAsync("/api/content/upload", formData);
+            if (response.IsSuccessStatusCode)
+            {
+                selectedFile = null;
+                await LoadContent();
+            }
+            else
+            {
+                uploadError = $"Upload failed: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error uploading file");
+            uploadError = ex.Message;
         }
         finally
         {
@@ -182,15 +484,11 @@ else
         }
     }
 
-    private async Task RenderWebsite()
+    private async Task SubmitRender()
     {
-        if (string.IsNullOrWhiteSpace(renderUrl))
-        {
-            Logger.LogWarning("URL is required for rendering");
-            return;
-        }
+        if (string.IsNullOrWhiteSpace(renderUrl)) return;
 
-        rendering = true;
+        renderSubmitError = null;
         try
         {
             HttpResponseMessage response = await httpClient!.PostAsJsonAsync("/api/content/render", new
@@ -199,21 +497,68 @@ else
                 DurationSeconds = renderDuration
             });
 
-            if (response.IsSuccessStatusCode)
+            if (!response.IsSuccessStatusCode)
             {
-                Logger.LogInformation("Website rendering started: {Url}", renderUrl);
-                renderUrl = "";
-                renderDuration = 30;
-                await LoadContent();
+                renderSubmitError = $"Server error: {response.StatusCode}";
+                return;
             }
+
+            RenderJobResponse? job = await response.Content.ReadFromJsonAsync<RenderJobResponse>();
+            if (job == null) { renderSubmitError = "Invalid server response"; return; }
+
+            renderJobs.Add(new RenderJobState { JobId = job.JobId, Url = renderUrl, DurationSeconds = renderDuration });
+            renderUrl = "";
+
+            if (!isPolling)
+                _ = PollAllJobsAsync();
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error rendering website");
+            Logger.LogError(ex, "Error submitting render");
+            renderSubmitError = ex.Message;
+        }
+    }
+
+    private async Task PollAllJobsAsync()
+    {
+        isPolling = true;
+        try
+        {
+            while (renderJobs.Any(j => j.Status is "Queued" or "Processing"))
+            {
+                await Task.Delay(2000);
+
+                bool anyFinished = false;
+                foreach (RenderJobState job in renderJobs.Where(j => j.Status is "Queued" or "Processing").ToList())
+                {
+                    try
+                    {
+                        RenderStatusResponse? status = await httpClient!.GetFromJsonAsync<RenderStatusResponse>(
+                            $"/api/content/render/{job.JobId}");
+                        if (status == null) continue;
+
+                        job.Status = status.Status;
+                        job.Error = status.Error;
+                        if (status.Status is "Done" or "Failed")
+                            anyFinished = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning(ex, "Error polling job {JobId}", job.JobId);
+                    }
+                }
+
+                await InvokeAsync(async () =>
+                {
+                    if (anyFinished)
+                        await LoadContent();
+                    StateHasChanged();
+                });
+            }
         }
         finally
         {
-            rendering = false;
+            isPolling = false;
         }
     }
 
@@ -224,6 +569,7 @@ else
             HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/content/{id}");
             if (response.IsSuccessStatusCode)
             {
+                itemToDelete = null;
                 await LoadContent();
             }
         }
@@ -235,19 +581,16 @@ else
 
     private string FormatFileSize(long bytes)
     {
-        string[] sizes = { "B", "KB", "MB", "GB" };
+        string[] sizes = ["B", "KB", "MB", "GB"];
         double len = bytes;
         int order = 0;
         while (len >= 1024 && order < sizes.Length - 1)
         {
             order++;
-            len = len / 1024;
+            len /= 1024;
         }
         return $"{len:0.##} {sizes[order]}";
     }
 
-    public void Dispose()
-    {
-        // Cleanup if needed
-    }
+    public void Dispose() { }
 }

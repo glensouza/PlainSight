@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Signage.Server.Api;
 using Signage.Server.Components;
 using Signage.Server.Data;
 using Signage.Server.Services;
@@ -10,10 +11,8 @@ builder.AddServiceDefaults();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
-
-// Add API controllers
-builder.Services.AddControllers();
+    .AddInteractiveServerComponents()
+    .AddHubOptions(o => o.MaximumReceiveMessageSize = 512L * 1024 * 1024); // 512 MB for video uploads
 
 // Add database context
 builder.Services.AddDbContext<SignageDbContext>(options =>
@@ -21,6 +20,10 @@ builder.Services.AddDbContext<SignageDbContext>(options =>
 
 // Add custom services
 builder.Services.AddSingleton<WebsiteRecorder>();
+builder.Services.AddSingleton<RenderQueue>();
+builder.Services.AddHostedService<RenderWorkerService>();
+builder.Services.AddScoped<ContentSyncService>();
+builder.Services.AddHostedService<ContentSyncWorkerService>();
 builder.Services.AddScoped<VersionService>();
 
 // Add HttpClient for calling our own API
@@ -51,8 +54,12 @@ app.UseAntiforgery();
 // Map default endpoints
 app.MapDefaultEndpoints();
 
-// Map API controllers
-app.MapControllers();
+// Register Minimal APIs
+app.MapContentApi();
+app.MapDeviceApi();
+app.MapPlaylistApi();
+app.MapUpdateApi();
+app.MapVersionApi();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
