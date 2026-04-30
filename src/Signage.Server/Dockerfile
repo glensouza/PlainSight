@@ -28,8 +28,38 @@ WORKDIR /app
 EXPOSE 8080
 EXPOSE 8081
 
-# Note: Puppeteer dependencies removed as WebsiteRecorder service is incomplete
-# and requires FFmpeg integration for production use (see SECURITY.md)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    chromium \
+    fonts-liberation \
+    libasound2t64 \
+    libatk-bridge2.0-0t64 \
+    libatk1.0-0t64 \
+    libcairo2 \
+    libcups2t64 \
+    libdbus-1-3 \
+    libdrm2 \
+    libexpat1 \
+    libgbm1 \
+    libglib2.0-0t64 \
+    libgtk-3-0t64 \
+    libnspr4 \
+    libnss3 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libx11-6 \
+    libxcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxrandr2 \
+    libxrender1 \
+    libxtst6 \
+    xdg-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 COPY --from=publish /app/publish .
 ENTRYPOINT ["dotnet", "Signage.Server.dll"]
