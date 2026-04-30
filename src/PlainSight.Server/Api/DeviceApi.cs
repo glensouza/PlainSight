@@ -309,7 +309,7 @@ public static class DeviceApi
                 .OrderBy(g => g.Name)
                 .ToListAsync(ct);
             return Results.Ok(groups);
-        });
+        }).RequireAuthorization();
 
         group.MapPost("/batch/screenshot", async (
             BatchScreenshotRequest request,
@@ -380,7 +380,7 @@ public static class DeviceApi
 
             int notFound = request.DeviceIds.Count - devices.Count;
             return Results.Ok(new { succeeded, notFound });
-        });
+        }).RequireAuthorization();
 
         group.MapPost("/batch/group", async (
             BatchGroupRequest request,
@@ -407,7 +407,7 @@ public static class DeviceApi
 
             logger.LogInformation("Moved {Count} devices to group {Group}", devices.Count, SanitizeForLog(request.Group));
             return Results.Ok(new { updated = devices.Count });
-        });
+        }).RequireAuthorization();
 
         group.MapPost("/batch/version", async (
             BatchVersionRequest request,
@@ -439,7 +439,7 @@ public static class DeviceApi
 
             logger.LogInformation("Assigned version {Version} to group {Group}", SanitizeForLog(request.TargetVersion), SanitizeForLog(request.Group));
             return Results.Ok(existing);
-        });
+        }).RequireAuthorization();
 
         return group;
     }
