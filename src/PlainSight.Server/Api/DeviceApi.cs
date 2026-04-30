@@ -303,6 +303,148 @@ public static class DeviceApi
             return Results.Ok();
         }).RequireAuthorization();
 
+        group.MapGet("/groups", async (PlainSightDbContext context, CancellationToken ct) =>
+        {
+            List<DeviceGroup> groups = await context.DeviceGroups
+                .OrderBy(g => g.Name)
+                .ToListAsync(ct);
+            return Results.Ok(groups);
+        });
+
+        group.MapPost("/batch/screenshot", async (
+            BatchScreenshotRequest request,
+            PlainSightDbContext context,
+            IHttpClientFactory httpClientFactory,
+            IConfiguration configuration,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            if (request.DeviceIds == null || request.DeviceIds.Count == 0)
+                return Results.BadRequest("At least one device ID is required");
+
+            ILogger logger = loggerFactory.CreateLogger("DeviceApi");
+
+            List<Device> devices = await context.Devices
+                .Where(d => request.DeviceIds.Contains(d.DeviceId))
+                .ToListAsync(ct);
+
+            int succeeded = 0;
+
+            foreach (Device device in devices)
+            {
+                if (!string.IsNullOrEmpty(device.CallbackUrl))
+                {
+                    try
+                    {
+                        HttpClient client = httpClientFactory.CreateClient("player");
+                        HttpResponseMessage response = await client.GetAsync(
+                            $"{device.CallbackUrl.TrimEnd('/')}/api/screenshot", ct);
+
+                        if (response.IsSuccessStatusCode)
+                        {
+                            byte[] bytes = await response.Content.ReadAsByteArrayAsync(ct);
+                            if (bytes.Length > 0)
+                            {
+                                string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
+                                string deviceDir = Path.Combine(screenshotsRoot, device.DeviceId);
+                                Directory.CreateDirectory(deviceDir);
+
+                                string timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+                                string fileName = $"{timestamp}_{Guid.NewGuid():N}.png";
+                                string filePath = Path.Combine(deviceDir, fileName);
+
+                                await File.WriteAllBytesAsync(filePath, bytes, ct);
+
+                                device.LatestScreenshotPath = filePath;
+                                device.LatestScreenshotAt = DateTime.UtcNow;
+                                device.ScreenshotRequested = false;
+
+                                logger.LogInformation("Live screenshot saved for device {DeviceId}: {Path}", device.DeviceId, filePath);
+                                succeeded++;
+                                continue;
+                            }
+                        }
+                        logger.LogWarning("Direct screenshot failed for {DeviceId}, falling back to poll-based", device.DeviceId);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Direct screenshot failed for {DeviceId}, falling back to poll-based", device.DeviceId);
+                    }
+                }
+
+                device.ScreenshotRequested = true;
+                succeeded++;
+            }
+
+            await context.SaveChangesAsync(ct);
+
+            int notFound = request.DeviceIds.Count - devices.Count;
+            return Results.Ok(new { succeeded, notFound });
+        });
+
+        group.MapPost("/batch/group", async (
+            BatchGroupRequest request,
+            PlainSightDbContext context,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            if (request.DeviceIds == null || request.DeviceIds.Count == 0)
+                return Results.BadRequest("At least one device ID is required");
+
+            if (string.IsNullOrWhiteSpace(request.Group))
+                return Results.BadRequest("Group name is required");
+
+            ILogger logger = loggerFactory.CreateLogger("DeviceApi");
+
+            List<Device> devices = await context.Devices
+                .Where(d => request.DeviceIds.Contains(d.DeviceId))
+                .ToListAsync(ct);
+
+            foreach (Device device in devices)
+                device.Group = request.Group;
+
+            await context.SaveChangesAsync(ct);
+
+            logger.LogInformation("Moved {Count} devices to group {Group}", devices.Count, SanitizeForLog(request.Group));
+            return Results.Ok(new { updated = devices.Count });
+        });
+
+        group.MapPost("/batch/version", async (
+            BatchVersionRequest request,
+            PlainSightDbContext context,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Group) || string.IsNullOrWhiteSpace(request.TargetVersion))
+                return Results.BadRequest("Group name and target version are required");
+
+            ILogger logger = loggerFactory.CreateLogger("DeviceApi");
+
+            bool versionExists = await context.PlayerVersions
+                .AnyAsync(v => v.VersionNumber == request.TargetVersion, ct);
+            if (!versionExists)
+                return Results.BadRequest($"Version {request.TargetVersion} does not exist");
+
+            DeviceGroupVersion? existing = await context.DeviceGroupVersions
+                .FirstOrDefaultAsync(g => g.GroupName == request.Group, ct);
+
+            if (existing == null)
+            {
+                existing = new DeviceGroupVersion { GroupName = request.Group };
+                context.DeviceGroupVersions.Add(existing);
+            }
+
+            existing.TargetVersion = request.TargetVersion;
+            await context.SaveChangesAsync(ct);
+
+            logger.LogInformation("Assigned version {Version} to group {Group}", SanitizeForLog(request.TargetVersion), SanitizeForLog(request.Group));
+            return Results.Ok(existing);
+        });
+
         return group;
     }
 }
+
+public sealed record BatchScreenshotRequest(List<string> DeviceIds);
+public sealed record BatchGroupRequest(List<string> DeviceIds, string Group);
+public sealed record BatchVersionRequest(string Group, string TargetVersion);

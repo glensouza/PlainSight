@@ -11,6 +11,7 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
     public DbSet<PlaylistItem> PlaylistItems => this.Set<PlaylistItem>();
     public DbSet<PlayerVersion> PlayerVersions => this.Set<PlayerVersion>();
     public DbSet<DeviceGroupVersion> DeviceGroupVersions => this.Set<DeviceGroupVersion>();
+    public DbSet<DeviceGroup> DeviceGroups => this.Set<DeviceGroup>();
     public DbSet<AdminUser> AdminUsers => this.Set<AdminUser>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -65,6 +66,15 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
                 GroupName = "Default",
                 TargetVersion = "1.0.0"
             });
+        });
+
+        modelBuilder.Entity<DeviceGroup>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Name).IsUnique();
+
+            // Seed Default group
+            entity.HasData(new DeviceGroup { Id = 1, Name = "Default" });
         });
 
         modelBuilder.Entity<AdminUser>(entity =>
