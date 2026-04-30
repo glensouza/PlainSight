@@ -19,7 +19,7 @@ public static class ScheduleApi
                 .ToListAsync(ct);
 
             return Results.Ok(schedules);
-        }).RequireAuthorization();
+        });
 
         group.MapPost("/", async (ScheduleCreateDto dto, PlainSightDbContext context, CancellationToken ct) =>
         {
