@@ -26,6 +26,17 @@ public static class DeviceApi
     private static string SanitizeForLog(string? value) =>
         value == null ? "(null)" : value.Replace('\r', '_').Replace('\n', '_').Replace('\0', '_');
 
+    private static bool IsPathInsideRoot(string root, string path)
+    {
+        string fullRoot = Path.GetFullPath(root);
+        string fullPath = Path.GetFullPath(path, fullRoot);
+        StringComparison comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        return fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, comparison)
+            || string.Equals(fullPath, fullRoot, comparison);
+    }
+
     public static RouteGroupBuilder MapDeviceApi(this IEndpointRouteBuilder routes)
     {
         RouteGroupBuilder group = routes.MapGroup("/api/device");
@@ -86,7 +97,7 @@ public static class DeviceApi
 
                 // Check for "Canary" Update assignment
                 string targetVersion = await versionService.GetTargetVersionAsync(device.Group, ct);
-                
+
                 // Get scheduled playlist
                 Playlist? activePlaylist = await scheduleService.GetActivePlaylistAsync(device.Group, ct);
 
@@ -152,13 +163,10 @@ public static class DeviceApi
                 return Results.BadRequest("Screenshot exceeds 25 MB limit");
 
             string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
-            string fullScreenshotsRoot = Path.GetFullPath(screenshotsRoot);
             string deviceDir = Path.Combine(screenshotsRoot, deviceId);
-            string fullDeviceDir = Path.GetFullPath(deviceDir);
 
             // Reject deviceId values that escape screenshotsRoot (path traversal)
-            if (!fullDeviceDir.StartsWith(fullScreenshotsRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal)
-                && fullDeviceDir != fullScreenshotsRoot)
+            if (!IsPathInsideRoot(screenshotsRoot, deviceDir))
             {
                 logger.LogWarning("Path traversal attempt blocked for deviceId {DeviceId}", deviceId);
                 return Results.BadRequest("Invalid device id");
@@ -178,10 +186,9 @@ public static class DeviceApi
             string fileName = $"{timestamp}_{Guid.NewGuid():N}.png";
             string filePath = Path.Combine(deviceDir, fileName);
 
-            string fullFilePath = Path.GetFullPath(filePath);
-            if (!fullFilePath.StartsWith(fullDeviceDir + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            if (!IsPathInsideRoot(deviceDir, filePath))
             {
-                logger.LogWarning("Constructed file path escaped device directory: {Path}", fullFilePath);
+                logger.LogWarning("Constructed file path escaped device directory: {Path}", filePath);
                 return Results.BadRequest("Invalid path");
             }
 
@@ -199,6 +206,8 @@ public static class DeviceApi
             device.LatestScreenshotPath = filePath;
             device.LatestScreenshotAt = DateTime.UtcNow;
             await context.SaveChangesAsync(ct);
+
+            await RecordScreenshotHistoryAsync(device, filePath, context, configuration, logger, ct);
 
             logger.LogInformation("Screenshot saved for device {DeviceId}: {Path}", deviceId, filePath);
             return Results.Ok();
@@ -219,14 +228,108 @@ public static class DeviceApi
 
             // Guard against a poisoned DB path escaping ScreenshotsPath
             string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
-            string fullScreenshotsRoot = Path.GetFullPath(screenshotsRoot);
-            string fullStoredPath = Path.GetFullPath(device.LatestScreenshotPath);
-            if (!fullStoredPath.StartsWith(fullScreenshotsRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            if (!IsPathInsideRoot(screenshotsRoot, device.LatestScreenshotPath))
                 return Results.NotFound();
 
             return Results.File(device.LatestScreenshotPath, "image/png");
         });
 
+        group.MapGet("/{deviceId}/screenshots", async (
+            string deviceId,
+            PlainSightDbContext context,
+            CancellationToken ct) =>
+        {
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
+            if (device == null)
+                return Results.NotFound();
+
+            List<DeviceScreenshotDto> history = await context.DeviceScreenshots
+                .Where(s => s.DeviceId == device.Id)
+                .OrderByDescending(s => s.CapturedAt)
+                .Select(s => new DeviceScreenshotDto
+                {
+                    Id = s.Id,
+                    CapturedAt = s.CapturedAt,
+                    Url = $"/api/device/{deviceId}/screenshots/{s.Id}"
+                })
+                .ToListAsync(ct);
+
+            return Results.Ok(history);
+        }).RequireAuthorization();
+
+        group.MapGet("/{deviceId}/screenshots/{id:int}", async (
+            string deviceId,
+            int id,
+            PlainSightDbContext context,
+            IConfiguration configuration,
+            CancellationToken ct) =>
+        {
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
+            if (device == null)
+                return Results.NotFound();
+
+            DeviceScreenshot? screenshot = await context.DeviceScreenshots
+                .FirstOrDefaultAsync(s => s.Id == id && s.DeviceId == device.Id, ct);
+            if (screenshot == null)
+                return Results.NotFound();
+
+            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
+            if (!IsPathInsideRoot(screenshotsRoot, screenshot.FilePath))
+                return Results.NotFound();
+
+            if (!File.Exists(screenshot.FilePath))
+                return Results.NotFound();
+
+            return Results.File(screenshot.FilePath, "image/png");
+        }).RequireAuthorization();
+
         return group;
+    }
+
+    private static async Task RecordScreenshotHistoryAsync(
+        Device device,
+        string filePath,
+        PlainSightDbContext context,
+        IConfiguration configuration,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        int historyLimit = configuration.GetValue<int>("ScreenshotHistoryLimit", 10);
+
+        DeviceScreenshot record = new()
+        {
+            DeviceId = device.Id,
+            FilePath = filePath,
+            CapturedAt = DateTime.UtcNow
+        };
+        context.DeviceScreenshots.Add(record);
+        await context.SaveChangesAsync(cancellationToken);
+
+        List<DeviceScreenshot> excess = await context.DeviceScreenshots
+            .Where(s => s.DeviceId == device.Id)
+            .OrderByDescending(s => s.CapturedAt)
+            .Skip(historyLimit)
+            .ToListAsync(cancellationToken);
+
+        if (excess.Count == 0)
+            return;
+
+        foreach (DeviceScreenshot old in excess)
+        {
+            try
+            {
+                if (File.Exists(old.FilePath))
+                    File.Delete(old.FilePath);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to delete old screenshot file {Path}", old.FilePath);
+            }
+        }
+
+        List<int> excessIds = excess.Select(s => s.Id).ToList();
+        await context.DeviceScreenshots
+            .Where(s => excessIds.Contains(s.Id))
+            .ExecuteDeleteAsync(cancellationToken);
     }
 }

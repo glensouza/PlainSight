@@ -6,6 +6,7 @@ namespace PlainSight.Server.Data;
 public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) : DbContext(options)
 {
     public DbSet<Device> Devices => this.Set<Device>();
+    public DbSet<DeviceScreenshot> DeviceScreenshots => this.Set<DeviceScreenshot>();
     public DbSet<ContentItem> ContentItems => this.Set<ContentItem>();
     public DbSet<Playlist> Playlists => this.Set<Playlist>();
     public DbSet<PlaylistItem> PlaylistItems => this.Set<PlaylistItem>();
@@ -77,6 +78,16 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.Username).IsUnique();
+        });
+
+        modelBuilder.Entity<DeviceScreenshot>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.DeviceId, e.CapturedAt });
+            entity.HasOne(e => e.Device)
+                .WithMany()
+                .HasForeignKey(e => e.DeviceId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
