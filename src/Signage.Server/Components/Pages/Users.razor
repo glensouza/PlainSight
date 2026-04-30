@@ -175,7 +175,7 @@ else
                                 <button class="btn btn-sm btn-outline-danger"
                                         @onclick="() => ConfirmDelete(user)"
                                         title="Delete user"
-                                        disabled="@(saving || users.Count <= 1)">
+                                        disabled="@(saving || users.Count <= 1 || (user.IsActive && activeCount <= 1))">
                                     <i class="bi bi-trash"></i>
                                 </button>
                             }
@@ -497,22 +497,38 @@ else
     {
         if (deleteTarget is null) return;
 
-        if (users!.Count <= 1)
-        {
-            globalError = "Cannot delete the only user.";
-            deleteTarget = null;
-            return;
-        }
-
         saving = true;
         try
         {
             AdminUser? entity = await DbContext.AdminUsers.FindAsync(deleteTarget.Id);
-            if (entity is not null)
+            if (entity is null)
             {
-                DbContext.AdminUsers.Remove(entity);
-                await DbContext.SaveChangesAsync();
+                deleteTarget = null;
+                await LoadUsersAsync();
+                return;
             }
+
+            int totalCount = await DbContext.AdminUsers.CountAsync();
+            if (totalCount <= 1)
+            {
+                globalError = "Cannot delete the only user.";
+                deleteTarget = null;
+                return;
+            }
+
+            if (entity.IsActive)
+            {
+                int activeUserCount = await DbContext.AdminUsers.CountAsync(u => u.IsActive);
+                if (activeUserCount <= 1)
+                {
+                    globalError = "Cannot delete the last active user.";
+                    deleteTarget = null;
+                    return;
+                }
+            }
+
+            DbContext.AdminUsers.Remove(entity);
+            await DbContext.SaveChangesAsync();
             deleteTarget = null;
             await LoadUsersAsync();
         }

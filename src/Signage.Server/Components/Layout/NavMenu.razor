@@ -64,6 +64,7 @@
                 </div>
                 <div class="nav-item">
                     <form action="/auth/logout" method="post">
+                        <AntiforgeryToken />
                         <button type="submit" class="nav-link btn btn-link w-100 text-start text-danger">
                             <i class="bi bi-box-arrow-right"></i> Sign Out
                         </button>

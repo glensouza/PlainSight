@@ -65,15 +65,24 @@ using (IServiceScope scope = app.Services.CreateScope())
 
     if (!dbContext.AdminUsers.Any())
     {
+        string initialPassword = GenerateInitialPassword();
         dbContext.AdminUsers.Add(new AdminUser
         {
             Username = "admin",
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin"),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(initialPassword),
             IsActive = true,
             Role = AdminUserRole.Admin,
+            MustChangePassword = true,
             CreatedAt = DateTime.UtcNow
         });
         dbContext.SaveChanges();
+
+        ILogger startupLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Startup");
+        startupLogger.LogWarning(
+            "Created initial admin account. Username: admin  Password: {Password}  " +
+            "You will be required to change this password on first login.",
+            initialPassword);
     }
 }
 
@@ -90,13 +99,17 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Redirect authenticated users who must change their password
+// Redirect authenticated users who must change their password.
+// Exclude Blazor infrastructure, static files, and auth endpoints.
 app.Use(async (ctx, next) =>
 {
     if (ctx.User.Identity?.IsAuthenticated == true
         && ctx.User.HasClaim("must_change_password", "true")
         && !ctx.Request.Path.StartsWithSegments("/change-password")
-        && !ctx.Request.Path.StartsWithSegments("/auth"))
+        && !ctx.Request.Path.StartsWithSegments("/auth")
+        && !ctx.Request.Path.StartsWithSegments("/_blazor")
+        && !ctx.Request.Path.StartsWithSegments("/_framework")
+        && !ctx.Request.Path.StartsWithSegments("/login"))
     {
         ctx.Response.Redirect("/change-password");
         return;
@@ -111,7 +124,7 @@ app.MapPost("/auth/logout", async (HttpContext ctx) =>
 {
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.Redirect("/login");
-}).DisableAntiforgery();
+});
 
 // Map default endpoints
 app.MapDefaultEndpoints();
@@ -128,3 +141,14 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
+
+static string GenerateInitialPassword()
+{
+    const string chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$";
+    byte[] randomBytes = new byte[14];
+    System.Security.Cryptography.RandomNumberGenerator.Fill(randomBytes);
+    char[] result = new char[14];
+    for (int i = 0; i < 14; i++)
+        result[i] = chars[randomBytes[i] % chars.Length];
+    return new string(result);
+}
