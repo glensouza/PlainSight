@@ -61,7 +61,7 @@ public async Task PerformSelfUpdate(string updateUrl, string expectedSha256)
 curl -L "https://${SERVER_IP}:8443/api/updates/latest/binary.sha256" -o /tmp/binary.sha256
 
 # Download binary
-curl -L "https://${SERVER_IP}:8443/api/updates/latest/binary" -o /opt/signage/Signage.Player
+curl -L "https://${SERVER_IP}:8443/api/updates/latest/binary" -o /opt/plainsight/PlainSight.Player
 
 # Verify checksum
 sha256sum -c /tmp/binary.sha256 || exit 1

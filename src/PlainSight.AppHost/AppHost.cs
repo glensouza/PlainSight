@@ -7,18 +7,17 @@ IResourceBuilder<PostgresServerResource> postgres = builder.AddPostgres("postgre
     .WithPgAdmin()
     .WithLifetime(ContainerLifetime.Persistent);
 
+IResourceBuilder<PostgresDatabaseResource> plainsightDb = postgres.AddDatabase("plainsightdb");
 
-IResourceBuilder<PostgresDatabaseResource> signageDb = postgres.AddDatabase("signagedb");
-
-// Add Signage Server with database
-IResourceBuilder<ProjectResource> signageServer = builder.AddProject<Signage_Server>("signage-server")
-    .WaitFor(signageDb)
-    .WithReference(signageDb);
+// Add PlainSight Server with database
+IResourceBuilder<ProjectResource> plainsightServer = builder.AddProject<PlainSight_Server>("plainsight-server")
+    .WaitFor(plainsightDb)
+    .WithReference(plainsightDb);
 
 // Aspire discovers the player's HTTP endpoint from launchSettings.json
 // (profile "http", applicationUrl http://localhost:5200).
-builder.AddProject<Signage_Player>("signage-player")
-    .WithReference(signageServer)
-    .WaitFor(signageServer);
+builder.AddProject<PlainSight_Player>("plainsight-player")
+    .WithReference(plainsightServer)
+    .WaitFor(plainsightServer);
 
 builder.Build().Run();

@@ -42,38 +42,31 @@ curl -sSL https://raw.githubusercontent.com/glensouza/PlainSight/main/deployment
 
 ### Components
 
-1. **Signage.Server** - Admin web app (ASP.NET Core, Blazor)
+1. **PlainSight.Server** - Admin web app (ASP.NET Core, Blazor)
    - Device management
    - Content rendering (PuppeteerSharp)
    - Update distribution
    
-2. **Signage.Player** - Raspberry Pi client (.NET 10)
-   - SMB streaming
+2. **PlainSight.Player** - Raspberry Pi client (.NET 10)
+   - SMB streaming via Chromium kiosk + HTML5 video player
    - Heartbeat reporting
    - Self-updating
    
-3. **Signage.Player.Photino** - Raspberry Pi client with UI (.NET 8 + Photino.NET)
-   - Native video playback with Photino windowing
-   - Fullscreen kiosk mode
-   - HTML5 video player interface
-   - SMB content streaming
-   - Heartbeat reporting and self-updating
-   
-4. **Infrastructure**
+3. **Infrastructure**
    - PostgreSQL database
    - Samba file share
    - .NET Aspire orchestration
 
 ### Technology Stack
 
-- .NET 10 (LTS) and .NET 8
+- .NET 10 (LTS)
 - ASP.NET Core & Blazor
 - Entity Framework Core
 - PostgreSQL
 - Docker & Docker Compose
 - .NET Aspire
 - PuppeteerSharp
-- Photino.NET (lightweight cross-platform desktop framework)
+- Chromium (kiosk display on Raspberry Pi)
 
 ## 🔧 System Requirements
 
@@ -113,14 +106,10 @@ dotnet build
 dotnet run --project src/PlainSight.AppHost
 
 # Build Docker image
-docker build -t plainsight-server -f src/Signage.Server/Dockerfile .
+docker build -t plainsight-server -f src/PlainSight.Server/Dockerfile .
 
 # Build Player for Raspberry Pi
-dotnet publish src/Signage.Player/Signage.Player.csproj \
-  -r linux-arm64 --self-contained -p:PublishSingleFile=true
-
-# Build Photino Player for Raspberry Pi
-dotnet publish src/Signage.Player.Photino/Signage.Player.Photino.csproj \
+dotnet publish src/PlainSight.Player/PlainSight.Player.csproj \
   -r linux-arm64 --self-contained -p:PublishSingleFile=true
 ```
 

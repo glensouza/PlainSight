@@ -1,0 +1,205 @@
+@page "/"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Navigation
+@inject ILogger<Home> Logger
+@using PlainSight.Shared.Models
+
+<PageTitle>PlainSight — Overview</PageTitle>
+
+<div class="page-header d-flex align-items-center justify-content-between">
+    <div>
+        <h1>Overview</h1>
+        <p class="text-muted mb-0">PlainSight digital signage control panel</p>
+    </div>
+    <span class="badge text-bg-success px-3 py-2">
+        <i class="bi bi-broadcast me-1"></i> Live
+    </span>
+</div>
+
+<!-- Stat cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-card-icon" style="background:#eff6ff;color:#3b82f6">
+                <i class="bi bi-display"></i>
+            </div>
+            <div>
+                <div class="stat-card-value">@(onlineCount?.ToString() ?? "—")</div>
+                <div class="stat-card-label">Online Devices</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-card-icon" style="background:#f0fdf4;color:#16a34a">
+                <i class="bi bi-film"></i>
+            </div>
+            <div>
+                <div class="stat-card-value">@(contentCount?.ToString() ?? "—")</div>
+                <div class="stat-card-label">Content Items</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-card-icon" style="background:#faf5ff;color:#9333ea">
+                <i class="bi bi-collection-play"></i>
+            </div>
+            <div>
+                <div class="stat-card-value">@(playlistCount?.ToString() ?? "—")</div>
+                <div class="stat-card-label">Playlists</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-card-icon" style="background:#fff7ed;color:#ea580c">
+                <i class="bi bi-box-seam"></i>
+            </div>
+            <div>
+                <div class="stat-card-value">@(versionCount?.ToString() ?? "—")</div>
+                <div class="stat-card-label">Versions</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick links -->
+<div class="row g-3">
+    <div class="col-md-6 col-lg-3">
+        <a href="/devices" class="text-decoration-none">
+            <div class="card h-100 quick-link-card">
+                <div class="card-body">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <i class="bi bi-display fs-5" style="color:#3b82f6"></i>
+                        <span class="fw-semibold">Devices</span>
+                    </div>
+                    <p class="text-muted mb-0" style="font-size:0.8125rem">Monitor your fleet in real-time. View status, version, and what's playing.</p>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-6 col-lg-3">
+        <a href="/content" class="text-decoration-none">
+            <div class="card h-100 quick-link-card">
+                <div class="card-body">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <i class="bi bi-film fs-5" style="color:#16a34a"></i>
+                        <span class="fw-semibold">Content</span>
+                    </div>
+                    <p class="text-muted mb-0" style="font-size:0.8125rem">Upload videos and images, or render websites to video.</p>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-6 col-lg-3">
+        <a href="/playlists" class="text-decoration-none">
+            <div class="card h-100 quick-link-card">
+                <div class="card-body">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <i class="bi bi-collection-play fs-5" style="color:#9333ea"></i>
+                        <span class="fw-semibold">Playlists</span>
+                    </div>
+                    <p class="text-muted mb-0" style="font-size:0.8125rem">Organize content into playlists and assign them to device groups.</p>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-6 col-lg-3">
+        <a href="/versions" class="text-decoration-none">
+            <div class="card h-100 quick-link-card">
+                <div class="card-body">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <i class="bi bi-box-seam fs-5" style="color:#ea580c"></i>
+                        <span class="fw-semibold">Versions</span>
+                    </div>
+                    <p class="text-muted mb-0" style="font-size:0.8125rem">Upload player binaries and run canary deployments by device group.</p>
+                </div>
+            </div>
+        </a>
+    </div>
+</div>
+
+<style>
+    .quick-link-card {
+        transition: box-shadow 0.15s, border-color 0.15s;
+        cursor: pointer;
+    }
+    .quick-link-card:hover {
+        border-color: #cbd5e1;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.07);
+    }
+</style>
+
+@code {
+    private int? onlineCount;
+    private int? contentCount;
+    private int? playlistCount;
+    private int? versionCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        HttpClient http = HttpClientFactory.CreateClient();
+        http.BaseAddress = new Uri(Navigation.BaseUri);
+
+        await Task.WhenAll(
+            LoadOnlineCount(http),
+            LoadContentCount(http),
+            LoadPlaylistCount(http),
+            LoadVersionCount(http));
+    }
+
+    private async Task LoadOnlineCount(HttpClient http)
+    {
+        try
+        {
+            List<Device>? devices = await http.GetFromJsonAsync<List<Device>>("/api/device");
+            onlineCount = devices?.Count(d => (DateTime.UtcNow - d.LastSeen).TotalSeconds < 60) ?? 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load device count");
+        }
+    }
+
+    private async Task LoadContentCount(HttpClient http)
+    {
+        try
+        {
+            List<ContentItem>? items = await http.GetFromJsonAsync<List<ContentItem>>("/api/content");
+            contentCount = items?.Count ?? 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load content count");
+        }
+    }
+
+    private async Task LoadPlaylistCount(HttpClient http)
+    {
+        try
+        {
+            List<Playlist>? items = await http.GetFromJsonAsync<List<Playlist>>("/api/playlists");
+            playlistCount = items?.Count ?? 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load playlist count");
+        }
+    }
+
+    private async Task LoadVersionCount(HttpClient http)
+    {
+        try
+        {
+            List<PlayerVersion>? items = await http.GetFromJsonAsync<List<PlayerVersion>>("/api/versions");
+            versionCount = items?.Count ?? 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load version count");
+        }
+    }
+}

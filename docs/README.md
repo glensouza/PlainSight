@@ -24,7 +24,7 @@ PlainSight provides a zero-touch maintenance digital signage solution with:
 
 The system consists of three main components:
 
-### 1. Signage.Server (Admin Web Application)
+### 1. PlainSight.Server (Admin Web Application)
 - **Technology**: ASP.NET Core 10, Blazor Web App
 - **Database**: PostgreSQL
 - **Deployment**: Docker container
@@ -34,7 +34,7 @@ The system consists of three main components:
   - Update distribution
   - Telemetry collection
 
-### 2. Signage.Player (Raspberry Pi Application)
+### 2. PlainSight.Player (Raspberry Pi Application)
 - **Technology**: .NET 10 Console Application
 - **Platform**: Raspberry Pi 5 (ARM64)
 - **OS**: Raspberry Pi OS Lite with labwc (Wayland)

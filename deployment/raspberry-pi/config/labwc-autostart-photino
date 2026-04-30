@@ -1,8 +1,0 @@
-#!/bin/bash
-# PlainSight Photino Player Autostart Script for labwc
-
-# Disable screen sleep/power saving
-swayidle -w timeout 31536000 'wlopm --off \*' resume 'wlopm --on \*' &
-
-# Note: Player is started by systemd service (signage-photino.service)
-# This script only handles display power management

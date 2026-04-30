@@ -12,7 +12,7 @@
   </Folder>
   <Project Path="src/PlainSight.AppHost/PlainSight.AppHost.csproj" />
   <Project Path="src/PlainSight.ServiceDefaults/PlainSight.ServiceDefaults.csproj" />
-  <Project Path="src/Signage.Player/Signage.Player.csproj" />
-  <Project Path="src/Signage.Server/Signage.Server.csproj" />
-  <Project Path="src/Signage.Shared/Signage.Shared.csproj" />
+  <Project Path="src/PlainSight.Player/PlainSight.Player.csproj" />
+  <Project Path="src/PlainSight.Server/PlainSight.Server.csproj" />
+  <Project Path="src/PlainSight.Shared/PlainSight.Shared.csproj" />
 </Solution>

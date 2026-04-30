@@ -15,7 +15,7 @@ dotnet restore
 # Build entire solution
 dotnet build
 
-# Run with .NET Aspire (starts PostgreSQL container + Signage.Server)
+# Run with .NET Aspire (starts PostgreSQL container + PlainSight.Server)
 dotnet run --project src/PlainSight.AppHost
 
 # Run tests
@@ -24,21 +24,18 @@ dotnet test
 # Format code
 dotnet format
 
-# Run Signage.Server standalone (requires PostgreSQL already running)
-dotnet run --project src/Signage.Server
+# Run PlainSight.Server standalone (requires PostgreSQL already running)
+dotnet run --project src/PlainSight.Server
 
-# Add EF Core migration (run from src/Signage.Server)
+# Add EF Core migration (run from src/PlainSight.Server)
 dotnet ef migrations add <MigrationName>
 dotnet ef database update
 
 # Publish Player for Raspberry Pi (ARM64)
-dotnet publish src/Signage.Player/Signage.Player.csproj -r linux-arm64 --self-contained -p:PublishSingleFile=true
-
-# Publish Photino Player for Raspberry Pi
-dotnet publish src/Signage.Player.Photino/Signage.Player.Photino.csproj -r linux-arm64 --self-contained -p:PublishSingleFile=true
+dotnet publish src/PlainSight.Player/PlainSight.Player.csproj -r linux-arm64 --self-contained -p:PublishSingleFile=true
 
 # Build Docker image for server
-docker build -t plainsight-server -f src/Signage.Server/Dockerfile .
+docker build -t plainsight-server -f src/PlainSight.Server/Dockerfile .
 
 # Run production stack with Docker Compose
 docker compose up -d
@@ -50,21 +47,18 @@ docker compose up -d
 
 | Project | TFM | Role |
 |---|---|---|
-| `PlainSight.AppHost` | net10.0 | .NET Aspire orchestrator: provisions PostgreSQL container and wires `Signage.Server` |
+| `PlainSight.AppHost` | net10.0 | .NET Aspire orchestrator: provisions PostgreSQL container and wires `PlainSight.Server` |
 | `PlainSight.ServiceDefaults` | net10.0 | Shared Aspire config (OpenTelemetry, health checks, service discovery) |
-| `Signage.Server` | net10.0 | Blazor Web App + REST API; admin UI, content management, device fleet |
-| `Signage.Player` | net10.0 | Console player for Raspberry Pi; heartbeat, SMB streaming, self-update |
-| `Signage.Player.Photino` | **net8.0** | Native-windowed player using Photino.NET; HTML5 video, playlist management |
-| `Signage.Shared` | net8.0 + net10.0 | Shared models used by both server and players |
-
-**Important**: `Signage.Player.Photino` targets **net8.0** (not net10.0) because Photino.NET 4.0.16 requires it. Do not change this TFM.
+| `PlainSight.Server` | net10.0 | Blazor Web App + REST API; admin UI, content management, device fleet |
+| `PlainSight.Player` | net10.0 | Raspberry Pi player; heartbeat, SMB streaming, self-update, Chromium kiosk display |
+| `PlainSight.Shared` | net10.0 | Shared models used by both server and player |
 
 ### Key files to read first
 
 - `src/PlainSight.AppHost/AppHost.cs` — Aspire wiring; PostgreSQL uses `ContainerLifetime.Persistent`
-- `src/Signage.Server/Data/SignageDbContext.cs` — EF Core context with `Device`, `ContentItem`, `Playlist`, `PlaylistItem`
-- `src/Signage.Server/Program.cs` — Service registration; DB migrations run at startup via `Migrate()`
-- `src/Signage.Server/Services/VersionService.cs` — Currently hardcoded to `"1.0.0"`; canary deployment logic is a TODO
+- `src/PlainSight.Server/Data/PlainSightDbContext.cs` — EF Core context with `Device`, `ContentItem`, `Playlist`, `PlaylistItem`
+- `src/PlainSight.Server/Program.cs` — Service registration; DB migrations run at startup via `Migrate()`
+- `src/PlainSight.Server/Services/VersionService.cs` — Currently hardcoded to `"1.0.0"`; canary deployment logic is a TODO
 
 ### Data flow
 
@@ -75,7 +69,7 @@ Player → `POST /api/device/heartbeat` → server upserts Device record → res
 
 **Content delivery:** Files live on a Samba share mounted at `/mnt/signage`. The server writes rendered MP4s there via `ContentController`. Players stream directly from the SMB mount (`/mnt/signage/content`).
 
-**Photino playlist:** `PlaylistService` reads `playlist.json` (with path-traversal validation) or falls back to directory scan. The `PhotinoWindow` uses a custom `app://` scheme handler to serve local video files; path validation prevents traversal outside `_contentPath`.
+**Player display:** `PlainSight.Player` runs an embedded Kestrel web server serving an HTML5 video player page at `/player`. `KioskService` launches the system Chromium browser in kiosk mode pointed at that local page. `PlaylistService` reads `playlist.json` (with path-traversal validation) or falls back to a directory scan of the content path.
 
 ### REST API summary
 
@@ -92,19 +86,18 @@ Player → `POST /api/device/heartbeat` → server upserts Device record → res
 
 ### Blazor pages
 
-All pages in `src/Signage.Server/Components/Pages/` use `@rendermode InteractiveServer`. The `Devices` page auto-refreshes every 5 seconds via a `Timer`. The `Versions` page currently uses in-memory hardcoded data — version management is not yet database-driven.
+All pages in `src/PlainSight.Server/Components/Pages/` use `@rendermode InteractiveServer`. The `Devices` page auto-refreshes every 5 seconds via a `Timer`. The `Versions` page currently uses in-memory hardcoded data — version management is not yet database-driven.
 
 ### Database schema
 
-`SignageDbContext` manages four tables. `Device.DeviceId` (string, unique) is the natural key used in all player/API interactions. `ContentItem.FileName` is unique. `Playlist` → `PlaylistItem` → `ContentItem` with cascade delete on `PlaylistItem` and restrict on `ContentItem`.
+`PlainSightDbContext` manages four tables. `Device.DeviceId` (string, unique) is the natural key used in all player/API interactions. `ContentItem.FileName` is unique. `Playlist` → `PlaylistItem` → `ContentItem` with cascade delete on `PlaylistItem` and restrict on `ContentItem`.
 
 ### Player environment variables
 
 | Variable | Default | Used by |
 |---|---|---|
-| `ServerUrl` | `https://localhost:7149/` | Both players |
-| `ContentPath` | `/mnt/signage/content` | Photino player only |
-| `Debug` | `false` | Photino player (windowed mode) |
+| `ServerUrl` | `http://plainsight-server` | PlainSight.Player |
+| `ContentPath` | `/mnt/signage/content` | PlainSight.Player |
 
 ## Coding Rules
 

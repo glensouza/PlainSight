@@ -1,0 +1,32 @@
+.login-bg {
+    background: #1a1a2e;
+}
+
+/* Ensure card is always white with legible text on the dark background */
+::deep .card {
+    background-color: #ffffff;
+    color: #0f172a;
+}
+
+::deep .card-body {
+    background-color: #ffffff;
+    color: #0f172a;
+}
+
+::deep .form-label {
+    color: #0f172a;
+}
+
+::deep .form-control {
+    background-color: #ffffff;
+    color: #0f172a;
+    border-color: #e2e8f0;
+}
+
+::deep .form-control::placeholder {
+    color: #94a3b8;
+}
+
+::deep .text-muted {
+    color: #64748b !important;
+}

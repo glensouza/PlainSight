@@ -4,8 +4,8 @@ Goal
 Repository summary
 - App type: Blazor (prefer Blazor patterns over Razor Pages/MVC).
 - Target framework: .NET 10, C# 14 — do not change TFM or LangVersion.
-- Key projects: `Signage.Server`, `Signage.Player`, `PlainSight.AppHost`.
-- App host creates runtime resources (Postgres + db) and wires `Signage_Server`.
+- Key projects: `PlainSight.Server`, `PlainSight.Player`, `PlainSight.AppHost`.
+- App host creates runtime resources (Postgres + db) and wires `PlainSight_Server`.
 
 Before making edits
 1. Read files reported by `git status` and any open files in the IDE.
@@ -62,8 +62,8 @@ If blocked or uncertain
 Files to read first (priority)
 - `src/PlainSight.AppHost/AppHost.cs`
 - Any files reported by `git status`
-- `src/Signage.Server/Data/SignageDbContext.cs`
-- `src/Signage.Server/Program.cs`
+- `src/PlainSight.Server/Data/PlainSightDbContext.cs`
+- `src/PlainSight.Server/Program.cs`
 
 Deliverables
 - Small focused patches that compile and pass tests.

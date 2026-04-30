@@ -52,10 +52,10 @@ sudo apt install -y \
 
 # 3. Create directories
 echo "Creating application directories..."
-sudo mkdir -p /opt/signage
+sudo mkdir -p /opt/plainsight
 sudo mkdir -p /mnt/signage
 sudo mkdir -p /etc/samba
-sudo chown pi:pi /opt/signage
+sudo chown pi:pi /opt/plainsight
 
 # 4. Download Player Binary (Bootstrap)
 echo ""
@@ -69,16 +69,16 @@ if [ "$CONTINUE" != "y" ]; then
 fi
 
 echo "Downloading PlainSight Player..."
-curl -L "http://${SERVER_IP}:8080/api/updates/latest/binary" -o /opt/signage/Signage.Player
-chmod +x /opt/signage/Signage.Player
+curl -L "http://${SERVER_IP}:8080/api/updates/latest/binary" -o /opt/plainsight/PlainSight.Player
+chmod +x /opt/plainsight/PlainSight.Player
 
 # 5. Create SMB credentials file
 echo "Creating SMB credentials file..."
-sudo bash -c "cat > /etc/samba/signage-credentials << EOF
+sudo bash -c "cat > /etc/samba/plainsight-credentials << EOF
 username=${SMB_USER}
 password=${SMB_PASSWORD}
 EOF"
-sudo chmod 600 /etc/samba/signage-credentials
+sudo chmod 600 /etc/samba/plainsight-credentials
 
 # 6. Configure systemd units
 echo "Configuring systemd services..."
@@ -93,7 +93,7 @@ After=network-online.target
 What=//${SERVER_IP}/signage
 Where=/mnt/signage
 Type=cifs
-Options=credentials=/etc/samba/signage-credentials,ro,vers=3.0
+Options=credentials=/etc/samba/plainsight-credentials,ro,vers=3.0
 
 [Install]
 WantedBy=multi-user.target
@@ -112,8 +112,8 @@ TimeoutIdleSec=0
 WantedBy=multi-user.target
 EOF"
 
-# Signage service
-sudo bash -c "cat > /etc/systemd/system/signage.service << EOF
+# PlainSight player service
+sudo bash -c "cat > /etc/systemd/system/plainsight.service << EOF
 [Unit]
 Description=PlainSight Digital Signage Player
 After=network-online.target mnt-signage.mount
@@ -122,8 +122,8 @@ Wants=mnt-signage.mount
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/opt/signage
-ExecStart=/opt/signage/Signage.Player
+WorkingDirectory=/opt/plainsight
+ExecStart=/opt/plainsight/PlainSight.Player
 Restart=always
 RestartSec=3
 Environment=DISPLAY=:0
@@ -142,7 +142,7 @@ mkdir -p ~/.config/labwc
 cat > ~/.config/labwc/rc.xml << 'EOF'
 <labwc_config>
   <windowRules>
-    <windowRule identifier="Signage.Player">
+    <windowRule identifier="PlainSight.Player">
       <action name="ToggleFullscreen" />
       <action name="KeepAbove" />
     </windowRule>
@@ -156,7 +156,7 @@ cat > ~/.config/labwc/autostart << 'EOF'
 swayidle -w timeout 31536000 'wlopm --off \*' resume 'wlopm --on \*' &
 
 # Start PlainSight Player
-/opt/signage/Signage.Player &
+/opt/plainsight/PlainSight.Player &
 EOF
 
 chmod +x ~/.config/labwc/autostart
@@ -165,7 +165,7 @@ chmod +x ~/.config/labwc/autostart
 echo "Enabling systemd services..."
 sudo systemctl daemon-reload
 sudo systemctl enable mnt-signage.automount
-sudo systemctl enable signage.service
+sudo systemctl enable plainsight.service
 
 echo ""
 echo "================================================"

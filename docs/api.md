@@ -324,4 +324,4 @@ Planned client SDKs:
 For API questions or issues:
 - Open a GitHub issue
 - Check the [Architecture Documentation](architecture.md)
-- Review the [source code](../src/Signage.Server/Controllers/)
+- Review the [source code](../src/PlainSight.Server/Controllers/)

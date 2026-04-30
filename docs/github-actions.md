@@ -73,7 +73,7 @@ dotnet publish \
 
 **Steps**:
 1. Pull latest Docker image
-2. Restart signage-server container
+2. Restart plainsight-server container
 3. Verify deployment via health check
 
 **Requirements**:
@@ -97,7 +97,7 @@ None required - uses GitHub's built-in `GITHUB_TOKEN` for Container Registry acc
 ```yaml
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/signage-server
+  IMAGE_NAME: ${{ github.repository }}/plainsight-server
 ```
 
 ## Image Retention Policy
@@ -112,7 +112,7 @@ The workflow automatically deletes old Docker images, keeping only the 5 most re
 - name: Clean up old images (keep 5 most recent)
   uses: actions/delete-package-versions@v5
   with:
-    package-name: 'signage-server'
+    package-name: 'plainsight-server'
     package-type: 'container'
     min-versions-to-keep: 5
 ```
@@ -271,8 +271,8 @@ sudo ./svc.sh status
 sudo systemctl restart docker
 
 # Test manual deployment
-docker compose pull signage-server
-docker compose up -d signage-server
+docker compose pull plainsight-server
+docker compose up -d plainsight-server
 ```
 
 ## Best Practices
@@ -298,10 +298,10 @@ Use semantic versioning:
 dotnet test
 
 # Build Docker image locally
-docker build -t plainsight-test -f src/Signage.Server/Dockerfile .
+docker build -t plainsight-test -f src/PlainSight.Server/Dockerfile .
 
 # Test player build locally
-dotnet publish src/Signage.Player/Signage.Player.csproj \
+dotnet publish src/PlainSight.Player/PlainSight.Player.csproj \
   -r linux-arm64 --self-contained
 ```
 
@@ -311,19 +311,19 @@ If a deployment causes issues:
 
 1. **Find previous image**:
 ```bash
-docker images | grep signage-server
+docker images | grep plainsight-server
 ```
 
 2. **Update docker-compose.yml**:
 ```yaml
 services:
-  signage-server:
-    image: ghcr.io/glensouza/plainsight/signage-server:sha-abc1234
+  plainsight-server:
+    image: ghcr.io/glensouza/plainsight/plainsight-server:sha-abc1234
 ```
 
 3. **Redeploy**:
 ```bash
-docker compose up -d signage-server
+docker compose up -d plainsight-server
 ```
 
 ## Extending the Workflow

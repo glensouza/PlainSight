@@ -1,8 +1,8 @@
 <Project Sdk="Aspire.AppHost.Sdk/13.2.4">
 
   <ItemGroup>
-    <ProjectReference Include="..\Signage.Server\Signage.Server.csproj" />
-    <ProjectReference Include="..\Signage.Player\Signage.Player.csproj" />
+    <ProjectReference Include="..\PlainSight.Server\PlainSight.Server.csproj" />
+    <ProjectReference Include="..\PlainSight.Player\PlainSight.Player.csproj" />
   </ItemGroup>
 
   <ItemGroup>
