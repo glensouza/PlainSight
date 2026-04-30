@@ -6,6 +6,7 @@
 @inject IJSRuntime JS
 @inject ILogger<Schedules> Logger
 @using PlainSight.Shared.Models
+@using PlainSight.Server.Api
 @implements IDisposable
 
 <PageTitle>Schedules — PlainSight</PageTitle>
@@ -58,7 +59,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var s in schedules)
+                        @foreach (Schedule s in schedules)
                         {
                             <tr>
                                 <td><strong>@s.Name</strong></td>
@@ -70,7 +71,7 @@
                                     else
                                     {
                                         <div class="d-flex gap-1 flex-wrap" style="max-width: 250px;">
-                                            @foreach (var tg in s.TargetGroups)
+                                            @foreach (ScheduleTargetGroup tg in s.TargetGroups)
                                             {
                                                 <span class="badge bg-info text-dark">@tg.GroupName</span>
                                             }
@@ -88,7 +89,7 @@
                                     else
                                     {
                                         <div class="d-flex gap-1 flex-wrap" style="max-width: 200px;">
-                                            @foreach (var day in GetActiveDays(s.DaysOfWeek))
+                                            @foreach (string day in GetActiveDays(s.DaysOfWeek))
                                             {
                                                 <span class="badge bg-light text-dark border">@day</span>
                                             }
@@ -161,7 +162,7 @@
                                         }
                                         else
                                         {
-                                            @foreach (var gName in model.TargetGroups)
+                                            @foreach (string gName in model.TargetGroups)
                                             {
                                                 <span class="badge bg-primary me-1">@gName</span>
                                             }
@@ -186,7 +187,7 @@
                                     }
                                     else
                                     {
-                                        @foreach (var g in groups)
+                                        @foreach (DeviceGroupVersion g in groups)
                                         {
                                             <button class="group-item-btn" type="button" @onclick="() => ToggleGroup(g.GroupName)">
                                                 <i class="bi @(model.TargetGroups.Contains(g.GroupName) ? "bi-check-square-fill text-primary" : "bi-square") me-2"></i>
@@ -207,7 +208,7 @@
                                 <option value="0">Select a playlist...</option>
                                 @if (playlists != null)
                                 {
-                                    @foreach (var p in playlists)
+                                    @foreach (Playlist p in playlists)
                                     {
                                         <option value="@p.Id">@p.Name</option>
                                     }
@@ -235,7 +236,7 @@
                             <label class="form-label">Scheduled Date</label>
                             <input type="date" class="form-control" 
                                    value="@model.ScheduledDate?.ToString("yyyy-MM-dd")" 
-                                   @onchange="e => { if (DateOnly.TryParse(e.Value?.ToString(), out var d)) model.ScheduledDate = d; }" />
+                                   @onchange="e => { if (DateOnly.TryParse(e.Value?.ToString(), out DateOnly d)) model.ScheduledDate = d; }" />
                         </div>
                     }
                     else
@@ -261,13 +262,13 @@
                             <label class="form-label">Start Time</label>
                             <input type="time" class="form-control" 
                                    value="@model.StartTime.ToString("HH:mm")" 
-                                   @onchange="e => { if (TimeOnly.TryParse(e.Value?.ToString(), out var t)) model.StartTime = t; }" />
+                                   @onchange="e => { if (TimeOnly.TryParse(e.Value?.ToString(), out TimeOnly t)) model.StartTime = t; }" />
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">End Time</label>
                             <input type="time" class="form-control" 
                                    value="@model.EndTime.ToString("HH:mm")" 
-                                   @onchange="e => { if (TimeOnly.TryParse(e.Value?.ToString(), out var t)) model.EndTime = t; }" />
+                                   @onchange="e => { if (TimeOnly.TryParse(e.Value?.ToString(), out TimeOnly t)) model.EndTime = t; }" />
                         </div>
                     </div>
 
@@ -417,19 +418,16 @@
         saving = true;
         try
         {
-            // Clear specific fields based on type before sending
-            var payload = new 
-            {
+            ScheduleCreateDto payload = new(
                 model.Name,
                 model.PlaylistId,
                 model.TargetGroups,
-                DaysOfWeek = model.UseSpecificDate ? DayOfWeekFlags.None : model.DaysOfWeek,
-                ScheduledDate = model.UseSpecificDate ? model.ScheduledDate : null,
+                model.UseSpecificDate ? DayOfWeekFlags.None : model.DaysOfWeek,
+                model.UseSpecificDate ? model.ScheduledDate : null,
                 model.StartTime,
                 model.EndTime,
                 model.Priority,
-                model.IsActive
-            };
+                model.IsActive);
 
             HttpResponseMessage response;
             if (editingId.HasValue)
@@ -466,7 +464,7 @@
 
         try
         {
-            var response = await httpClient!.DeleteAsync($"/api/schedules/{id}");
+            HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/schedules/{id}");
             if (response.IsSuccessStatusCode)
                 await LoadData();
             else
@@ -483,7 +481,7 @@
     {
         if (flags == DayOfWeekFlags.All) return new List<string> { "Daily" };
         
-        var days = new List<string>();
+        List<string> days = new();
         foreach (DayOfWeekFlags day in Enum.GetValues<DayOfWeekFlags>())
         {
             if (day == DayOfWeekFlags.None || day == DayOfWeekFlags.All) continue;
@@ -498,7 +496,7 @@
         httpClient?.Dispose();
     }
 
-    private class ScheduleModel
+    private sealed class ScheduleModel
     {
         public string Name { get; set; } = "";
         public int PlaylistId { get; set; }

@@ -26,9 +26,6 @@ public class PlayerWorker(
         {
             try
             {
-                // Sync from SMB to local cache on each heartbeat cadence
-                await cache.SyncAsync(stoppingToken);
-
                 HeartbeatResponse? response = await heartbeat.SendHeartbeat(playlist.GetCurrentFile(), stoppingToken);
 
                 if (response != null)
@@ -63,6 +60,16 @@ public class PlayerWorker(
                 {
                     // Fallback to disk if heartbeat fails
                     await playlist.RefreshAsync(stoppingToken);
+                }
+
+                // Sync from SMB to local cache; isolated so an SMB outage doesn't suppress the heartbeat
+                try
+                {
+                    await cache.SyncAsync(stoppingToken);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "SMB cache sync failed; continuing with cached content");
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);

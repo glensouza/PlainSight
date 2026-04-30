@@ -338,7 +338,7 @@ else
 
         try
         {
-            var itemData = new { ContentItemId = selectedContentId };
+            AddPlaylistItemRequest itemData = new(selectedContentId);
             HttpResponseMessage response = await httpClient!.PostAsJsonAsync($"/api/playlists/{managingPlaylistId.Value}/items", itemData);
             
             if (response.IsSuccessStatusCode)
@@ -375,4 +375,6 @@ else
     {
         // Cleanup if needed
     }
+
+    private record AddPlaylistItemRequest(int ContentItemId);
 }

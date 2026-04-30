@@ -66,7 +66,7 @@ else
                                     @onchange="e => ChangeGroup(device.DeviceId, e.Value?.ToString() ?? device.Group)">
                                 @if (groups != null)
                                 {
-                                    @foreach (var g in groups)
+                                    @foreach (DeviceGroupVersion g in groups)
                                     {
                                         <option value="@g.GroupName">@g.GroupName</option>
                                     }

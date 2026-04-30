@@ -17,11 +17,11 @@ public static class ScheduleApi
                 .Include(s => s.TargetGroups)
                 .OrderBy(s => s.StartTime)
                 .ToListAsync(ct);
-            
-            return Results.Ok(schedules);
-        });
 
-        group.MapPost("/", async (ScheduleCreateDto dto, PlainSightDbContext context) =>
+            return Results.Ok(schedules);
+        }).RequireAuthorization();
+
+        group.MapPost("/", async (ScheduleCreateDto dto, PlainSightDbContext context, CancellationToken ct) =>
         {
             Schedule schedule = new()
             {
@@ -44,17 +44,17 @@ public static class ScheduleApi
             }
 
             context.Schedules.Add(schedule);
-            await context.SaveChangesAsync();
+            await context.SaveChangesAsync(ct);
 
             return Results.Ok(schedule);
-        });
+        }).RequireAuthorization();
 
-        group.MapPut("/{id:int}", async (int id, ScheduleCreateDto dto, PlainSightDbContext context) =>
+        group.MapPut("/{id:int}", async (int id, ScheduleCreateDto dto, PlainSightDbContext context, CancellationToken ct) =>
         {
             Schedule? schedule = await context.Schedules
                 .Include(s => s.TargetGroups)
-                .FirstOrDefaultAsync(s => s.Id == id);
-            
+                .FirstOrDefaultAsync(s => s.Id == id, ct);
+
             if (schedule == null)
                 return Results.NotFound();
 
@@ -77,20 +77,20 @@ public static class ScheduleApi
                 }
             }
 
-            await context.SaveChangesAsync();
+            await context.SaveChangesAsync(ct);
             return Results.Ok(schedule);
-        });
+        }).RequireAuthorization();
 
-        group.MapDelete("/{id:int}", async (int id, PlainSightDbContext context) =>
+        group.MapDelete("/{id:int}", async (int id, PlainSightDbContext context, CancellationToken ct) =>
         {
-            Schedule? schedule = await context.Schedules.FindAsync(id);
+            Schedule? schedule = await context.Schedules.FindAsync([id], ct);
             if (schedule == null)
                 return Results.NotFound();
 
             context.Schedules.Remove(schedule);
-            await context.SaveChangesAsync();
+            await context.SaveChangesAsync(ct);
             return Results.Ok();
-        });
+        }).RequireAuthorization();
 
         return group;
     }
