@@ -51,8 +51,9 @@ builder.Services.AddScoped<ContentSyncService>();
 builder.Services.AddHostedService<ContentSyncWorkerService>();
 builder.Services.AddScoped<VersionService>();
 
-// Add HttpClient for calling our own API
+// Add HttpClient for calling our own API and the players
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("player", client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHttpContextAccessor();
 
 WebApplication app = builder.Build();

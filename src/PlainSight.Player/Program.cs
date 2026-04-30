@@ -29,6 +29,12 @@ builder.Services.AddHttpClient<UpdateService>(client =>
     client.BaseAddress = new Uri(serverUrl);
     client.Timeout = TimeSpan.FromSeconds(60);
 }).RemoveAllResilienceHandlers();
+
+builder.Services.AddHttpClient<ScreenshotUploadService>(client =>
+{
+    client.BaseAddress = new Uri(serverUrl);
+    client.Timeout = TimeSpan.FromSeconds(30);
+}).RemoveAllResilienceHandlers();
 #pragma warning restore EXTEXP0001
 
 builder.Services.AddSingleton<ScreenCaptureService>();
@@ -91,6 +97,13 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
 // Return current playlist so the browser page can poll for updates
 app.MapGet("/api/playlist", (PlaylistService playlist) =>
     Results.Json(playlist.GetCurrentPlaylist()));
+
+// Direct live screenshot API called by the server
+app.MapGet("/api/screenshot", async (ScreenCaptureService screenCapture) =>
+{
+    byte[] bytes = await screenCapture.CaptureScreenshot();
+    return bytes.Length > 0 ? Results.Bytes(bytes, "image/png") : Results.StatusCode(503);
+});
 
 // Browser page reports which file it is currently playing
 app.MapPost("/api/player/now-playing", async (HttpContext ctx, PlaylistService playlist) =>
