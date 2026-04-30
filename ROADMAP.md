@@ -16,7 +16,7 @@ Implementation plan for completing incomplete features and improving the app. Is
 - [x] **[#13](https://github.com/glensouza/PlainSight/issues/13) Database-driven version management and canary deployments**
   `VersionService` is hardcoded to `"1.0.0"`. Add `DeviceGroupVersion` table, update `VersionService` to query it, rebuild the Versions Blazor page against real data, and add a version binary upload endpoint.
 
-- [X] **[#14](https://github.com/glensouza/PlainSight/issues/14) Complete screenshot pipeline: player upload, server storage, admin preview**
+- [x] **[#14](https://github.com/glensouza/PlainSight/issues/14) Complete screenshot pipeline: player upload, server storage, admin preview**
   Player captures screen but never uploads it. Complete the full round-trip: player POSTs PNG to server, server stores it on SMB share, Devices page shows a preview modal. *(Depends on #12)*
 
 - [x] **[#15](https://github.com/glensouza/PlainSight/issues/15) Complete WebsiteRecorder: PuppeteerSharp screencast + FFmpeg MP4 encoding**
@@ -29,7 +29,7 @@ Implementation plan for completing incomplete features and improving the app. Is
 - [x] **[#16](https://github.com/glensouza/PlainSight/issues/16) Admin UI authentication (cookie-based login)**
   All pages and API endpoints are unauthenticated. Add cookie-based login with a bcrypt-hashed credential in config. Protect all Blazor pages and controllers except the device heartbeat and screenshot upload endpoints.
 
-- [ ] **[#17](https://github.com/glensouza/PlainSight/issues/17) Device API key authentication**
+- [x] **[#17](https://github.com/glensouza/PlainSight/issues/17) Device API key authentication**
   Any device can spoof any `deviceId`. First heartbeat registers the device and returns a generated API key; player persists it locally. All subsequent heartbeats require `X-Api-Key` header. Admin can reset a key from the Devices page. *(Depends on #16)*
 
 ---
@@ -87,7 +87,7 @@ Implementation plan for completing incomplete features and improving the app. Is
 | 3 | #15 | Standalone; completes a visible broken feature | ✅ Done |
 | 4 | #16 | Standalone; should land before the app is exposed externally | ✅ Done |
 | 5 | #14 | Depends on #12 | ✅ Done |
-| 6 | #17 | Depends on #16 | |
+| 6 | #17 | Depends on #16 | ✅ Done |
 | 7 | #18 | Depends on #12 | ✅ Done |
 | 8 | #20 | Standalone; no blockers | |
 | 9 | #19 | Depends on #13 | |
