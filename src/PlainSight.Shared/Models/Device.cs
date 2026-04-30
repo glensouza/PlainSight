@@ -18,4 +18,6 @@ public class Device
     [JsonIgnore]
     public string? LatestScreenshotPath { get; set; }
     public DateTime? LatestScreenshotAt { get; set; }
+    [JsonIgnore]
+    public string? ApiKey { get; set; }
 }

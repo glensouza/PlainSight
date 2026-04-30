@@ -98,6 +98,21 @@ else
                                     <span>Screenshot</span>
                                 }
                             </button>
+                            <button class="btn btn-sm btn-outline-warning ms-1"
+                                    @onclick="() => ResetApiKey(device.DeviceId)"
+                                    disabled="@resettingApiKey.Contains(device.DeviceId)"
+                                    title="Clear stored API key; device will re-register on next heartbeat">
+                                @if (resettingApiKey.Contains(device.DeviceId))
+                                {
+                                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                    <span>Resetting...</span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-key"></i>
+                                    <span>Reset Key</span>
+                                }
+                            </button>
                         </td>
                     </tr>
                 }
@@ -145,6 +160,7 @@ else
 @code {
     private List<Device>? devices;
     private HashSet<string> requestingScreenshot = new();
+    private HashSet<string> resettingApiKey = new();
     private Timer? refreshTimer;
     private HttpClient? httpClient;
     private Device? previewDevice;
@@ -210,6 +226,32 @@ else
         finally
         {
             requestingScreenshot.Remove(deviceId);
+            StateHasChanged();
+        }
+    }
+
+    private async Task ResetApiKey(string deviceId)
+    {
+        resettingApiKey.Add(deviceId);
+        try
+        {
+            HttpResponseMessage response = await httpClient!.PostAsync($"/api/device/{deviceId}/reset-api-key", null);
+            if (response.IsSuccessStatusCode)
+            {
+                Logger.LogInformation("API key reset for device {DeviceId}", deviceId);
+            }
+            else
+            {
+                Logger.LogWarning("Failed to reset API key for device {DeviceId}", deviceId);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error resetting API key for device {DeviceId}", deviceId);
+        }
+        finally
+        {
+            resettingApiKey.Remove(deviceId);
             StateHasChanged();
         }
     }
