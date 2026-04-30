@@ -16,10 +16,10 @@ Implementation plan for completing incomplete features and improving the app. Is
 - [x] **[#13](https://github.com/glensouza/PlainSight/issues/13) Database-driven version management and canary deployments**
   `VersionService` is hardcoded to `"1.0.0"`. Add `DeviceGroupVersion` table, update `VersionService` to query it, rebuild the Versions Blazor page against real data, and add a version binary upload endpoint.
 
-- [ ] **[#14](https://github.com/glensouza/PlainSight/issues/14) Complete screenshot pipeline: player upload, server storage, admin preview**
+- [X] **[#14](https://github.com/glensouza/PlainSight/issues/14) Complete screenshot pipeline: player upload, server storage, admin preview**
   Player captures screen but never uploads it. Complete the full round-trip: player POSTs PNG to server, server stores it on SMB share, Devices page shows a preview modal. *(Depends on #12)*
 
-	- [x] **[#15](https://github.com/glensouza/PlainSight/issues/15) Complete WebsiteRecorder: PuppeteerSharp screencast + FFmpeg MP4 encoding**
+- [x] **[#15](https://github.com/glensouza/PlainSight/issues/15) Complete WebsiteRecorder: PuppeteerSharp screencast + FFmpeg MP4 encoding**
   `ConvertUrlToVideoAsync` opens the page and returns without writing any video. Implement frame capture via `Page.StartScreencastAsync()` piped into an FFmpeg subprocess. Add FFmpeg to the Docker image.
 
 ---
@@ -86,7 +86,7 @@ Implementation plan for completing incomplete features and improving the app. Is
 | 2 | #13 | Unblocks #19 and #22; standalone | ✅ Done |
 | 3 | #15 | Standalone; completes a visible broken feature | ✅ Done |
 | 4 | #16 | Standalone; should land before the app is exposed externally | ✅ Done |
-| 5 | #14 | Depends on #12 | |
+| 5 | #14 | Depends on #12 | ✅ Done |
 | 6 | #17 | Depends on #16 | |
 | 7 | #18 | Depends on #12 | |
 | 8 | #20 | Standalone; no blockers | |
