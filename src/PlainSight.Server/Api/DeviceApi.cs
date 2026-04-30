@@ -16,6 +16,13 @@ public static class DeviceApi
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
+    private static bool VerifyApiKey(string incomingKey, string storedHash)
+    {
+        byte[] incomingHash = SHA256.HashData(Encoding.UTF8.GetBytes(incomingKey));
+        byte[] expectedHash = Convert.FromHexString(storedHash);
+        return CryptographicOperations.FixedTimeEquals(incomingHash, expectedHash);
+    }
+
     private static string SanitizeForLog(string? value) =>
         value == null ? "(null)" : value.Replace('\r', '_').Replace('\n', '_').Replace('\0', '_');
 
@@ -54,8 +61,7 @@ public static class DeviceApi
                         return Results.Unauthorized();
                     }
 
-                    string hashedIncoming = HashApiKey(incomingKey);
-                    if (!string.Equals(hashedIncoming, device.ApiKey, StringComparison.Ordinal))
+                    if (!VerifyApiKey(incomingKey, device.ApiKey))
                     {
                         logger.LogWarning("Heartbeat rejected for device {DeviceId}: invalid API key", SanitizeForLog(data.DeviceId));
                         return Results.Unauthorized();
@@ -295,7 +301,7 @@ public static class DeviceApi
 
             logger.LogInformation("API key reset for device {DeviceId}", SanitizeForLog(deviceId));
             return Results.Ok();
-        });
+        }).RequireAuthorization();
 
         return group;
     }

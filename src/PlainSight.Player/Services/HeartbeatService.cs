@@ -12,17 +12,30 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
     private readonly string version = FormatVersion(typeof(HeartbeatService).Assembly.GetName().Version);
     private static readonly string ApiKeyPath = Environment.GetEnvironmentVariable("PLAINSIGHT_APIKEY_PATH") ?? "/etc/plainsight/apikey";
 
+    // In-memory cache so heartbeats keep working even if the key file cannot be written
+    private string? cachedApiKey;
+
     private static string FormatVersion(Version? v) =>
         v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "0.0.0";
 
     private string? LoadApiKey()
     {
+        // Prefer the in-memory cache (set when key was assigned or first loaded)
+        if (cachedApiKey != null)
+        {
+            return cachedApiKey;
+        }
+
         try
         {
             if (File.Exists(ApiKeyPath))
             {
                 string key = File.ReadAllText(ApiKeyPath).Trim();
-                return string.IsNullOrEmpty(key) ? null : key;
+                if (!string.IsNullOrEmpty(key))
+                {
+                    cachedApiKey = key;
+                    return cachedApiKey;
+                }
             }
         }
         catch (Exception ex)
@@ -35,6 +48,9 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
 
     private void SaveApiKey(string key)
     {
+        // Cache in memory immediately so subsequent heartbeats work even if disk write fails
+        cachedApiKey = key;
+
         try
         {
             string? directory = Path.GetDirectoryName(ApiKeyPath);
@@ -43,8 +59,10 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
                 Directory.CreateDirectory(directory);
             }
 
-            // Create the file with 0600 permissions from the start to avoid
-            // a window where the file is world-readable.
+            // Write to a temp file first, then atomically move into place so a crash
+            // mid-write cannot leave a truncated key file.
+            string tempPath = ApiKeyPath + ".tmp";
+
             FileStreamOptions opts = new()
             {
                 Mode = FileMode.Create,
@@ -57,17 +75,25 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
                 opts.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
             }
 
-            using (FileStream fs = new(ApiKeyPath, opts))
+            using (FileStream fs = new(tempPath, opts))
             using (StreamWriter writer = new(fs))
             {
                 writer.Write(key);
             }
 
+            // Ensure the final path also has 0600 when replacing an existing file
+            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+            {
+                File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+
+            File.Move(tempPath, ApiKeyPath, overwrite: true);
+
             logger.LogInformation("API key persisted to {Path}", ApiKeyPath);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to persist API key to {Path}", ApiKeyPath);
+            logger.LogError(ex, "Failed to persist API key to {Path} — key is cached in memory for this session", ApiKeyPath);
         }
     }
 
