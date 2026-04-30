@@ -30,6 +30,11 @@ namespace PlainSight.Server.Migrations
                 columns: new[] { "Id", "Name", "Description" },
                 values: new object[] { 1, "Default", null });
 
+            // Explicit Id overrides don't advance the identity sequence in PostgreSQL,
+            // so reset it now or the next auto-generated insert will also try Id=1.
+            migrationBuilder.Sql(
+                @"SELECT setval(pg_get_serial_sequence('""DeviceGroups""', 'Id'), MAX(""Id"")) FROM ""DeviceGroups"";");
+
             // Migrate any existing group names from DeviceGroupVersions that aren't already in DeviceGroups
             migrationBuilder.Sql(
                 @"INSERT INTO ""DeviceGroups"" (""Name"", ""Description"")
