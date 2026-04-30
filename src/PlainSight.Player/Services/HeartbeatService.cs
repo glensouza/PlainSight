@@ -18,8 +18,7 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
     {
         try
         {
-            string? callbackUrl = server.Features.Get<IServerAddressesFeature>()?.Addresses
-                .FirstOrDefault(a => a.StartsWith("http://"));
+            string? callbackUrl = GetCallbackUrl();
 
             DeviceTelemetryDto telemetry = new()
             {
@@ -44,5 +43,27 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
             logger.LogError(ex, "Error sending heartbeat");
             return null;
         }
+    }
+
+    private string? GetCallbackUrl()
+    {
+        string? address = server.Features.Get<IServerAddressesFeature>()?.Addresses
+            .FirstOrDefault(a => a.StartsWith("http://", StringComparison.OrdinalIgnoreCase));
+
+        if (string.IsNullOrEmpty(address))
+        {
+            return null;
+        }
+
+        // If bound to all interfaces (*, 0.0.0.0, [::]), replace with the machine name
+        // so the server has a better chance of reaching us.
+        Uri uri = new(address);
+        if (uri.Host is "*" or "0.0.0.0" or "[::]" or "localhost" or "127.0.0.1")
+        {
+            string host = uri.Host is "localhost" or "127.0.0.1" ? "localhost" : Environment.MachineName;
+            address = new UriBuilder(uri) { Host = host }.Uri.ToString().TrimEnd('/');
+        }
+
+        return address;
     }
 }
