@@ -118,14 +118,19 @@ public static class VersionApi
             if (string.IsNullOrWhiteSpace(groupName) || string.IsNullOrWhiteSpace(request.TargetVersion))
                 return Results.BadRequest("Group name and target version are required");
 
-            // Validate version exists
-            bool versionExists = await context.PlayerVersions
-                .AnyAsync(v => v.VersionNumber == request.TargetVersion, ct);
-            if (!versionExists)
-                return Results.BadRequest($"Version {request.TargetVersion} does not exist");
-
             DeviceGroupVersion? existing = await context.DeviceGroupVersions
                 .FirstOrDefaultAsync(g => g.GroupName == groupName, ct);
+
+            // Validate version exists if it's changing OR if it's a new group
+            if (existing == null || existing.TargetVersion != request.TargetVersion)
+            {
+                bool versionExists = await context.PlayerVersions
+                    .AnyAsync(v => v.VersionNumber == request.TargetVersion, ct);
+                
+                // Allow "1.0.0" as a fallback if no versions exist yet (bootstrap case)
+                if (!versionExists && request.TargetVersion != "1.0.0")
+                    return Results.BadRequest($"Version {request.TargetVersion} does not exist");
+            }
 
             if (existing == null)
             {
@@ -134,6 +139,7 @@ public static class VersionApi
             }
 
             existing.TargetVersion = request.TargetVersion;
+            existing.DefaultPlaylistId = request.DefaultPlaylistId;
             await context.SaveChangesAsync(ct);
 
             return Results.Ok(existing);
@@ -159,4 +165,4 @@ public static class VersionApi
     }
 }
 
-public sealed record GroupVersionRequest(string TargetVersion);
+public sealed record GroupVersionRequest(string TargetVersion, int? DefaultPlaylistId = null);

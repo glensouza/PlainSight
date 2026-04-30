@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PlainSight.Server.Data;
@@ -11,9 +12,11 @@ using PlainSight.Server.Data;
 namespace PlainSight.Server.Migrations
 {
     [DbContext(typeof(PlainSightDbContext))]
-    partial class PlainSightDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260430190937_AddScheduleDate")]
+    partial class AddScheduleDate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -295,6 +298,9 @@ namespace PlainSight.Server.Migrations
                     b.Property<int>("DaysOfWeek")
                         .HasColumnType("integer");
 
+                    b.Property<string>("DeviceGroup")
+                        .HasColumnType("text");
+
                     b.Property<TimeOnly>("EndTime")
                         .HasColumnType("time without time zone");
 
@@ -322,29 +328,6 @@ namespace PlainSight.Server.Migrations
                     b.HasIndex("PlaylistId");
 
                     b.ToTable("Schedules");
-                });
-
-            modelBuilder.Entity("PlainSight.Shared.Models.ScheduleTargetGroup", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("GroupName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("ScheduleId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ScheduleId", "GroupName")
-                        .IsUnique();
-
-                    b.ToTable("ScheduleTargetGroup");
                 });
 
             modelBuilder.Entity("PlainSight.Shared.Models.DeviceGroupVersion", b =>
@@ -387,25 +370,9 @@ namespace PlainSight.Server.Migrations
                     b.Navigation("Playlist");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.ScheduleTargetGroup", b =>
-                {
-                    b.HasOne("PlainSight.Shared.Models.Schedule", "Schedule")
-                        .WithMany("TargetGroups")
-                        .HasForeignKey("ScheduleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Schedule");
-                });
-
             modelBuilder.Entity("PlainSight.Shared.Models.Playlist", b =>
                 {
                     b.Navigation("Items");
-                });
-
-            modelBuilder.Entity("PlainSight.Shared.Models.Schedule", b =>
-                {
-                    b.Navigation("TargetGroups");
                 });
 #pragma warning restore 612, 618
         }

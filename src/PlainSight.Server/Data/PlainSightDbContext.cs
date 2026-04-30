@@ -9,6 +9,7 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
     public DbSet<ContentItem> ContentItems => this.Set<ContentItem>();
     public DbSet<Playlist> Playlists => this.Set<Playlist>();
     public DbSet<PlaylistItem> PlaylistItems => this.Set<PlaylistItem>();
+    public DbSet<Schedule> Schedules => this.Set<Schedule>();
     public DbSet<PlayerVersion> PlayerVersions => this.Set<PlayerVersion>();
     public DbSet<DeviceGroupVersion> DeviceGroupVersions => this.Set<DeviceGroupVersion>();
     public DbSet<AdminUser> AdminUsers => this.Set<AdminUser>();
@@ -38,6 +39,25 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        modelBuilder.Entity<Schedule>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.Playlist)
+                .WithMany()
+                .HasForeignKey(e => e.PlaylistId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ScheduleTargetGroup>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.Schedule)
+                .WithMany(s => s.TargetGroups)
+                .HasForeignKey(e => e.ScheduleId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => new { e.ScheduleId, e.GroupName }).IsUnique();
+        });
+
         modelBuilder.Entity<PlaylistItem>(entity =>
         {
             entity.HasKey(e => e.Id);
@@ -57,6 +77,11 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.GroupName).IsUnique();
+
+            entity.HasOne(e => e.DefaultPlaylist)
+                .WithMany()
+                .HasForeignKey(e => e.DefaultPlaylistId)
+                .OnDelete(DeleteBehavior.SetNull);
 
             // Seed Default group
             entity.HasData(new DeviceGroupVersion

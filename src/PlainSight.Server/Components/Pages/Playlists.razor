@@ -152,6 +152,38 @@ else
                     {
                         <p class="text-muted">No items in this playlist yet.</p>
                     }
+
+                    <hr />
+                    <h6>Add Content</h6>
+                    @if (availableContent == null)
+                    {
+                        <p><em>Loading available content...</em></p>
+                    }
+                    else if (!availableContent.Any())
+                    {
+                        <div class="alert alert-warning py-2 small">
+                            No content available. Upload videos in the <a href="content">Content</a> page first.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="row g-2">
+                            <div class="col-md-8">
+                                <select class="form-select form-select-sm" @bind="selectedContentId">
+                                    <option value="0">Select content to add...</option>
+                                    @foreach (var content in availableContent)
+                                    {
+                                        <option value="@content.Id">@content.Name (@content.DurationSeconds s)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-sm btn-success w-100" @onclick="AddToPlaylist" disabled="@(selectedContentId == 0)">
+                                    <i class="bi bi-plus"></i> Add to Playlist
+                                </button>
+                            </div>
+                        </div>
+                    }
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" @onclick="CloseManageItems">Close</button>
@@ -171,6 +203,8 @@ else
     private bool playlistIsActive = true;
     private int? managingPlaylistId;
     private Playlist? selectedPlaylist;
+    private List<ContentItem>? availableContent;
+    private int selectedContentId;
 
     protected override async Task OnInitializedAsync()
     {
@@ -282,10 +316,12 @@ else
         try
         {
             selectedPlaylist = await httpClient!.GetFromJsonAsync<Playlist>($"/api/playlists/{playlistId}");
+            availableContent = await httpClient!.GetFromJsonAsync<List<ContentItem>>("/api/content");
+            selectedContentId = 0;
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error loading playlist items");
+            Logger.LogError(ex, "Error loading playlist items or available content");
         }
     }
 
@@ -293,6 +329,29 @@ else
     {
         managingPlaylistId = null;
         selectedPlaylist = null;
+        availableContent = null;
+    }
+
+    private async Task AddToPlaylist()
+    {
+        if (selectedContentId == 0 || !managingPlaylistId.HasValue) return;
+
+        try
+        {
+            AddPlaylistItemRequest itemData = new(selectedContentId);
+            HttpResponseMessage response = await httpClient!.PostAsJsonAsync($"/api/playlists/{managingPlaylistId.Value}/items", itemData);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                selectedContentId = 0;
+                await ManagePlaylistItems(managingPlaylistId.Value);
+                await LoadPlaylists();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error adding item to playlist");
+        }
     }
 
     private async Task RemoveFromPlaylist(int playlistItemId)
@@ -316,4 +375,6 @@ else
     {
         // Cleanup if needed
     }
+
+    private record AddPlaylistItemRequest(int ContentItemId);
 }

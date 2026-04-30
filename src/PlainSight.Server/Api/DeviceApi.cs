@@ -30,7 +30,7 @@ public static class DeviceApi
     {
         RouteGroupBuilder group = routes.MapGroup("/api/device");
 
-        group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ILoggerFactory loggerFactory, CancellationToken ct) =>
+        group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ScheduleService scheduleService, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             ILogger logger = loggerFactory.CreateLogger("DeviceApi");
             try
@@ -87,6 +87,13 @@ public static class DeviceApi
                 // Check for "Canary" Update assignment
                 string targetVersion = await versionService.GetTargetVersionAsync(device.Group, ct);
 
+                // Check for Scheduled Playlist
+                Playlist? activePlaylist = await scheduleService.GetActivePlaylistAsync(device.Group, DateTime.UtcNow);
+                List<string>? playlistFiles = activePlaylist?.Items
+                    .OrderBy(i => i.Order)
+                    .Select(i => i.ContentItem.FileName)
+                    .ToList();
+
                 HeartbeatResponse response = new()
                 {
                     // Command Flags
@@ -94,7 +101,8 @@ public static class DeviceApi
                     UpdateUrl = device.CurrentVersion != targetVersion
                         ? $"/api/updates/{targetVersion}/binary"
                         : null,
-                    AssignedApiKey = assignedApiKey
+                    AssignedApiKey = assignedApiKey,
+                    PlaylistFiles = playlistFiles
                 };
 
                 // Reset screenshot request
@@ -303,6 +311,28 @@ public static class DeviceApi
             return Results.Ok();
         }).RequireAuthorization();
 
+        group.MapPut("/{deviceId}/group", async (
+            string deviceId,
+            DeviceGroupUpdateRequest request,
+            PlainSightDbContext context,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            ILogger logger = loggerFactory.CreateLogger("DeviceApi");
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
+            if (device == null)
+                return Results.NotFound();
+
+            string oldGroup = device.Group;
+            device.Group = request.Group;
+            await context.SaveChangesAsync(ct);
+
+            logger.LogInformation("Device {DeviceId} moved from group {OldGroup} to {NewGroup}", deviceId, oldGroup, request.Group);
+            return Results.Ok();
+        }).RequireAuthorization();
+
         return group;
     }
 }
+
+public record DeviceGroupUpdateRequest(string Group);

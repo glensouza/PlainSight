@@ -43,7 +43,7 @@ Implementation plan for completing incomplete features and improving the app. Is
 
 ## Phase 5 — New Features
 
-- [ ] **[#19](https://github.com/glensouza/PlainSight/issues/19) Content scheduling: time-based playlist assignment**
+- [x] **[#19](https://github.com/glensouza/PlainSight/issues/19) Content scheduling: time-based playlist assignment**
   No way to schedule which playlist plays when. Add a `Schedule` table (playlist, device group, days of week, time range, priority). `ScheduleService` returns the active playlist for a group at the current time. Heartbeat response includes the active file list; player switches content when it changes. New Schedule admin page. *(Depends on #13)*
 
 - [ ] **[#20](https://github.com/glensouza/PlainSight/issues/20) Device offline alerts via email**
@@ -90,6 +90,6 @@ Implementation plan for completing incomplete features and improving the app. Is
 | 6 | #17 | Depends on #16 | ✅ Done |
 | 7 | #18 | Depends on #12 | ✅ Done |
 | 8 | #20 | Standalone; no blockers | |
-| 9 | #19 | Depends on #13 | |
+| 9 | #19 | Depends on #13 | ✅ Done |
 | 10 | #21 | Depends on #14 | |
 | 11 | #22 | Depends on #13 and #14 | |

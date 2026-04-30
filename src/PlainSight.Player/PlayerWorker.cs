@@ -45,11 +45,32 @@ public class PlayerWorker(
                         else
                             logger.LogWarning("Screenshot capture returned empty result; skipping upload");
                     }
+
+                    if (response.PlaylistFiles != null)
+                    {
+                        playlist.UpdatePlaylist(response.PlaylistFiles);
+                    }
+                    else
+                    {
+                        // No scheduled playlist from server, refresh from the local playlist.json (synced from SMB)
+                        await playlist.RefreshAsync(stoppingToken);
+                    }
+                }
+                else
+                {
+                    // Fallback to disk if heartbeat fails
+                    await playlist.RefreshAsync(stoppingToken);
                 }
 
-                // Sync and refresh playlist on the same cadence as the heartbeat
-                await cache.SyncAsync(stoppingToken);
-                await playlist.RefreshAsync(stoppingToken);
+                // Sync from SMB to local cache; isolated so an SMB outage doesn't suppress the heartbeat
+                try
+                {
+                    await cache.SyncAsync(stoppingToken);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "SMB cache sync failed; continuing with cached content");
+                }
 
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
             }
