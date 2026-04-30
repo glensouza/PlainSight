@@ -34,6 +34,7 @@ public static class DeviceApi
                 device.LastSeen = DateTime.UtcNow;
                 device.CurrentVersion = data.AppVersion;
                 device.CurrentlyPlaying = data.CurrentFileName;
+                device.CallbackUrl = data.CallbackUrl;
 
                 await context.SaveChangesAsync(ct);
 
@@ -73,12 +74,58 @@ public static class DeviceApi
             return Results.Ok(devices);
         });
 
-        group.MapPost("/{deviceId}/screenshot", async (string deviceId, PlainSightDbContext context, CancellationToken ct) =>
+        group.MapPost("/{deviceId}/screenshot", async (
+            string deviceId,
+            PlainSightDbContext context,
+            IHttpClientFactory httpClientFactory,
+            IConfiguration configuration,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
         {
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
-
             if (device == null)
                 return Results.NotFound();
+
+            ILogger logger = loggerFactory.CreateLogger("DeviceApi");
+
+            if (!string.IsNullOrEmpty(device.CallbackUrl))
+            {
+                try
+                {
+                    HttpClient client = httpClientFactory.CreateClient("player");
+                    HttpResponseMessage response = await client.GetAsync($"{device.CallbackUrl.TrimEnd('/')}/api/screenshot", ct);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        byte[] bytes = await response.Content.ReadAsByteArrayAsync(ct);
+                        if (bytes.Length > 0)
+                        {
+                            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/signage/screenshots";
+                            string deviceDir = Path.Combine(screenshotsRoot, deviceId);
+                            Directory.CreateDirectory(deviceDir);
+
+                            string timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+                            string fileName = $"{timestamp}_{Guid.NewGuid():N}.png";
+                            string filePath = Path.Combine(deviceDir, fileName);
+
+                            await File.WriteAllBytesAsync(filePath, bytes, ct);
+
+                            device.LatestScreenshotPath = filePath;
+                            device.LatestScreenshotAt = DateTime.UtcNow;
+                            device.ScreenshotRequested = false;
+                            await context.SaveChangesAsync(ct);
+
+                            logger.LogInformation("Live screenshot saved for device {DeviceId}: {Path}", deviceId, filePath);
+                            return Results.Ok();
+                        }
+                    }
+                    logger.LogWarning("Direct screenshot call failed for {DeviceId} with status {Status}, falling back to poll-based", deviceId, response.StatusCode);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Direct screenshot call failed for {DeviceId}, falling back to poll-based", deviceId);
+                }
+            }
 
             device.ScreenshotRequested = true;
             await context.SaveChangesAsync(ct);

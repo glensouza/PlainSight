@@ -98,6 +98,13 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
 app.MapGet("/api/playlist", (PlaylistService playlist) =>
     Results.Json(playlist.GetCurrentPlaylist()));
 
+// Direct live screenshot API called by the server
+app.MapGet("/api/screenshot", async (ScreenCaptureService screenCapture) =>
+{
+    byte[] bytes = await screenCapture.CaptureScreenshot();
+    return bytes.Length > 0 ? Results.Bytes(bytes, "image/png") : Results.StatusCode(503);
+});
+
 // Browser page reports which file it is currently playing
 app.MapPost("/api/player/now-playing", async (HttpContext ctx, PlaylistService playlist) =>
 {

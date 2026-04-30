@@ -187,9 +187,21 @@ else
         {
             HttpResponseMessage response = await httpClient!.PostAsync($"/api/device/{deviceId}/screenshot", null);
             if (response.IsSuccessStatusCode)
+            {
                 Logger.LogInformation("Screenshot requested for device {DeviceId}", deviceId);
+
+                // Reload devices to get the new screenshot info and show it immediately
+                await LoadDevices();
+                Device? updated = devices?.FirstOrDefault(d => d.DeviceId == deviceId);
+                if (updated != null && updated.LatestScreenshotAt.HasValue)
+                {
+                    ShowScreenshot(updated);
+                }
+            }
             else
+            {
                 Logger.LogWarning("Failed to request screenshot for device {DeviceId}", deviceId);
+            }
         }
         catch (Exception ex)
         {
