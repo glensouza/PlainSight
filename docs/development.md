@@ -34,13 +34,13 @@ dotnet run --project src/PlainSight.AppHost
 
 This will:
 - Start PostgreSQL in a container
-- Start the Signage.Server application
+- Start the PlainSight.Server application
 - Open the Aspire dashboard
 
 ### 4. Access Applications
 
 - **Aspire Dashboard**: http://localhost:15888
-- **Signage Server**: http://localhost:5000 (check Aspire dashboard for actual port)
+- **PlainSight Server**: http://localhost:5000 (check Aspire dashboard for actual port)
 
 ## Project Structure
 
@@ -49,9 +49,9 @@ PlainSight/
 ├── src/
 │   ├── PlainSight.AppHost/          # Aspire orchestration
 │   ├── PlainSight.ServiceDefaults/  # Shared Aspire config
-│   ├── Signage.Server/              # Admin web application
-│   ├── Signage.Player/              # Raspberry Pi client
-│   └── Signage.Shared/              # Shared models
+│   ├── PlainSight.Server/              # Admin web application
+│   ├── PlainSight.Player/              # Raspberry Pi client
+│   └── PlainSight.Shared/              # Shared models
 ├── deployment/
 │   └── raspberry-pi/                # Pi deployment files
 ├── docs/                            # Documentation
@@ -70,14 +70,14 @@ dotnet build
 ### Build Specific Project
 
 ```bash
-dotnet build src/Signage.Server/Signage.Server.csproj
-dotnet build src/Signage.Player/Signage.Player.csproj
+dotnet build src/PlainSight.Server/PlainSight.Server.csproj
+dotnet build src/PlainSight.Player/PlainSight.Player.csproj
 ```
 
 ### Build Docker Image
 
 ```bash
-docker build -t plainsight-server -f src/Signage.Server/Dockerfile .
+docker build -t plainsight-server -f src/PlainSight.Server/Dockerfile .
 ```
 
 ## Running
@@ -85,7 +85,7 @@ docker build -t plainsight-server -f src/Signage.Server/Dockerfile .
 ### Run Server Only
 
 ```bash
-cd src/Signage.Server
+cd src/PlainSight.Server
 dotnet run
 ```
 
@@ -100,7 +100,7 @@ docker compose up
 ### Run Player (Development)
 
 ```bash
-cd src/Signage.Player
+cd src/PlainSight.Player
 dotnet run
 ```
 
@@ -120,7 +120,7 @@ dotnet tool install --global dotnet-ef
 Create migration:
 
 ```bash
-cd src/Signage.Server
+cd src/PlainSight.Server
 dotnet ef migrations add InitialCreate
 ```
 
@@ -136,10 +136,10 @@ When running with Aspire or Docker Compose:
 
 ```bash
 # Via Docker
-docker exec -it plainsight-postgres psql -U plainsight -d signagedb
+docker exec -it plainsight-postgres psql -U plainsight -d plainsightdb
 
 # Via psql (if installed locally)
-psql -h localhost -U plainsight -d signagedb
+psql -h localhost -U plainsight -d plainsightdb
 ```
 
 ## Testing
@@ -184,7 +184,7 @@ dotnet test
 1. Create method in controller:
 
 ```csharp
-// src/Signage.Server/Controllers/DeviceController.cs
+// src/PlainSight.Server/Controllers/DeviceController.cs
 [HttpGet("{id}")]
 public async Task<IActionResult> GetDevice(int id)
 {
@@ -201,10 +201,10 @@ curl http://localhost:5000/api/device/1
 
 ### Add New Database Entity
 
-1. Create model in Signage.Shared:
+1. Create model in PlainSight.Shared:
 
 ```csharp
-// src/Signage.Shared/Models/Content.cs
+// src/PlainSight.Shared/Models/Content.cs
 public class Content
 {
     public int Id { get; set; }
@@ -216,7 +216,7 @@ public class Content
 2. Add DbSet to context:
 
 ```csharp
-// src/Signage.Server/Data/SignageDbContext.cs
+// src/PlainSight.Server/Data/PlainSightDbContext.cs
 public DbSet<Content> Contents => Set<Content>();
 ```
 
@@ -232,7 +232,7 @@ dotnet ef database update
 1. Create service:
 
 ```csharp
-// src/Signage.Player/Services/NewService.cs
+// src/PlainSight.Player/Services/NewService.cs
 public class NewService
 {
     private readonly ILogger<NewService> _logger;

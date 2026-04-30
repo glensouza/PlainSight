@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/signage-server
+  IMAGE_NAME: ${{ github.repository }}/plainsight-server
 
 jobs:
   build-and-push:
@@ -50,7 +50,7 @@ jobs:
       uses: docker/build-push-action@v6
       with:
         context: .
-        file: ./src/Signage.Server/Dockerfile
+        file: ./src/PlainSight.Server/Dockerfile
         push: ${{ github.event_name != 'pull_request' }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
@@ -111,7 +111,7 @@ jobs:
 
     - name: Build Player for Raspberry Pi (ARM64)
       run: |
-        dotnet publish src/Signage.Player/Signage.Player.csproj \
+        dotnet publish src/PlainSight.Player/PlainSight.Player.csproj \
           -c Release \
           -r linux-arm64 \
           --self-contained \
@@ -120,31 +120,17 @@ jobs:
           -p:DebugSymbols=false \
           -o ./publish/player
 
-    - name: Build Photino Player for Raspberry Pi (ARM64)
-      run: |
-        dotnet publish src/Signage.Player.Photino/Signage.Player.Photino.csproj \
-          -c Release \
-          -r linux-arm64 \
-          --self-contained \
-          -p:PublishSingleFile=true \
-          -p:DebugType=None \
-          -p:DebugSymbols=false \
-          -o ./publish/player-photino
-
     - name: Create artifact archives
       run: |
         cd ./publish/player
-        tar -czf ../signage-player-${{ github.ref_name }}.tar.gz *
-        cd ../player-photino
-        tar -czf ../signage-player-photino-${{ github.ref_name }}.tar.gz *
+        tar -czf ../plainsight-player-${{ github.ref_name }}.tar.gz *
         cd ../..
 
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          ./publish/signage-player-${{ github.ref_name }}.tar.gz
-          ./publish/signage-player-photino-${{ github.ref_name }}.tar.gz
+          ./publish/plainsight-player-${{ github.ref_name }}.tar.gz
         generate_release_notes: true
 
   deploy-to-server:
@@ -157,8 +143,8 @@ jobs:
     - name: Deploy to production server
       run: |
         cd ${{ vars.DEPLOYMENT_PATH }}
-        docker compose pull signage-server
-        docker compose up -d signage-server
+        docker compose pull plainsight-server
+        docker compose up -d plainsight-server
         
     - name: Verify deployment
       run: |

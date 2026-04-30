@@ -10,9 +10,9 @@ Created a complete .NET 10 solution with the following projects:
 
 - **PlainSight.AppHost** - .NET Aspire orchestration host
 - **PlainSight.ServiceDefaults** - Shared Aspire configuration
-- **Signage.Server** - ASP.NET Core Blazor admin web application
-- **Signage.Player** - Console application for Raspberry Pi devices
-- **Signage.Shared** - Shared models and DTOs
+- **PlainSight.Server** - ASP.NET Core Blazor admin web application
+- **PlainSight.Player** - Console application for Raspberry Pi devices
+- **PlainSight.Shared** - Shared models and DTOs
 
 ### 2. Server Application ✓
 
@@ -23,7 +23,7 @@ Created a complete .NET 10 solution with the following projects:
 - RESTful API controllers
 
 **Implemented Components:**
-- ✅ SignageDbContext - Database context with Device entity
+- ✅ PlainSightDbContext - Database context with Device entity
 - ✅ DeviceController - API endpoints for device communication
 - ✅ WebsiteRecorder - Content rendering service (PuppeteerSharp)
 - ✅ VersionService - Update version management
@@ -87,7 +87,7 @@ Device Table:
 
 **Configuration:**
 - PostgreSQL container with persistent lifetime
-- Database reference for Signage.Server
+- Database reference for PlainSight.Server
 - Service discovery and configuration
 
 **Benefits:**
@@ -167,7 +167,7 @@ GitHub Actions (CI/CD)
     
 Production Server (Docker)
     ├─► PostgreSQL Container (Database)
-    ├─► Signage.Server Container (Admin Web + API)
+    ├─► PlainSight.Server Container (Admin Web + API)
     └─► Samba Container (File Share)
     
 Raspberry Pi Fleet
@@ -267,7 +267,7 @@ All requirements from the issue have been implemented:
 | Requirement | Status | Implementation |
 |------------|--------|----------------|
 | Product name "PlainSight" | ✅ | Used throughout codebase and documentation |
-| Admin web hosted in Docker on-prem | ✅ | Docker Compose with Signage.Server |
+| Admin web hosted in Docker on-prem | ✅ | Docker Compose with PlainSight.Server |
 | PostgreSQL database | ✅ | PostgreSQL 17 container with EF Core |
 | Aspire orchestration | ✅ | PlainSight.AppHost project |
 | GitHub Actions workflow | ✅ | CI/CD with Ubuntu runners (Docker builds) |

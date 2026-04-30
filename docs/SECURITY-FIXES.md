@@ -56,7 +56,7 @@ status.appendChild(document.createTextNode(message));
 ```
 
 #### 3. Command Injection in Shell Script
-**Location**: `install-photino.sh:74, 80-81, 134`
+**Location**: `install.sh`
 **Risk**: Medium - Unquoted variables could allow injection
 
 **Fix Applied**: Added quotes around all variable expansions
@@ -69,9 +69,7 @@ status.appendChild(document.createTextNode(message));
 **Location**: Multiple configuration files
 **Risk**: Medium - HTTP allows man-in-the-middle attacks
 
-**Fix Applied**: Added warnings and HTTPS recommendations
-- `install-photino.sh`: Added warning about HTTP and recommendation for HTTPS
-- `signage-photino.service`: Added comment recommending HTTPS for production
+**Fix Applied**: Added warnings and HTTPS recommendations to `install.sh`
 
 ## Code Quality Improvements
 
@@ -202,17 +200,13 @@ Automated Review ✓ All critical issues addressed
 
 ## Files Modified
 
-1. **src/Signage.Player.Photino/Program.cs** - Major refactoring for security and quality
-2. **src/Signage.Player.Photino/Signage.Player.Photino.csproj** - Added logging packages
-3. **src/Signage.Player.Photino/wwwroot/index.html** - Security fixes and UX improvements
-4. **src/Signage.Player.Photino/Services/HeartbeatService.cs** - Logging implementation
-5. **src/Signage.Player.Photino/Services/UpdateService.cs** - Logging implementation
-6. **src/Signage.Player.Photino/Services/ScreenCaptureService.cs** - Logging and exit code checking
-7. **src/Signage.Player.Photino/Services/PlaylistService.cs** - Thread safety and validation
-8. **deployment/raspberry-pi/install-photino.sh** - Security improvements
-9. **deployment/raspberry-pi/config/labwc-autostart-photino** - Remove conflict
-10. **deployment/raspberry-pi/systemd/signage-photino.service** - HTTPS recommendation
-11. **docs/WINDOWS-DEVELOPMENT.md** - New comprehensive guide
+1. **src/PlainSight.Player/Program.cs** - Major refactoring for security and quality
+2. **src/PlainSight.Player/wwwroot/index.html** - Security fixes and UX improvements
+3. **src/PlainSight.Player/Services/HeartbeatService.cs** - Logging implementation
+4. **src/PlainSight.Player/Services/UpdateService.cs** - Logging implementation
+5. **src/PlainSight.Player/Services/ScreenCaptureService.cs** - Logging and exit code checking
+6. **src/PlainSight.Player/Services/PlaylistService.cs** - Thread safety and validation
+7. **deployment/raspberry-pi/install.sh** - Security improvements
 
 ## Impact Assessment
 

@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_USER: plainsight
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD environment variable is required}
-      POSTGRES_DB: signagedb
+      POSTGRES_DB: plainsightdb
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -19,15 +19,15 @@ services:
       timeout: 5s
       retries: 5
 
-  signage-server:
+  plainsight-server:
     build:
       context: .
-      dockerfile: src/Signage.Server/Dockerfile
+      dockerfile: src/PlainSight.Server/Dockerfile
     container_name: plainsight-server
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__signagedb=Host=postgres;Database=signagedb;Username=plainsight;Password=${POSTGRES_PASSWORD}
+      - ConnectionStrings__plainsightdb=Host=postgres;Database=plainsightdb;Username=plainsight;Password=${POSTGRES_PASSWORD}
     ports:
       - "8080:8080"
     volumes:

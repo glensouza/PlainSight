@@ -63,7 +63,7 @@ docker compose up -d
 
 This command will:
 - Pull the PostgreSQL 17 image
-- Build the Signage.Server Docker image
+- Build the PlainSight.Server Docker image
 - Pull the Samba file share image
 - Create volumes for persistent data
 - Start all services
@@ -92,12 +92,12 @@ Open your browser and navigate to:
 ### PostgreSQL Database
 
 - **Port**: 5432
-- **Database**: signagedb
+- **Database**: plainsightdb
 - **Username**: plainsight
 - **Password**: Set via `POSTGRES_PASSWORD` env var
 - **Data Volume**: `postgres_data`
 
-### Signage Server
+### PlainSight Server
 
 - **Port**: 8080
 - **Environment**: Production
@@ -124,8 +124,8 @@ docker compose up -d
 ### Manual Image Build
 
 ```bash
-docker compose build signage-server
-docker compose up -d signage-server
+docker compose build plainsight-server
+docker compose up -d plainsight-server
 ```
 
 ## Rollback
@@ -161,7 +161,7 @@ docker compose up -d
 docker compose logs -f
 
 # Specific service
-docker compose logs -f signage-server
+docker compose logs -f plainsight-server
 docker compose logs -f postgres
 ```
 
@@ -176,13 +176,13 @@ docker stats
 ### Backup Database
 
 ```bash
-docker compose exec postgres pg_dump -U plainsight signagedb > backup-$(date +%Y%m%d).sql
+docker compose exec postgres pg_dump -U plainsight plainsightdb > backup-$(date +%Y%m%d).sql
 ```
 
 ### Restore Database
 
 ```bash
-cat backup-20260125.sql | docker compose exec -T postgres psql -U plainsight signagedb
+cat backup-20260125.sql | docker compose exec -T postgres psql -U plainsight plainsightdb
 ```
 
 ### Clean Up Old Data
@@ -201,10 +201,10 @@ docker volume prune
 
 ```bash
 # Check logs
-docker compose logs signage-server
+docker compose logs plainsight-server
 
 # Restart service
-docker compose restart signage-server
+docker compose restart plainsight-server
 ```
 
 ### Database Connection Issues
@@ -253,7 +253,7 @@ Add to `docker-compose.yml`:
 
 ```yaml
 services:
-  signage-server:
+  plainsight-server:
     deploy:
       resources:
         limits:

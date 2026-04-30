@@ -1,8 +1,0 @@
-<labwc_config>
-  <windowRules>
-    <windowRule identifier="Signage.Player.Photino">
-      <action name="ToggleFullscreen" />
-      <action name="KeepAbove" />
-    </windowRule>
-  </windowRules>
-</labwc_config>

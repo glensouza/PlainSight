@@ -96,9 +96,9 @@ sudo apt install -y \
 #### Step 3: Create Directories
 
 ```bash
-sudo mkdir -p /opt/signage
+sudo mkdir -p /opt/plainsight
 sudo mkdir -p /mnt/signage
-sudo chown pi:pi /opt/signage
+sudo chown pi:pi /opt/plainsight
 ```
 
 #### Step 4: Download Player Binary
@@ -107,8 +107,8 @@ Replace `SERVER_IP` with your server's IP address:
 
 ```bash
 curl -L "http://SERVER_IP:8080/api/updates/latest/binary" \
-  -o /opt/signage/Signage.Player
-chmod +x /opt/signage/Signage.Player
+  -o /opt/plainsight/PlainSight.Player
+chmod +x /opt/plainsight/PlainSight.Player
 ```
 
 #### Step 5: Configure SMB Mount
@@ -146,7 +146,7 @@ WantedBy=multi-user.target
 
 #### Step 6: Configure Player Service
 
-Create `/etc/systemd/system/signage.service`:
+Create `/etc/systemd/system/plainsight.service`:
 
 ```ini
 [Unit]
@@ -157,8 +157,8 @@ Wants=mnt-signage.mount
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/opt/signage
-ExecStart=/opt/signage/Signage.Player
+WorkingDirectory=/opt/plainsight
+ExecStart=/opt/plainsight/PlainSight.Player
 Restart=always
 RestartSec=3
 Environment=DISPLAY=:0
@@ -177,7 +177,7 @@ Create `~/.config/labwc/rc.xml`:
 ```xml
 <labwc_config>
   <windowRules>
-    <windowRule identifier="Signage.Player">
+    <windowRule identifier="PlainSight.Player">
       <action name="ToggleFullscreen" />
       <action name="KeepAbove" />
     </windowRule>
@@ -193,7 +193,7 @@ Create `~/.config/labwc/autostart`:
 swayidle -w timeout 31536000 'wlopm --off \*' resume 'wlopm --on \*' &
 
 # Start PlainSight Player
-/opt/signage/Signage.Player &
+/opt/plainsight/PlainSight.Player &
 ```
 
 Make it executable:
@@ -207,7 +207,7 @@ chmod +x ~/.config/labwc/autostart
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable mnt-signage.automount
-sudo systemctl enable signage.service
+sudo systemctl enable plainsight.service
 ```
 
 #### Step 9: Reboot
@@ -224,13 +224,13 @@ After reboot, check the service status:
 
 ```bash
 # Check if player is running
-sudo systemctl status signage.service
+sudo systemctl status plainsight.service
 
 # Check if SMB share is mounted
 mount | grep signage
 
 # View player logs
-sudo journalctl -u signage.service -f
+sudo journalctl -u plainsight.service -f
 ```
 
 ### Configure in Admin Panel
@@ -265,10 +265,10 @@ If an update causes issues:
 2. Restore the backup binary:
 
 ```bash
-sudo systemctl stop signage.service
-cd /opt/signage
-mv Signage.Player.bak Signage.Player
-sudo systemctl start signage.service
+sudo systemctl stop plainsight.service
+cd /opt/plainsight
+mv PlainSight.Player.bak PlainSight.Player
+sudo systemctl start plainsight.service
 ```
 
 ## Troubleshooting
@@ -277,13 +277,13 @@ sudo systemctl start signage.service
 
 ```bash
 # Check service status
-sudo systemctl status signage.service
+sudo systemctl status plainsight.service
 
 # View detailed logs
-sudo journalctl -u signage.service -n 100
+sudo journalctl -u plainsight.service -n 100
 
 # Restart service
-sudo systemctl restart signage.service
+sudo systemctl restart plainsight.service
 ```
 
 ### SMB Mount Issues

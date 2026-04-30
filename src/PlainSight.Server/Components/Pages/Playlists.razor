@@ -1,0 +1,319 @@
+@page "/playlists"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Navigation
+@inject ILogger<Playlists> Logger
+@using PlainSight.Shared.Models
+@implements IDisposable
+
+<PageTitle>Playlists — PlainSight</PageTitle>
+
+<div class="page-header">
+    <h1>Playlists</h1>
+    <p class="text-muted mb-0">Create and manage content playlists for your digital signage devices</p>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <button class="btn btn-primary" @onclick="ShowCreatePlaylist">
+            <i class="bi bi-plus-circle"></i> Create New Playlist
+        </button>
+    </div>
+</div>
+
+@if (showCreateForm)
+{
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">@(editingPlaylistId.HasValue ? "Edit" : "Create") Playlist</h5>
+        </div>
+        <div class="card-body">
+            <div class="mb-3">
+                <label class="form-label">Name</label>
+                <input type="text" class="form-control" @bind="playlistName" placeholder="My Playlist" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Description</label>
+                <textarea class="form-control" @bind="playlistDescription" rows="2" placeholder="Optional description"></textarea>
+            </div>
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" @bind="playlistIsActive" id="isActive" />
+                    <label class="form-check-label" for="isActive">
+                        Active (available for assignment to devices)
+                    </label>
+                </div>
+            </div>
+            <button class="btn btn-primary" @onclick="SavePlaylist">
+                <i class="bi bi-save"></i> Save Playlist
+            </button>
+            <button class="btn btn-secondary" @onclick="CancelEdit">
+                Cancel
+            </button>
+        </div>
+    </div>
+}
+
+@if (playlists == null)
+{
+    <p><em>Loading playlists...</em></p>
+}
+else if (!playlists.Any())
+{
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> No playlists created yet. Create a playlist to organize your content.
+    </div>
+}
+else
+{
+    <div class="row">
+        @foreach (Playlist playlist in playlists)
+        {
+            <div class="col-md-6 mb-3">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            @playlist.Name
+                            @if (playlist.IsActive)
+                            {
+                                <span class="badge bg-success ms-2">Active</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary ms-2">Inactive</span>
+                            }
+                        </h5>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary" @onclick="() => EditPlaylist(playlist.Id)">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeletePlaylist(playlist.Id)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        @if (!string.IsNullOrEmpty(playlist.Description))
+                        {
+                            <p class="text-muted small">@playlist.Description</p>
+                        }
+                        <div class="mb-2">
+                            <strong>Items:</strong> @playlist.Items.Count
+                        </div>
+                        <small class="text-muted">
+                            Created: @playlist.CreatedAt.ToString("yyyy-MM-dd HH:mm")
+                        </small>
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-primary" @onclick="() => ManagePlaylistItems(playlist.Id)">
+                                <i class="bi bi-list"></i> Manage Content
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (managingPlaylistId.HasValue && selectedPlaylist != null)
+{
+    <div class="modal d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Manage Content: @selectedPlaylist.Name</h5>
+                    <button type="button" class="btn-close" @onclick="CloseManageItems"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> This feature allows you to add content items to the playlist. 
+                        Full drag-and-drop reordering will be implemented with JavaScript interop.
+                    </div>
+                    <h6>Current Items (@selectedPlaylist.Items.Count)</h6>
+                    @if (selectedPlaylist.Items.Any())
+                    {
+                        <div class="list-group">
+                            @foreach (PlaylistItem item in selectedPlaylist.Items.OrderBy(i => i.Order))
+                            {
+                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>@item.Order.</strong> @item.ContentItem.Name
+                                        <span class="badge bg-secondary ms-2">@item.ContentItem.DurationSeconds s</span>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveFromPlaylist(item.Id)">
+                                        <i class="bi bi-x"></i>
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-muted">No items in this playlist yet.</p>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseManageItems">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Playlist>? playlists;
+    private HttpClient? httpClient;
+    private bool showCreateForm;
+    private int? editingPlaylistId;
+    private string playlistName = "";
+    private string playlistDescription = "";
+    private bool playlistIsActive = true;
+    private int? managingPlaylistId;
+    private Playlist? selectedPlaylist;
+
+    protected override async Task OnInitializedAsync()
+    {
+        httpClient = HttpClientFactory.CreateClient();
+        httpClient.BaseAddress = new Uri(Navigation.BaseUri);
+        await LoadPlaylists();
+    }
+
+    private async Task LoadPlaylists()
+    {
+        try
+        {
+            playlists = await httpClient!.GetFromJsonAsync<List<Playlist>>("/api/playlists");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading playlists");
+            playlists = new List<Playlist>();
+        }
+    }
+
+    private void ShowCreatePlaylist()
+    {
+        showCreateForm = true;
+        editingPlaylistId = null;
+        playlistName = "";
+        playlistDescription = "";
+        playlistIsActive = true;
+    }
+
+    private void EditPlaylist(int id)
+    {
+        Playlist? playlist = playlists?.FirstOrDefault(p => p.Id == id);
+        if (playlist != null)
+        {
+            showCreateForm = true;
+            editingPlaylistId = id;
+            playlistName = playlist.Name;
+            playlistDescription = playlist.Description ?? "";
+            playlistIsActive = playlist.IsActive;
+        }
+    }
+
+    private void CancelEdit()
+    {
+        showCreateForm = false;
+        editingPlaylistId = null;
+    }
+
+    private async Task SavePlaylist()
+    {
+        if (string.IsNullOrWhiteSpace(playlistName))
+        {
+            Logger.LogWarning("Playlist name is required");
+            return;
+        }
+
+        try
+        {
+            var playlistData = new
+            {
+                Name = playlistName,
+                Description = playlistDescription,
+                IsActive = playlistIsActive
+            };
+
+            HttpResponseMessage? response;
+            if (editingPlaylistId.HasValue)
+            {
+                response = await httpClient!.PutAsJsonAsync($"/api/playlists/{editingPlaylistId}", playlistData);
+            }
+            else
+            {
+                response = await httpClient!.PostAsJsonAsync("/api/playlists", playlistData);
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
+                showCreateForm = false;
+                editingPlaylistId = null;
+                await LoadPlaylists();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving playlist");
+        }
+    }
+
+    private async Task DeletePlaylist(int id)
+    {
+        try
+        {
+            HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/playlists/{id}");
+            if (response.IsSuccessStatusCode)
+            {
+                await LoadPlaylists();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error deleting playlist");
+        }
+    }
+
+    private async Task ManagePlaylistItems(int playlistId)
+    {
+        managingPlaylistId = playlistId;
+        try
+        {
+            selectedPlaylist = await httpClient!.GetFromJsonAsync<Playlist>($"/api/playlists/{playlistId}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading playlist items");
+        }
+    }
+
+    private void CloseManageItems()
+    {
+        managingPlaylistId = null;
+        selectedPlaylist = null;
+    }
+
+    private async Task RemoveFromPlaylist(int playlistItemId)
+    {
+        try
+        {
+            HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/playlists/items/{playlistItemId}");
+            if (response.IsSuccessStatusCode && managingPlaylistId.HasValue)
+            {
+                await ManagePlaylistItems(managingPlaylistId.Value);
+                await LoadPlaylists();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error removing item from playlist");
+        }
+    }
+
+    public void Dispose()
+    {
+        // Cleanup if needed
+    }
+}

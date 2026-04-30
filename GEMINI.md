@@ -5,8 +5,7 @@ PlainSight is an enterprise-grade digital signage solution optimized for Raspber
 ## 🚀 Project Overview
 
 - **Server**: ASP.NET Core 10 & Blazor Web App (Interactive Server Mode). Handles device management, content rendering (PuppeteerSharp), and update distribution.
-- **Player**: .NET 10 worker service that streams content from an SMB share, reports telemetry via heartbeats, and supports self-updating.
-- **Photino Player**: An alternative UI-based player using Photino.NET for native video playback.
+- **Player**: .NET 10 web app that streams content from an SMB share, reports telemetry via heartbeats, supports self-updating, and launches Chromium in kiosk mode to display an HTML5 video player page.
 - **Orchestration**: .NET Aspire is used for development-time orchestration of the server, player, and PostgreSQL database.
 - **Storage**: PostgreSQL for metadata/telemetry and Samba for content distribution.
 
@@ -29,7 +28,7 @@ Ensure you have configured your `.env` file based on `.env.example`.
 Players are typically deployed using the installation scripts in `deployment/raspberry-pi/`.
 To build the player binary manually for ARM64:
 ```powershell
-dotnet publish src/Signage.Player/Signage.Player.csproj -r linux-arm64 --self-contained -p:PublishSingleFile=true
+dotnet publish src/PlainSight.Player/PlainSight.Player.csproj -r linux-arm64 --self-contained -p:PublishSingleFile=true
 ```
 
 ## 📏 Development Conventions
@@ -45,14 +44,13 @@ dotnet publish src/Signage.Player/Signage.Player.csproj -r linux-arm64 --self-co
 ### Architecture & Patterns
 - **Heartbeat Pattern**: Players must report status every 30 seconds via the heartbeat API.
 - **Self-Updating**: The player is designed to download updates and restart itself (via systemd).
-- **Service Discovery**: Use .NET Aspire service discovery (`http://signage-server`) for internal communication.
+- **Service Discovery**: Use .NET Aspire service discovery (`http://plainsight-server`) for internal communication.
 
 ## 📁 Key Directories
 
 - `src/PlainSight.AppHost`: Aspire orchestrator.
-- `src/Signage.Server`: Admin dashboard and API controllers.
-- `src/Signage.Player`: Core player logic (Console/Worker).
-- `src/Signage.Player.Photino`: UI-enhanced player (Photino.NET).
-- `src/Signage.Shared`: Shared models and DTOs.
+- `src/PlainSight.Server`: Admin dashboard and API controllers.
+- `src/PlainSight.Player`: Raspberry Pi player (Chromium kiosk, heartbeat, self-update).
+- `src/PlainSight.Shared`: Shared models and DTOs.
 - `deployment/`: Configuration and install scripts for Raspberry Pi.
 - `docs/`: Comprehensive technical documentation.

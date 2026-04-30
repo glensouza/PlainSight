@@ -1,0 +1,94 @@
+@page "/login"
+@layout LoginLayout
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@using Microsoft.EntityFrameworkCore
+@using PlainSight.Server.Data
+@inject PlainSightDbContext DbContext
+@inject NavigationManager Navigation
+
+<PageTitle>Sign In — PlainSight</PageTitle>
+
+<div class="card shadow-lg border-0">
+    <div class="card-body p-4">
+        <div class="text-center mb-4">
+            <i class="bi bi-display-fill" style="font-size: 2.5rem; color: #6c63ff;"></i>
+            <h4 class="mt-2 mb-0 fw-bold">PlainSight</h4>
+            <p class="text-muted small">Digital Signage Administration</p>
+        </div>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger py-2">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i> @errorMessage
+            </div>
+        }
+
+        <EditForm Model="Model" OnValidSubmit="HandleLoginAsync" method="post" FormName="login">
+            <DataAnnotationsValidator />
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Username</label>
+                <InputText @bind-Value="Model!.Username" class="form-control" autocomplete="username" />
+            </div>
+            <div class="mb-4">
+                <label class="form-label fw-semibold">Password</label>
+                <InputText @bind-Value="Model!.Password" type="password" class="form-control" autocomplete="current-password" />
+            </div>
+            <button type="submit" class="btn btn-primary w-100">
+                <i class="bi bi-box-arrow-in-right me-1"></i> Sign In
+            </button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    [SupplyParameterFromForm]
+    private LoginModel? Model { get; set; }
+
+    private string? errorMessage;
+
+    protected override void OnInitialized()
+    {
+        Model ??= new();
+    }
+
+    private async Task HandleLoginAsync()
+    {
+        AdminUser? user = await DbContext.AdminUsers
+            .FirstOrDefaultAsync(u => u.Username == Model!.Username && u.IsActive);
+
+        if (user is null || !BCrypt.Net.BCrypt.Verify(Model!.Password, user.PasswordHash))
+        {
+            errorMessage = "Invalid username or password.";
+            return;
+        }
+
+        user.LastLoginAt = DateTime.UtcNow;
+        await DbContext.SaveChangesAsync();
+
+        List<Claim> claims =
+        [
+            new Claim(ClaimTypes.Name, user.Username),
+            new Claim(ClaimTypes.Role, user.Role.ToString())
+        ];
+        if (user.MustChangePassword)
+            claims.Add(new Claim("must_change_password", "true"));
+
+        ClaimsIdentity identity = new(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        ClaimsPrincipal principal = new(identity);
+
+        await HttpContext!.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
+        Navigation.NavigateTo(user.MustChangePassword ? "/change-password" : "/", forceLoad: true);
+    }
+
+    private sealed class LoginModel
+    {
+        public string Username { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+}

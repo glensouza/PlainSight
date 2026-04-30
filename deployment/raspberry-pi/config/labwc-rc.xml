@@ -1,6 +1,6 @@
 <labwc_config>
   <windowRules>
-    <windowRule identifier="Signage.Player">
+    <windowRule identifier="PlainSight.Player">
       <action name="ToggleFullscreen" />
       <action name="KeepAbove" />
     </windowRule>
