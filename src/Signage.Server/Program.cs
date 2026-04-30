@@ -70,6 +70,7 @@ using (IServiceScope scope = app.Services.CreateScope())
             Username = "admin",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin"),
             IsActive = true,
+            Role = AdminUserRole.Admin,
             CreatedAt = DateTime.UtcNow
         });
         dbContext.SaveChanges();
@@ -88,6 +89,20 @@ app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Redirect authenticated users who must change their password
+app.Use(async (ctx, next) =>
+{
+    if (ctx.User.Identity?.IsAuthenticated == true
+        && ctx.User.HasClaim("must_change_password", "true")
+        && !ctx.Request.Path.StartsWithSegments("/change-password")
+        && !ctx.Request.Path.StartsWithSegments("/auth"))
+    {
+        ctx.Response.Redirect("/change-password");
+        return;
+    }
+    await next();
+});
 
 app.UseAntiforgery();
 

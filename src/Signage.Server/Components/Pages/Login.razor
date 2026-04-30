@@ -71,12 +71,19 @@
         user.LastLoginAt = DateTime.UtcNow;
         await DbContext.SaveChangesAsync();
 
-        List<Claim> claims = [new Claim(ClaimTypes.Name, user.Username)];
+        List<Claim> claims =
+        [
+            new Claim(ClaimTypes.Name, user.Username),
+            new Claim(ClaimTypes.Role, user.Role.ToString())
+        ];
+        if (user.MustChangePassword)
+            claims.Add(new Claim("must_change_password", "true"));
+
         ClaimsIdentity identity = new(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         ClaimsPrincipal principal = new(identity);
 
         await HttpContext!.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
-        Navigation.NavigateTo("/", forceLoad: true);
+        Navigation.NavigateTo(user.MustChangePassword ? "/change-password" : "/", forceLoad: true);
     }
 
     private sealed class LoginModel

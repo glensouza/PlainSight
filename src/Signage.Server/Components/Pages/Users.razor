@@ -1,6 +1,6 @@
 @page "/users"
 @rendermode InteractiveServer
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Admin")]
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.EntityFrameworkCore
 @using Signage.Server.Data
@@ -35,7 +35,7 @@
         </div>
         <div class="card-body">
             <div class="row g-3 align-items-end">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label fw-semibold">Username</label>
                     <input type="text" class="form-control @(addErrors.ContainsKey("username") ? "is-invalid" : "")"
                            @bind="addUsername" @bind:event="oninput" maxlength="50" />
@@ -44,7 +44,14 @@
                         <div class="invalid-feedback">@uErr</div>
                     }
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-2">
+                    <label class="form-label fw-semibold">Role</label>
+                    <select class="form-select" @bind="addRole">
+                        <option value="@AdminUserRole.User">User</option>
+                        <option value="@AdminUserRole.Admin">Admin</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
                     <label class="form-label fw-semibold">Password</label>
                     <input type="password" class="form-control @(addErrors.ContainsKey("password") ? "is-invalid" : "")"
                            @bind="addPassword" @bind:event="oninput" />
@@ -53,7 +60,7 @@
                         <div class="invalid-feedback">@pErr</div>
                     }
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label fw-semibold">Confirm Password</label>
                     <input type="password" class="form-control @(addErrors.ContainsKey("confirm") ? "is-invalid" : "")"
                            @bind="addPasswordConfirm" @bind:event="oninput" />
@@ -65,10 +72,7 @@
             </div>
             <div class="mt-3">
                 <button class="btn btn-success" @onclick="AddUserAsync" disabled="@saving">
-                    @if (saving)
-                    {
-                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                    }
+                    @if (saving) { <span class="spinner-border spinner-border-sm me-1" role="status"></span> }
                     Save
                 </button>
                 <button class="btn btn-secondary ms-2" @onclick="CancelAdd">Cancel</button>
@@ -83,9 +87,7 @@
 }
 else if (users.Count == 0)
 {
-    <div class="alert alert-info">
-        <i class="bi bi-info-circle me-1"></i> No users found.
-    </div>
+    <div class="alert alert-info"><i class="bi bi-info-circle me-1"></i> No users found.</div>
 }
 else
 {
@@ -94,6 +96,7 @@ else
             <thead>
                 <tr>
                     <th>Username</th>
+                    <th>Role</th>
                     <th>Status</th>
                     <th>Created</th>
                     <th>Last Login</th>
@@ -106,7 +109,23 @@ else
                     <tr>
                         <td><strong>@user.Username</strong></td>
                         <td>
-                            @if (user.IsActive)
+                            @if (user.Role == AdminUserRole.Admin)
+                            {
+                                <span class="badge bg-danger"><i class="bi bi-shield-fill me-1"></i>Admin</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-info text-dark"><i class="bi bi-person-fill me-1"></i>User</span>
+                            }
+                        </td>
+                        <td>
+                            @if (user.MustChangePassword)
+                            {
+                                <span class="badge bg-warning text-dark" title="Temporary password — must change on next login">
+                                    <i class="bi bi-exclamation-triangle-fill me-1"></i>Temp Password
+                                </span>
+                            }
+                            else if (user.IsActive)
                             {
                                 <span class="badge bg-success"><i class="bi bi-circle-fill me-1"></i>Active</span>
                             }
@@ -115,14 +134,8 @@ else
                                 <span class="badge bg-secondary"><i class="bi bi-circle me-1"></i>Inactive</span>
                             }
                         </td>
-                        <td title="@user.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC">
-                            @user.CreatedAt.ToString("yyyy-MM-dd")
-                        </td>
-                        <td>
-                            @(user.LastLoginAt.HasValue
-                                ? user.LastLoginAt.Value.ToString("yyyy-MM-dd HH:mm") + " UTC"
-                                : "Never")
-                        </td>
+                        <td title="@user.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC">@user.CreatedAt.ToString("yyyy-MM-dd")</td>
+                        <td>@(user.LastLoginAt.HasValue ? user.LastLoginAt.Value.ToString("yyyy-MM-dd HH:mm") + " UTC" : "Never")</td>
                         <td>
                             @if (editingPasswordUserId == user.Id)
                             {
@@ -141,10 +154,17 @@ else
                             }
                             else
                             {
-                                <button class="btn btn-sm btn-outline-secondary me-1"
-                                        @onclick="() => StartEditPassword(user.Id)"
-                                        title="Change password">
+                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEditPassword(user.Id)" title="Change password">
                                     <i class="bi bi-key"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-warning me-1" @onclick="() => ResetPasswordAsync(user)" title="Reset to temporary password" disabled="@saving">
+                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary me-1"
+                                        @onclick="() => ToggleRoleAsync(user)"
+                                        title="@(user.Role == AdminUserRole.Admin ? "Demote to User" : "Promote to Admin")"
+                                        disabled="@(saving || (user.Role == AdminUserRole.Admin && adminCount <= 1))">
+                                    <i class="bi @(user.Role == AdminUserRole.Admin ? "bi-person-down" : "bi-person-up")"></i>
                                 </button>
                                 <button class="btn btn-sm @(user.IsActive ? "btn-outline-warning" : "btn-outline-success") me-1"
                                         @onclick="() => ToggleActiveAsync(user)"
@@ -167,6 +187,7 @@ else
     </div>
 }
 
+@* Delete confirmation modal *@
 @if (deleteTarget is not null)
 {
     <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
@@ -177,14 +198,11 @@ else
                     <button type="button" class="btn-close" @onclick="CancelDelete"></button>
                 </div>
                 <div class="modal-body">
-                    <p>Are you sure you want to delete <strong>@deleteTarget.Username</strong>? This action cannot be undone.</p>
+                    <p>Delete <strong>@deleteTarget.Username</strong>? This cannot be undone.</p>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-danger" @onclick="DeleteUserAsync" disabled="@saving">
-                        @if (saving)
-                        {
-                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                        }
+                        @if (saving) { <span class="spinner-border spinner-border-sm me-1" role="status"></span> }
                         Delete
                     </button>
                     <button class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
@@ -194,9 +212,34 @@ else
     </div>
 }
 
+@* Temporary password display modal *@
+@if (tempPasswordToShow is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title"><i class="bi bi-key-fill me-1"></i> Temporary Password</h5>
+                </div>
+                <div class="modal-body">
+                    <p>Share this temporary password with <strong>@tempPasswordUsername</strong>. They will be required to change it on first login.</p>
+                    <div class="d-flex align-items-center gap-2">
+                        <code class="fs-5 p-2 bg-light border rounded flex-grow-1 user-select-all">@tempPasswordToShow</code>
+                    </div>
+                    <p class="text-muted small mt-2 mb-0">This password will not be shown again.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-warning" @onclick="() => tempPasswordToShow = null">Done</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<AdminUser>? users;
     private int activeCount;
+    private int adminCount;
     private bool saving;
     private string? globalError;
 
@@ -205,6 +248,7 @@ else
     private string addUsername = string.Empty;
     private string addPassword = string.Empty;
     private string addPasswordConfirm = string.Empty;
+    private AdminUserRole addRole = AdminUserRole.User;
     private Dictionary<string, string> addErrors = new();
 
     // Change password state
@@ -215,6 +259,10 @@ else
 
     // Delete state
     private AdminUser? deleteTarget;
+
+    // Temp password display state
+    private string? tempPasswordToShow;
+    private string? tempPasswordUsername;
 
     protected override async Task OnInitializedAsync()
     {
@@ -228,6 +276,7 @@ else
             .OrderBy(u => u.Username)
             .ToListAsync();
         activeCount = users.Count(u => u.IsActive);
+        adminCount = users.Count(u => u.Role == AdminUserRole.Admin && u.IsActive);
     }
 
     private void ShowAddForm()
@@ -235,6 +284,7 @@ else
         addUsername = string.Empty;
         addPassword = string.Empty;
         addPasswordConfirm = string.Empty;
+        addRole = AdminUserRole.User;
         addErrors = new();
         showAddForm = true;
     }
@@ -280,6 +330,7 @@ else
                 Username = addUsername.Trim(),
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(addPassword),
                 IsActive = true,
+                Role = addRole,
                 CreatedAt = DateTime.UtcNow
             });
             await DbContext.SaveChangesAsync();
@@ -330,14 +381,12 @@ else
         try
         {
             AdminUser? user = await DbContext.AdminUsers.FindAsync(userId);
-            if (user is null)
-            {
-                globalError = "User not found.";
-                return;
-            }
+            if (user is null) { globalError = "User not found."; return; }
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(editPassword);
+            user.MustChangePassword = false;
             await DbContext.SaveChangesAsync();
             editingPasswordUserId = null;
+            await LoadUsersAsync();
         }
         catch (Exception ex)
         {
@@ -350,11 +399,38 @@ else
         }
     }
 
-    private async Task ToggleActiveAsync(AdminUser user)
+    private async Task ResetPasswordAsync(AdminUser user)
     {
-        if (user.IsActive && activeCount <= 1)
+        saving = true;
+        try
         {
-            globalError = "Cannot deactivate the last active admin.";
+            string tempPassword = GenerateTempPassword();
+            AdminUser? entity = await DbContext.AdminUsers.FindAsync(user.Id);
+            if (entity is null) { globalError = "User not found."; return; }
+            entity.PasswordHash = BCrypt.Net.BCrypt.HashPassword(tempPassword);
+            entity.MustChangePassword = true;
+            await DbContext.SaveChangesAsync();
+
+            tempPasswordToShow = tempPassword;
+            tempPasswordUsername = entity.Username;
+            await LoadUsersAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error resetting password for user {UserId}", user.Id);
+            globalError = "Failed to reset password.";
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private async Task ToggleRoleAsync(AdminUser user)
+    {
+        if (user.Role == AdminUserRole.Admin && adminCount <= 1)
+        {
+            globalError = "Cannot demote the last active Admin.";
             return;
         }
 
@@ -362,8 +438,35 @@ else
         try
         {
             AdminUser? entity = await DbContext.AdminUsers.FindAsync(user.Id);
-            if (entity is null)
-                return;
+            if (entity is null) return;
+            entity.Role = entity.Role == AdminUserRole.Admin ? AdminUserRole.User : AdminUserRole.Admin;
+            await DbContext.SaveChangesAsync();
+            await LoadUsersAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error toggling role for user {UserId}", user.Id);
+            globalError = "Failed to update role.";
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private async Task ToggleActiveAsync(AdminUser user)
+    {
+        if (user.IsActive && activeCount <= 1)
+        {
+            globalError = "Cannot deactivate the last active user.";
+            return;
+        }
+
+        saving = true;
+        try
+        {
+            AdminUser? entity = await DbContext.AdminUsers.FindAsync(user.Id);
+            if (entity is null) return;
             entity.IsActive = !entity.IsActive;
             await DbContext.SaveChangesAsync();
             await LoadUsersAsync();
@@ -392,12 +495,11 @@ else
 
     private async Task DeleteUserAsync()
     {
-        if (deleteTarget is null)
-            return;
+        if (deleteTarget is null) return;
 
         if (users!.Count <= 1)
         {
-            globalError = "Cannot delete the only admin user.";
+            globalError = "Cannot delete the only user.";
             deleteTarget = null;
             return;
         }
@@ -423,5 +525,16 @@ else
         {
             saving = false;
         }
+    }
+
+    private static string GenerateTempPassword()
+    {
+        const string chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$";
+        byte[] randomBytes = new byte[12];
+        System.Security.Cryptography.RandomNumberGenerator.Fill(randomBytes);
+        char[] result = new char[12];
+        for (int i = 0; i < 12; i++)
+            result[i] = chars[randomBytes[i] % chars.Length];
+        return new string(result);
     }
 }

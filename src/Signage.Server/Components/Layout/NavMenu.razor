@@ -44,13 +44,16 @@
             </NavLink>
         </div>
 
-        <div class="nav-section-label">Admin</div>
-
-        <div class="nav-item">
-            <NavLink class="nav-link" href="users">
-                <i class="bi bi-people-fill"></i> Users
-            </NavLink>
-        </div>
+        <AuthorizeView Roles="Admin">
+            <Authorized>
+                <div class="nav-section-label">Admin</div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="users">
+                        <i class="bi bi-people-fill"></i> Users
+                    </NavLink>
+                </div>
+            </Authorized>
+        </AuthorizeView>
 
         <AuthorizeView>
             <Authorized>
