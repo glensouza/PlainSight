@@ -1,5 +1,6 @@
 @page "/devices"
 @rendermode InteractiveServer
+@attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Navigation
 @inject ILogger<Devices> Logger

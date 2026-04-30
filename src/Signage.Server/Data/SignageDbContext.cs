@@ -11,6 +11,7 @@ public class SignageDbContext(DbContextOptions<SignageDbContext> options) : DbCo
     public DbSet<PlaylistItem> PlaylistItems => this.Set<PlaylistItem>();
     public DbSet<PlayerVersion> PlayerVersions => this.Set<PlayerVersion>();
     public DbSet<DeviceGroupVersion> DeviceGroupVersions => this.Set<DeviceGroupVersion>();
+    public DbSet<AdminUser> AdminUsers => this.Set<AdminUser>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -64,6 +65,12 @@ public class SignageDbContext(DbContextOptions<SignageDbContext> options) : DbCo
                 GroupName = "Default",
                 TargetVersion = "1.0.0"
             });
+        });
+
+        modelBuilder.Entity<AdminUser>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Username).IsUnique();
         });
     }
 }

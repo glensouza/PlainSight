@@ -1,5 +1,6 @@
 @page "/playlists"
 @rendermode InteractiveServer
+@attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Navigation
 @inject ILogger<Playlists> Logger

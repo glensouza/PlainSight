@@ -43,5 +43,30 @@
                 <i class="bi bi-box-seam"></i> Versions
             </NavLink>
         </div>
+
+        <div class="nav-section-label">Admin</div>
+
+        <div class="nav-item">
+            <NavLink class="nav-link" href="users">
+                <i class="bi bi-people-fill"></i> Users
+            </NavLink>
+        </div>
+
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item mt-auto">
+                    <span class="nav-link text-muted small">
+                        <i class="bi bi-person-circle"></i> @context.User.Identity?.Name
+                    </span>
+                </div>
+                <div class="nav-item">
+                    <form action="/auth/logout" method="post">
+                        <button type="submit" class="nav-link btn btn-link w-100 text-start text-danger">
+                            <i class="bi bi-box-arrow-right"></i> Sign Out
+                        </button>
+                    </form>
+                </div>
+            </Authorized>
+        </AuthorizeView>
     </nav>
 </div>
