@@ -11,13 +11,15 @@ public class PlayerWorker(
     ScreenCaptureService screenshot,
     ScreenshotUploadService screenshotUpload,
     PlaylistService playlist,
+    CacheService cache,
     ILogger<PlayerWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("PlainSight Player started");
 
-        // Load initial playlist before the browser page polls for it
+        // Sync and load initial playlist before the browser page polls for it
+        await cache.SyncAsync(stoppingToken);
         await playlist.RefreshAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -45,7 +47,8 @@ public class PlayerWorker(
                     }
                 }
 
-                // Refresh playlist on the same cadence as the heartbeat
+                // Sync and refresh playlist on the same cadence as the heartbeat
+                await cache.SyncAsync(stoppingToken);
                 await playlist.RefreshAsync(stoppingToken);
 
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);

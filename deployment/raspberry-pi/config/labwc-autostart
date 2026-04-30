@@ -5,4 +5,4 @@
 swayidle -w timeout 31536000 'wlopm --off \*' resume 'wlopm --on \*' &
 
 # Start PlainSight Player
-/opt/signage/Signage.Player &
+/opt/plainsight/PlainSight.Player &

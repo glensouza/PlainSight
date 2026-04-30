@@ -1,7 +1,7 @@
 [Unit]
 Description=PlainSight Digital Signage Player
-After=network-online.target mnt-signage.mount
-Wants=mnt-signage.mount
+After=network-online.target mnt-plainsight.mount
+Wants=mnt-plainsight.mount
 
 [Service]
 Type=simple

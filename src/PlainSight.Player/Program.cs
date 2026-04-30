@@ -7,7 +7,8 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 // Aspire service discovery, OpenTelemetry, health checks
 builder.AddServiceDefaults();
 
-string contentPath = builder.Configuration["ContentPath"] ?? "/mnt/signage/content";
+string contentPath = builder.Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+string cachePath = builder.Configuration["CachePath"] ?? "/var/cache/plainsight/content";
 
 // Under Aspire the ServerUrl resolves via service discovery ("http://plainsight-server").
 // On the Pi without Aspire, override ServerUrl in appsettings or env to the real address.
@@ -39,7 +40,9 @@ builder.Services.AddHttpClient<ScreenshotUploadService>(client =>
 
 builder.Services.AddSingleton<ScreenCaptureService>();
 builder.Services.AddSingleton(sp =>
-    new PlaylistService(contentPath, sp.GetRequiredService<ILogger<PlaylistService>>()));
+    new CacheService(contentPath, cachePath, sp.GetRequiredService<ILogger<CacheService>>()));
+builder.Services.AddSingleton(sp =>
+    new PlaylistService(cachePath, sp.GetRequiredService<ILogger<PlaylistService>>()));
 builder.Services.AddHostedService<KioskService>();
 builder.Services.AddHostedService<PlayerWorker>();
 
@@ -61,7 +64,7 @@ app.MapGet("/player", (IWebHostEnvironment env) =>
     return Results.File(htmlPath, "text/html; charset=utf-8");
 });
 
-// Serve content files with range support for video seeking
+// Serve content files from local cache with range support for video seeking
 app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
 {
     if (string.IsNullOrWhiteSpace(filename) ||
@@ -77,9 +80,9 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
         return Results.BadRequest("Unsupported file type");
     }
 
-    string normalizedContentPath = Path.GetFullPath(contentPath);
-    string filePath = Path.GetFullPath(Path.Combine(normalizedContentPath, filename));
-    string relPath = Path.GetRelativePath(normalizedContentPath, filePath);
+    string normalizedCachePath = Path.GetFullPath(cachePath);
+    string filePath = Path.GetFullPath(Path.Combine(normalizedCachePath, filename));
+    string relPath = Path.GetRelativePath(normalizedCachePath, filePath);
 
     if (Path.IsPathRooted(relPath) || relPath.StartsWith(".."))
     {
