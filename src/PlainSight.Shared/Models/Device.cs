@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace PlainSight.Shared.Models;
 
 public class Device
@@ -10,6 +12,7 @@ public class Device
     public string CurrentVersion { get; set; } = "0.0.0";
     public string? CurrentlyPlaying { get; set; }
     public bool ScreenshotRequested { get; set; }
+    [JsonIgnore]
     public string? LatestScreenshotPath { get; set; }
     public DateTime? LatestScreenshotAt { get; set; }
 }

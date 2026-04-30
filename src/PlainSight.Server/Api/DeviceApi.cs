@@ -108,8 +108,25 @@ public static class DeviceApi
             if (file == null || file.Length == 0)
                 return Results.BadRequest("Missing screenshot file");
 
+            // Reject non-PNG uploads and cap size at 25 MB
+            const long maxBytes = 25 * 1024 * 1024;
+            if (!file.ContentType.Equals("image/png", StringComparison.OrdinalIgnoreCase))
+                return Results.BadRequest("Only image/png uploads are accepted");
+            if (file.Length > maxBytes)
+                return Results.BadRequest("Screenshot exceeds 25 MB limit");
+
             string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/signage/screenshots";
+            string fullScreenshotsRoot = Path.GetFullPath(screenshotsRoot);
             string deviceDir = Path.Combine(screenshotsRoot, deviceId);
+            string fullDeviceDir = Path.GetFullPath(deviceDir);
+
+            // Reject deviceId values that escape screenshotsRoot (path traversal)
+            if (!fullDeviceDir.StartsWith(fullScreenshotsRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                && fullDeviceDir != fullScreenshotsRoot)
+            {
+                logger.LogWarning("Path traversal attempt blocked for deviceId {DeviceId}", deviceId);
+                return Results.BadRequest("Invalid device id");
+            }
 
             try
             {
@@ -121,13 +138,16 @@ public static class DeviceApi
                 return Results.Problem("Failed to create screenshot directory", statusCode: 500);
             }
 
-            string timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
-            string filePath = Path.Combine(deviceDir, $"{timestamp}.png");
+            string timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+            string fileName = $"{timestamp}_{Guid.NewGuid():N}.png";
+            string filePath = Path.Combine(deviceDir, fileName);
 
-            string fullDeviceDir = Path.GetFullPath(deviceDir);
             string fullFilePath = Path.GetFullPath(filePath);
-            if (!fullFilePath.StartsWith(fullDeviceDir))
+            if (!fullFilePath.StartsWith(fullDeviceDir + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                logger.LogWarning("Constructed file path escaped device directory: {Path}", fullFilePath);
                 return Results.BadRequest("Invalid path");
+            }
 
             try
             {
@@ -146,11 +166,12 @@ public static class DeviceApi
 
             logger.LogInformation("Screenshot saved for device {DeviceId}: {Path}", deviceId, filePath);
             return Results.Ok();
-        });
+        }).DisableAntiforgery();
 
         group.MapGet("/{deviceId}/screenshot", async (
             string deviceId,
             PlainSightDbContext context,
+            IConfiguration configuration,
             CancellationToken ct) =>
         {
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
@@ -158,6 +179,13 @@ public static class DeviceApi
                 return Results.NotFound();
 
             if (string.IsNullOrEmpty(device.LatestScreenshotPath) || !File.Exists(device.LatestScreenshotPath))
+                return Results.NotFound();
+
+            // Guard against a poisoned DB path escaping ScreenshotsPath
+            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/signage/screenshots";
+            string fullScreenshotsRoot = Path.GetFullPath(screenshotsRoot);
+            string fullStoredPath = Path.GetFullPath(device.LatestScreenshotPath);
+            if (!fullStoredPath.StartsWith(fullScreenshotsRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
                 return Results.NotFound();
 
             return Results.File(device.LatestScreenshotPath, "image/png");
