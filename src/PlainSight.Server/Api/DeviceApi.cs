@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Data;
 using PlainSight.Server.Services;
@@ -8,16 +10,27 @@ namespace PlainSight.Server.Api;
 
 public static class DeviceApi
 {
+    private static string HashApiKey(string key)
+    {
+        byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(key));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    private static string SanitizeForLog(string? value) =>
+        value == null ? "(null)" : value.Replace('\r', '_').Replace('\n', '_').Replace('\0', '_');
+
     public static RouteGroupBuilder MapDeviceApi(this IEndpointRouteBuilder routes)
     {
         RouteGroupBuilder group = routes.MapGroup("/api/device");
 
-        group.MapPost("/heartbeat", async (DeviceTelemetryDto data, PlainSightDbContext context, VersionService versionService, ILoggerFactory loggerFactory, CancellationToken ct) =>
+        group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             ILogger logger = loggerFactory.CreateLogger("DeviceApi");
             try
             {
                 Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == data.DeviceId, ct);
+
+                string? assignedApiKey = null;
 
                 if (device == null)
                 {
@@ -28,6 +41,33 @@ public static class DeviceApi
                         Group = "Default"
                     };
                     context.Devices.Add(device);
+                }
+
+                // Validate or assign API key
+                if (device.ApiKey != null)
+                {
+                    // Registered device — validate X-Api-Key header
+                    string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
+                    if (string.IsNullOrEmpty(incomingKey))
+                    {
+                        logger.LogWarning("Heartbeat rejected for device {DeviceId}: missing X-Api-Key header", SanitizeForLog(data.DeviceId));
+                        return Results.Unauthorized();
+                    }
+
+                    string hashedIncoming = HashApiKey(incomingKey);
+                    if (!string.Equals(hashedIncoming, device.ApiKey, StringComparison.Ordinal))
+                    {
+                        logger.LogWarning("Heartbeat rejected for device {DeviceId}: invalid API key", SanitizeForLog(data.DeviceId));
+                        return Results.Unauthorized();
+                    }
+                }
+                else
+                {
+                    // First registration or re-registration after key reset
+                    string plainTextKey = Guid.NewGuid().ToString("N");
+                    device.ApiKey = HashApiKey(plainTextKey);
+                    assignedApiKey = plainTextKey;
+                    logger.LogInformation("API key assigned for device {DeviceId}", SanitizeForLog(data.DeviceId));
                 }
 
                 // Update Status
@@ -47,7 +87,8 @@ public static class DeviceApi
                     RequestScreenshot = device.ScreenshotRequested,
                     UpdateUrl = device.CurrentVersion != targetVersion
                         ? $"/api/updates/{targetVersion}/binary"
-                        : null
+                        : null,
+                    AssignedApiKey = assignedApiKey
                 };
 
                 // Reset screenshot request
@@ -63,7 +104,7 @@ public static class DeviceApi
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error processing heartbeat from device {DeviceId}", data.DeviceId);
+                logger.LogError(ex, "Error processing heartbeat from device {DeviceId}", SanitizeForLog(data.DeviceId));
                 return Results.Problem("Internal server error", statusCode: 500);
             }
         });
@@ -236,6 +277,24 @@ public static class DeviceApi
                 return Results.NotFound();
 
             return Results.File(device.LatestScreenshotPath, "image/png");
+        });
+
+        group.MapPost("/{deviceId}/reset-api-key", async (
+            string deviceId,
+            PlainSightDbContext context,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            ILogger logger = loggerFactory.CreateLogger("DeviceApi");
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
+            if (device == null)
+                return Results.NotFound();
+
+            device.ApiKey = null;
+            await context.SaveChangesAsync(ct);
+
+            logger.LogInformation("API key reset for device {DeviceId}", SanitizeForLog(deviceId));
+            return Results.Ok();
         });
 
         return group;

@@ -10,9 +10,66 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
 {
     private readonly string deviceId = Environment.MachineName;
     private readonly string version = FormatVersion(typeof(HeartbeatService).Assembly.GetName().Version);
+    private static readonly string ApiKeyPath = Environment.GetEnvironmentVariable("PLAINSIGHT_APIKEY_PATH") ?? "/etc/plainsight/apikey";
 
     private static string FormatVersion(Version? v) =>
         v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "0.0.0";
+
+    private string? LoadApiKey()
+    {
+        try
+        {
+            if (File.Exists(ApiKeyPath))
+            {
+                string key = File.ReadAllText(ApiKeyPath).Trim();
+                return string.IsNullOrEmpty(key) ? null : key;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to read API key from {Path}", ApiKeyPath);
+        }
+
+        return null;
+    }
+
+    private void SaveApiKey(string key)
+    {
+        try
+        {
+            string? directory = Path.GetDirectoryName(ApiKeyPath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            // Create the file with 0600 permissions from the start to avoid
+            // a window where the file is world-readable.
+            FileStreamOptions opts = new()
+            {
+                Mode = FileMode.Create,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+            };
+
+            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+            {
+                opts.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            }
+
+            using (FileStream fs = new(ApiKeyPath, opts))
+            using (StreamWriter writer = new(fs))
+            {
+                writer.Write(key);
+            }
+
+            logger.LogInformation("API key persisted to {Path}", ApiKeyPath);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to persist API key to {Path}", ApiKeyPath);
+        }
+    }
 
     public async Task<HeartbeatResponse?> SendHeartbeat(string? currentFile, CancellationToken cancellationToken = default)
     {
@@ -29,10 +86,27 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
                 Timestamp = DateTime.UtcNow
             };
 
-            HttpResponseMessage response = await http.PostAsJsonAsync("/api/device/heartbeat", telemetry, cancellationToken);
+            string? apiKey = LoadApiKey();
+
+            using HttpRequestMessage request = new(HttpMethod.Post, "/api/device/heartbeat");
+            request.Content = JsonContent.Create(telemetry);
+
+            if (!string.IsNullOrEmpty(apiKey))
+            {
+                request.Headers.Add("X-Api-Key", apiKey);
+            }
+
+            HttpResponseMessage response = await http.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
 
-            return await response.Content.ReadFromJsonAsync<HeartbeatResponse>(cancellationToken: cancellationToken);
+            HeartbeatResponse? heartbeatResponse = await response.Content.ReadFromJsonAsync<HeartbeatResponse>(cancellationToken: cancellationToken);
+
+            if (heartbeatResponse != null && !string.IsNullOrEmpty(heartbeatResponse.AssignedApiKey))
+            {
+                SaveApiKey(heartbeatResponse.AssignedApiKey);
+            }
+
+            return heartbeatResponse;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
