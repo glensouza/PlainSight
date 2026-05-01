@@ -114,7 +114,7 @@ else
                             @if (device.LatestScreenshotAt.HasValue)
                             {
                                 <button class="btn btn-sm btn-outline-secondary"
-                                        @onclick="() => ShowScreenshot(device)"
+                                        @onclick="() => ShowScreenshotHistory(device)"
                                         title="@device.LatestScreenshotAt.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC">
                                     <i class="bi bi-image"></i>
                                     <span>@GetTimeSince(device.LatestScreenshotAt.Value)</span>
@@ -170,26 +170,64 @@ else
     </div>
 }
 
-@if (previewDevice != null)
+@if (historyDevice != null)
 {
-    <div class="modal fade show d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);" @onclick="ClosePreview">
+    <div class="modal fade show d-block"
+         tabindex="-1"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="history-modal-title"
+         style="background:rgba(0,0,0,0.5);"
+         @onclick="CloseHistory"
+         @onkeydown="HandleModalKeyDown">
         <div class="modal-dialog modal-xl modal-dialog-centered" @onclick:stopPropagation="true">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">
-                        Screenshot — <code>@previewDevice.DeviceId</code>
-                        @if (previewDevice.LatestScreenshotAt.HasValue)
-                        {
-                            <span class="ms-2 text-muted small">@previewDevice.LatestScreenshotAt.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</span>
-                        }
+                    <h5 id="history-modal-title" class="modal-title">
+                        Screenshot History — <code>@historyDevice.DeviceId</code>
                     </h5>
-                    <button type="button" class="btn-close" @onclick="ClosePreview"></button>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseHistory"></button>
                 </div>
-                <div class="modal-body text-center p-2">
-                    <img src="/api/device/@previewDevice.DeviceId/screenshot?t=@previewCacheBust"
-                         alt="Latest screenshot for @previewDevice.DeviceId"
-                         class="img-fluid rounded"
-                         style="max-height:75vh;" />
+                <div class="modal-body">
+                    @if (selectedScreenshot != null)
+                    {
+                        <div class="text-center mb-3">
+                            <img src="@selectedScreenshot.Url?t=@previewCacheBust"
+                                 alt="Screenshot @selectedScreenshot.CapturedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC"
+                                 class="img-fluid rounded"
+                                 style="max-height:60vh;" />
+                            <div class="mt-1 text-muted small">
+                                @selectedScreenshot.CapturedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC
+                            </div>
+                        </div>
+                    }
+                    @if (screenshotHistory == null)
+                    {
+                        <p><em>Loading history...</em></p>
+                    }
+                    else if (!screenshotHistory.Any())
+                    {
+                        <p class="text-muted">No screenshot history available.</p>
+                    }
+                    else
+                    {
+                        <div class="d-flex flex-wrap gap-2">
+                            @foreach (DeviceScreenshotDto shot in screenshotHistory)
+                            {
+                                bool isSelected = selectedScreenshot?.Id == shot.Id;
+                                <button class="btn p-1 @(isSelected ? "border border-primary border-2" : "border")"
+                                        @onclick="() => SelectScreenshot(shot)"
+                                        title="@shot.CapturedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC">
+                                    <img src="@shot.Url?t=@previewCacheBust"
+                                         alt="@shot.CapturedAt.ToString("HH:mm:ss")"
+                                         style="width:120px;height:68px;object-fit:cover;" />
+                                    <div class="text-center" style="font-size:0.7rem;">
+                                        @GetTimeSince(shot.CapturedAt)
+                                    </div>
+                                </button>
+                            }
+                        </div>
+                    }
                 </div>
             </div>
         </div>
@@ -283,7 +321,9 @@ else
     private List<DeviceGroup>? deviceGroups;
     private List<PlayerVersion>? playerVersions;
     private Timer? refreshTimer;
-    private Device? previewDevice;
+    private Device? historyDevice;
+    private List<DeviceScreenshotDto>? screenshotHistory;
+    private DeviceScreenshotDto? selectedScreenshot;
     private string previewCacheBust = string.Empty;
     private string? bulkGroupSelection;
     private string? bulkVersionGroup;
@@ -316,7 +356,7 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             devices = await context.Devices
                 .OrderByDescending(d => d.LastSeen)
                 .ToListAsync();
@@ -332,7 +372,7 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             deviceGroups = await context.DeviceGroups
                 .OrderBy(g => g.Name)
                 .ToListAsync();
@@ -348,7 +388,7 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             playerVersions = await context.PlayerVersions
                 .OrderByDescending(v => v.VersionNumber)
                 .ToListAsync();
@@ -364,7 +404,7 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
             if (device != null)
             {
@@ -384,15 +424,19 @@ else
         requestingScreenshot.Add(deviceId);
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
             if (device != null && !string.IsNullOrEmpty(device.CallbackUrl))
             {
-                var client = HttpClientFactory.CreateClient("player");
-                var response = await client.PostAsync($"{device.CallbackUrl}/screenshot", null);
+                HttpClient client = HttpClientFactory.CreateClient("player");
+                HttpResponseMessage response = await client.PostAsync($"{device.CallbackUrl}/screenshot", null);
                 if (response.IsSuccessStatusCode)
                 {
                     Logger.LogInformation("Screenshot requested for device {DeviceId} via {CallbackUrl}", deviceId, device.CallbackUrl);
+                    await LoadDevices();
+                    Device? updated = devices?.FirstOrDefault(d => d.DeviceId == deviceId);
+                    if (updated != null)
+                        await ShowScreenshotHistory(updated);
                 }
             }
         }
@@ -412,20 +456,20 @@ else
         resettingApiKey.Add(deviceId);
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
             if (device != null)
             {
                 device.ApiKey = null;
                 await context.SaveChangesAsync();
                 Logger.LogInformation("API key reset for device {DeviceId}", deviceId);
-                
+
                 if (!string.IsNullOrEmpty(device.CallbackUrl))
                 {
-                    var client = HttpClientFactory.CreateClient("player");
+                    HttpClient client = HttpClientFactory.CreateClient("player");
                     await client.PostAsync($"{device.CallbackUrl}/reset-api-key", null);
                 }
-                
+
                 await LoadDevices();
             }
         }
@@ -471,13 +515,15 @@ else
         isBulkScreenshotting = true;
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
-            var targetDevices = await context.Devices
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            List<Device> targetDevices = await context.Devices
                 .Where(d => selectedDeviceIds.Contains(d.DeviceId) && !string.IsNullOrEmpty(d.CallbackUrl))
                 .ToListAsync();
 
-            var client = HttpClientFactory.CreateClient("player");
-            var tasks = targetDevices.Select(d => client.PostAsync($"{d.CallbackUrl}/screenshot", null));
+            HttpClient client = HttpClientFactory.CreateClient("player");
+            List<Task<HttpResponseMessage>> tasks = targetDevices
+                .Select(d => client.PostAsync($"{d.CallbackUrl}/screenshot", null))
+                .ToList();
             await Task.WhenAll(tasks);
 
             bulkResultMessage = $"Screenshot requested for {targetDevices.Count} online device(s).";
@@ -504,12 +550,12 @@ else
         isBulkMovingGroup = true;
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
-            var targetDevices = await context.Devices
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            List<Device> targetDevices = await context.Devices
                 .Where(d => selectedDeviceIds.Contains(d.DeviceId))
                 .ToListAsync();
 
-            foreach (var d in targetDevices)
+            foreach (Device d in targetDevices)
             {
                 d.Group = bulkGroupSelection;
             }
@@ -543,8 +589,8 @@ else
         isBulkAssigningVersion = true;
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
-            var groupVersion = await context.DeviceGroupVersions
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            DeviceGroupVersion? groupVersion = await context.DeviceGroupVersions
                 .FirstOrDefaultAsync(gv => gv.GroupName == bulkVersionGroup);
 
             if (groupVersion == null)
@@ -586,15 +632,56 @@ else
         bulkResultMessage = null;
     }
 
-    private void ShowScreenshot(Device device)
+    private async Task ShowScreenshotHistory(Device device)
     {
-        previewDevice = device;
+        historyDevice = device;
+        screenshotHistory = null;
+        selectedScreenshot = null;
+        previewCacheBust = DateTime.UtcNow.Ticks.ToString();
+        StateHasChanged();
+
+        try
+        {
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            screenshotHistory = await context.DeviceScreenshots
+                .Where(s => s.DeviceId == device.Id)
+                .OrderByDescending(s => s.CapturedAt)
+                .Select(s => new DeviceScreenshotDto
+                {
+                    Id = s.Id,
+                    CapturedAt = s.CapturedAt,
+                    Url = $"/api/device/{device.DeviceId}/screenshots/{s.Id}"
+                })
+                .ToListAsync();
+            if (screenshotHistory.Count > 0)
+                selectedScreenshot = screenshotHistory[0];
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading screenshot history for device {DeviceId}", device.DeviceId);
+            screenshotHistory = new List<DeviceScreenshotDto>();
+        }
+
+        StateHasChanged();
+    }
+
+    private void SelectScreenshot(DeviceScreenshotDto shot)
+    {
+        selectedScreenshot = shot;
         previewCacheBust = DateTime.UtcNow.Ticks.ToString();
     }
 
-    private void ClosePreview()
+    private void CloseHistory()
     {
-        previewDevice = null;
+        historyDevice = null;
+        screenshotHistory = null;
+        selectedScreenshot = null;
+    }
+
+    private void HandleModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+            CloseHistory();
     }
 
     private bool IsDeviceOnline(DateTime lastSeen)
