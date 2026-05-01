@@ -4,6 +4,7 @@
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Navigation
 @inject ILogger<Devices> Logger
+@inject IHttpContextAccessor HttpContextAccessor
 
 <PageTitle>Devices — PlainSight</PageTitle>
 
@@ -282,6 +283,12 @@ else
     {
         httpClient = HttpClientFactory.CreateClient();
         httpClient.BaseAddress = new Uri(Navigation.BaseUri);
+
+        // Forward the auth cookie from the Blazor circuit's initial HTTP request so that
+        // calls to .RequireAuthorization() endpoints succeed from the server-side component.
+        string? cookieHeader = HttpContextAccessor.HttpContext?.Request.Headers.Cookie;
+        if (cookieHeader != null)
+            httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", cookieHeader);
 
         await Task.WhenAll(
             LoadDevices(),
