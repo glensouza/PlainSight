@@ -97,6 +97,8 @@ public static class DeviceApi
 
                 // Check for "Canary" Update assignment
                 string targetVersion = await versionService.GetTargetVersionAsync(device.Group, ct);
+                PlayerVersion? versionRecord = await context.PlayerVersions
+                    .FirstOrDefaultAsync(v => v.VersionNumber == targetVersion, ct);
 
                 // Get scheduled playlist
                 Playlist? activePlaylist = await scheduleService.GetActivePlaylistAsync(device.Group, ct);
@@ -105,8 +107,11 @@ public static class DeviceApi
                 {
                     // Command Flags
                     RequestScreenshot = device.ScreenshotRequested,
-                    UpdateUrl = device.CurrentVersion != targetVersion
+                    UpdateUrl = device.CurrentVersion != targetVersion && versionRecord != null
                         ? $"/api/updates/{targetVersion}/binary"
+                        : null,
+                    ExpectedSha256 = device.CurrentVersion != targetVersion && versionRecord != null
+                        ? versionRecord.Sha256Hash
                         : null,
                     AssignedApiKey = assignedApiKey,
                     PlaylistItems = activePlaylist?.Items
@@ -140,6 +145,7 @@ public static class DeviceApi
         group.MapPost("/{deviceId}/screenshot/upload", async (
             string deviceId,
             HttpRequest request,
+            HttpContext httpContext,
             PlainSightDbContext context,
             IConfiguration configuration,
             ILoggerFactory loggerFactory,
@@ -150,6 +156,17 @@ public static class DeviceApi
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
             if (device == null)
                 return Results.NotFound();
+
+            // Validate API key
+            if (device.ApiKey != null)
+            {
+                string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
+                if (string.IsNullOrEmpty(incomingKey) || !VerifyApiKey(incomingKey, device.ApiKey))
+                {
+                    logger.LogWarning("Screenshot upload rejected for device {DeviceId}: invalid or missing API key", SanitizeForLog(deviceId));
+                    return Results.Unauthorized();
+                }
+            }
 
             if (!request.HasFormContentType)
                 return Results.BadRequest("Expected multipart/form-data");

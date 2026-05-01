@@ -2,6 +2,10 @@
 
 Enterprise-grade digital signage system for organizations, built with .NET 10 and optimized for Raspberry Pi 5.
 
+## Name
+
+**PlainSight**: References Habakkuk 2:2: "Write the vision; make it plain on tablets, so he may run who reads it." This is arguably the most biblically accurate name for digital signage!
+
 ## 🎯 Overview
 
 PlainSight is a distributed digital signage solution that provides zero-touch maintenance and high reliability through server-side rendering, SMB-based content streaming, and automated self-updating fleets.

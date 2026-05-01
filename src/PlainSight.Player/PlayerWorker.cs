@@ -33,7 +33,7 @@ public class PlayerWorker(
                     if (!string.IsNullOrEmpty(response.UpdateUrl))
                     {
                         logger.LogInformation("Update available at {UpdateUrl}", response.UpdateUrl);
-                        await update.PerformSelfUpdate(response.UpdateUrl, stoppingToken);
+                        await update.PerformSelfUpdate(response.UpdateUrl, response.ExpectedSha256, stoppingToken);
                     }
 
                     if (response.RequestScreenshot)

@@ -1,8 +1,9 @@
+using System.Net.Http.Headers;
 using Microsoft.Extensions.Logging;
 
 namespace PlainSight.Player.Services;
 
-public class ScreenshotUploadService(HttpClient http, ILogger<ScreenshotUploadService> logger)
+public class ScreenshotUploadService(HttpClient http, HeartbeatService heartbeat, ILogger<ScreenshotUploadService> logger)
 {
     private readonly string deviceId = Environment.MachineName;
 
@@ -15,13 +16,19 @@ public class ScreenshotUploadService(HttpClient http, ILogger<ScreenshotUploadSe
         {
             using MultipartFormDataContent form = new();
             using ByteArrayContent content = new(pngBytes);
-            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+            content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
             form.Add(content, "screenshot", "screenshot.png");
 
-            HttpResponseMessage response = await http.PostAsync(
-                $"/api/device/{this.deviceId}/screenshot/upload",
-                form,
-                cancellationToken);
+            using HttpRequestMessage request = new(HttpMethod.Post, $"/api/device/{this.deviceId}/screenshot/upload");
+            request.Content = form;
+
+            string? apiKey = heartbeat.GetApiKey();
+            if (!string.IsNullOrEmpty(apiKey))
+            {
+                request.Headers.Add("X-Api-Key", apiKey);
+            }
+
+            HttpResponseMessage response = await http.SendAsync(request, cancellationToken);
 
             if (response.IsSuccessStatusCode)
                 logger.LogInformation("Screenshot uploaded ({Bytes} bytes)", pngBytes.Length);

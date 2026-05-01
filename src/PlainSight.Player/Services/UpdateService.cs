@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 
 namespace PlainSight.Player.Services;
@@ -6,32 +7,49 @@ public class UpdateService(HttpClient http, ILogger<UpdateService> logger)
 {
     private readonly string executablePath = Environment.ProcessPath ?? "/opt/plainsight/PlainSight.Player";
 
-    public async Task PerformSelfUpdate(string updateUrl, CancellationToken cancellationToken = default)
+    public async Task PerformSelfUpdate(string updateUrl, string? expectedSha256 = null, CancellationToken cancellationToken = default)
     {
         try
         {
             logger.LogWarning("Downloading update from {UpdateUrl}...", updateUrl);
-            logger.LogWarning(
-                "WARNING: No integrity verification (checksum/signature) is performed. " +
-                "Use HTTPS and implement hash verification for production deployments.");
             
             string tempPath = this.executablePath + ".new";
 
             // 1. Download
-            // Use a request so we can inspect the status code before reading the body
             using HttpResponseMessage response = await http.GetAsync(updateUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning("Update download failed: {StatusCode} {ReasonPhrase}", (int)response.StatusCode, response.ReasonPhrase);
-                return; // Don't throw - update failure shouldn't crash the player
+                return;
             }
 
-            // TODO: Add hash/signature verification before proceeding
             byte[] data = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+
+            // 2. Verify Integrity
+            if (!string.IsNullOrEmpty(expectedSha256))
+            {
+                logger.LogInformation("Verifying update integrity (SHA256)...");
+                byte[] actualHashBytes = SHA256.HashData(data);
+                string actualHash = Convert.ToHexString(actualHashBytes);
+
+                if (!actualHash.Equals(expectedSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    logger.LogError("Update integrity verification FAILED!");
+                    logger.LogError("Expected: {Expected}", expectedSha256);
+                    logger.LogError("Actual:   {Actual}", actualHash);
+                    return; // Abort update
+                }
+                logger.LogInformation("Update integrity verified successfully.");
+            }
+            else
+            {
+                logger.LogWarning("No expected SHA256 hash provided. Skipping integrity verification.");
+            }
+
             await File.WriteAllBytesAsync(tempPath, data, cancellationToken);
 
-            // 2. Permissions (Linux)
+            // 3. Permissions (Linux)
             if (OperatingSystem.IsLinux())
             {
                 File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute);
