@@ -174,7 +174,7 @@
                         <input class="form-control" placeholder="New group name" @bind="newGroupName" />
                         <button class="btn btn-outline-primary"
                                 @onclick="AddGroup"
-                                disabled="@(string.IsNullOrWhiteSpace(newGroupName) || versions == null || versions.Count == 0)">
+                                disabled="@(string.IsNullOrWhiteSpace(newGroupName) || groups == null)">
                             <i class="bi bi-plus-circle"></i> Add
                         </button>
                     </div>
@@ -341,11 +341,12 @@
 
     private async Task AddGroup()
     {
-        if (string.IsNullOrWhiteSpace(newGroupName) || versions == null || versions.Count == 0) return;
+        if (string.IsNullOrWhiteSpace(newGroupName) || groups == null) return;
 
-        // Default to the version assigned to the 'Default' group, or fallback to the first version
-        string defaultVersion = groups?.FirstOrDefault(g => g.GroupName == "Default")?.TargetVersion 
-                               ?? versions[0].VersionNumber;
+        // Inherit Default's current assignment, fall back to first uploaded version, then "1.0.0"
+        string defaultVersion = groups.FirstOrDefault(g => g.GroupName == "Default")?.TargetVersion
+                               ?? versions?.FirstOrDefault()?.VersionNumber
+                               ?? "1.0.0";
         groupError = null;
 
         try

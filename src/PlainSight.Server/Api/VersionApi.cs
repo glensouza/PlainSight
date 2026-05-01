@@ -118,11 +118,18 @@ public static class VersionApi
             if (string.IsNullOrWhiteSpace(groupName) || string.IsNullOrWhiteSpace(request.TargetVersion))
                 return Results.BadRequest("Group name and target version are required");
 
-            // Validate version exists
-            bool versionExists = await context.PlayerVersions
-                .AnyAsync(v => v.VersionNumber == request.TargetVersion, ct);
-            if (!versionExists)
-                return Results.BadRequest($"Version {request.TargetVersion} does not exist");
+            // Only validate the target version exists once binaries have been uploaded.
+            // On a fresh system the seeded DeviceGroupVersion references "1.0.0" before
+            // any binary is present, so block invalid versions only when PlayerVersions
+            // is non-empty.
+            bool anyBinariesExist = await context.PlayerVersions.AnyAsync(ct);
+            if (anyBinariesExist)
+            {
+                bool versionExists = await context.PlayerVersions
+                    .AnyAsync(v => v.VersionNumber == request.TargetVersion, ct);
+                if (!versionExists)
+                    return Results.BadRequest($"Version {request.TargetVersion} does not exist");
+            }
 
             DeviceGroupVersion? existing = await context.DeviceGroupVersions
                 .FirstOrDefaultAsync(g => g.GroupName == groupName, ct);
@@ -131,6 +138,12 @@ public static class VersionApi
             {
                 existing = new DeviceGroupVersion { GroupName = groupName };
                 context.DeviceGroupVersions.Add(existing);
+
+                // Keep DeviceGroups in sync so the group appears in the Devices page picker
+                bool deviceGroupExists = await context.DeviceGroups
+                    .AnyAsync(g => g.Name == groupName, ct);
+                if (!deviceGroupExists)
+                    context.DeviceGroups.Add(new DeviceGroup { Name = groupName });
             }
 
             existing.TargetVersion = request.TargetVersion;
@@ -151,6 +164,13 @@ public static class VersionApi
                 return Results.NotFound();
 
             context.DeviceGroupVersions.Remove(existing);
+
+            // Keep DeviceGroups in sync
+            DeviceGroup? deviceGroup = await context.DeviceGroups
+                .FirstOrDefaultAsync(g => g.Name == groupName, ct);
+            if (deviceGroup != null)
+                context.DeviceGroups.Remove(deviceGroup);
+
             await context.SaveChangesAsync(ct);
             return Results.NoContent();
         });
