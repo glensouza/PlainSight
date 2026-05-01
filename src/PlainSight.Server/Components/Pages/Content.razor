@@ -369,8 +369,23 @@ else
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Duration (seconds)</label>
-                        <input type="number" class="form-control" @bind="newDuration" min="1" max="3600" />
-                        <small class="text-muted">How long this item displays (especially for images).</small>
+                        @{
+                            bool isVideo = renamingItem?.Type == ContentType.Video || 
+                                           (renamingIdleFileName != null && (renamingIdleFileName.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) || 
+                                                                             renamingIdleFileName.EndsWith(".webm", StringComparison.OrdinalIgnoreCase) || 
+                                                                             renamingIdleFileName.EndsWith(".mov", StringComparison.OrdinalIgnoreCase) || 
+                                                                             renamingIdleFileName.EndsWith(".avi", StringComparison.OrdinalIgnoreCase) || 
+                                                                             renamingIdleFileName.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase)));
+                        }
+                        <input type="number" class="form-control" @bind="newDuration" min="1" max="3600" readonly="@isVideo" disabled="@isVideo" />
+                        @if (isVideo)
+                        {
+                            <small class="text-muted">Video duration is detected automatically.</small>
+                        }
+                        else
+                        {
+                            <small class="text-muted">How long this item displays (especially for images).</small>
+                        }
                     </div>
                 </div>
                 <div class="modal-footer">
