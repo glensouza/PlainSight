@@ -56,7 +56,7 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (var schedule in schedules.OrderByDescending(s => s.Priority))
+                @foreach (Schedule schedule in schedules.OrderByDescending(s => s.Priority))
                 {
                     <tr>
                         <td>
@@ -88,7 +88,7 @@ else
                             else
                             {
                                 <div class="d-flex gap-1 flex-wrap" style="max-width: 200px;">
-                                    @foreach (var day in GetSelectedDays(schedule.DaysOfWeek))
+                                    @foreach (string day in GetSelectedDays(schedule.DaysOfWeek))
                                     {
                                         <span class="badge bg-light text-dark border">@day</span>
                                     }
@@ -144,7 +144,7 @@ else
                         <div class="col-md-6">
                             <label class="form-label fw-bold">Device Group</label>
                             <select class="form-select" @bind="model.GroupName">
-                                @foreach (var group in deviceGroups ?? new())
+                                @foreach (DeviceGroup group in deviceGroups ?? new())
                                 {
                                     <option value="@group.Name">@group.Name</option>
                                 }
@@ -154,7 +154,7 @@ else
                             <label class="form-label fw-bold">Playlist</label>
                             <select class="form-select" @bind="model.PlaylistId">
                                 <option value="0">-- Select Playlist --</option>
-                                @foreach (var playlist in playlists ?? new())
+                                @foreach (Playlist playlist in playlists ?? new())
                                 {
                                     <option value="@playlist.Id">@playlist.Name</option>
                                 }
@@ -317,10 +317,10 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             if (editingId.HasValue)
             {
-                var existing = await context.Schedules.FindAsync(editingId.Value);
+                Schedule? existing = await context.Schedules.FindAsync(editingId.Value);
                 if (existing != null)
                 {
                     existing.Name = model.Name;
@@ -362,7 +362,7 @@ else
         if (deleteTarget == null) return;
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             var existing = await context.Schedules.FindAsync(deleteTarget.Id);
             if (existing != null)
             {
@@ -382,7 +382,7 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             var existing = await context.Schedules.FindAsync(s.Id);
             if (existing != null)
             {
@@ -412,7 +412,7 @@ else
         if (days == ScheduledDays.Weekdays) return new List<string> { "Weekdays" };
         if (days == ScheduledDays.Weekends) return new List<string> { "Weekends" };
         
-        var list = new List<string>();
+        List<string> list = new List<string>();
         foreach (ScheduledDays day in Enum.GetValues<ScheduledDays>().Where(d => d != ScheduledDays.None && d != ScheduledDays.All && d != ScheduledDays.Weekdays && d != ScheduledDays.Weekends))
         {
             if ((days & day) != 0) list.Add(day.ToString().Substring(0, 3));

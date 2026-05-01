@@ -133,7 +133,7 @@ else
                     {
                         <div class="list-group mb-3">
                             @{
-                                var orderedItems = selectedPlaylist.Items.OrderBy(i => i.Order).ToList();
+                                List<PlaylistItem> orderedItems = selectedPlaylist.Items.OrderBy(i => i.Order).ToList();
                             }
                             @foreach (PlaylistItem item in orderedItems)
                             {
@@ -238,7 +238,7 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             playlists = await context.Playlists
                 .Include(p => p.Items)
                 .ThenInclude(i => i.ContentItem)
@@ -256,7 +256,7 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             availableContent = await context.ContentItems
                 .OrderByDescending(c => c.UploadedAt)
                 .ToListAsync();
@@ -306,7 +306,7 @@ else
 
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             
             if (editingPlaylistId.HasValue)
             {
@@ -347,7 +347,7 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             Playlist? playlist = await context.Playlists.FindAsync(id);
             if (playlist != null)
             {
@@ -368,7 +368,7 @@ else
         availableContent = null;
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             selectedPlaylist = await context.Playlists
                 .Include(p => p.Items)
                 .ThenInclude(i => i.ContentItem)
@@ -389,7 +389,7 @@ else
         isAddingItem = true;
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             Playlist? playlist = await context.Playlists
                 .Include(p => p.Items)
                 .FirstOrDefaultAsync(p => p.Id == managingPlaylistId.Value);
@@ -424,11 +424,12 @@ else
 
     private async Task MoveItem(PlaylistItem item, int direction)
     {
-        if (selectedPlaylist == null || isReordering) return;
-        
+        if (selectedPlaylist == null || !managingPlaylistId.HasValue || isReordering) return;
+        int playlistId = managingPlaylistId.Value;
+
         List<PlaylistItem> items = selectedPlaylist.Items.OrderBy(i => i.Order).ToList();
         int index = items.FindIndex(i => i.Id == item.Id);
-        
+
         if (index == -1) return;
 
         int newIndex = index + direction;
@@ -440,28 +441,28 @@ else
                 PlaylistItem itemToMove = items[index];
                 items.RemoveAt(index);
                 items.Insert(newIndex, itemToMove);
-                
-                using var context = await DbFactory.CreateDbContextAsync();
-                var dbItems = await context.PlaylistItems
-                    .Where(i => i.PlaylistId == managingPlaylistId.Value)
+
+                using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+                List<PlaylistItem> dbItems = await context.PlaylistItems
+                    .Where(i => i.PlaylistId == playlistId)
                     .ToListAsync();
-                
-                var itemMap = dbItems.ToDictionary(i => i.Id);
+
+                Dictionary<int, PlaylistItem> itemMap = dbItems.ToDictionary(i => i.Id);
 
                 for (int i = 0; i < items.Count; i++)
                 {
-                    if (itemMap.TryGetValue(items[i].Id, out var dbItem))
+                    if (itemMap.TryGetValue(items[i].Id, out PlaylistItem? dbItem))
                     {
                         dbItem.Order = i + 1;
                     }
                 }
 
-                Playlist? playlist = await context.Playlists.FindAsync(managingPlaylistId.Value);
+                Playlist? playlist = await context.Playlists.FindAsync(playlistId);
                 if (playlist != null) playlist.UpdatedAt = DateTime.UtcNow;
 
                 await context.SaveChangesAsync();
-                
-                await ManagePlaylistItems(managingPlaylistId.Value);
+
+                await ManagePlaylistItems(playlistId);
                 await LoadPlaylists();
             }
             catch (Exception ex)
@@ -486,7 +487,7 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             PlaylistItem? item = await context.PlaylistItems
                 .Include(i => i.Playlist)
                 .FirstOrDefaultAsync(i => i.Id == playlistItemId);

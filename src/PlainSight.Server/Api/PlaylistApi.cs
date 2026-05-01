@@ -41,8 +41,7 @@ public static class PlaylistApi
             if (playlist == null)
                 return Results.NotFound();
 
-            // Generate playlist.json format for the player
-            var playlistJson = new
+            return Results.Ok(new
             {
                 name = playlist.Name,
                 items = playlist.Items.OrderBy(i => i.Order).Select(i => new
@@ -51,9 +50,7 @@ public static class PlaylistApi
                     duration = i.OverrideDurationSeconds ?? i.ContentItem.DurationSeconds,
                     type = i.ContentItem.Type.ToString().ToLower()
                 }).ToList()
-            };
-
-            return Results.Ok(playlistJson);
+            });
         });
 
         return group;

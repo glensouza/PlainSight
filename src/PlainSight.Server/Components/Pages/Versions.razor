@@ -231,7 +231,7 @@
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             versions = await context.PlayerVersions
                 .OrderByDescending(v => v.UploadedAt)
                 .ToListAsync();
@@ -265,7 +265,7 @@
         {
             string versionNumber = uploadVersion.Trim();
             
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             bool exists = await context.PlayerVersions.AnyAsync(v => v.VersionNumber == versionNumber);
             if (exists)
             {
@@ -285,8 +285,8 @@
                 return;
             }
 
-            using (var stream = selectedFile.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024))
-            using (var fs = new FileStream(destPath, FileMode.CreateNew))
+            using (Stream stream = selectedFile.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024))
+            using (FileStream fs = new FileStream(destPath, FileMode.CreateNew))
             {
                 await stream.CopyToAsync(fs);
             }
@@ -327,7 +327,7 @@
         loadError = null;
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             PlayerVersion? version = await context.PlayerVersions.FindAsync(id);
             if (version == null) return;
 
@@ -363,7 +363,7 @@
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             
             bool anyBinariesExist = await context.PlayerVersions.AnyAsync();
             if (anyBinariesExist)
@@ -419,7 +419,7 @@
         
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             DeviceGroupVersion? existing = await context.DeviceGroupVersions
                 .FirstOrDefaultAsync(g => g.GroupName == groupName);
 

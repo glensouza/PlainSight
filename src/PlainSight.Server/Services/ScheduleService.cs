@@ -4,18 +4,18 @@ using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Services;
 
-public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, ILogger<ScheduleService> logger)
+public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory)
 {
     public async Task<Playlist?> GetActivePlaylistAsync(string groupName, CancellationToken ct = default)
     {
-        using var context = await dbFactory.CreateDbContextAsync(ct);
+        using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(ct);
         DateTime now = DateTime.UtcNow;
         TimeOnly currentTime = TimeOnly.FromDateTime(now);
         DateOnly currentDate = DateOnly.FromDateTime(now);
         ScheduledDays currentDay = GetScheduledDay(now.DayOfWeek);
 
         // Find all active schedules for this group or Default
-        var eligibleSchedules = await context.Schedules
+        List<Schedule> eligibleSchedules = await context.Schedules
             .Include(s => s.Playlist)
             .ThenInclude(p => p.Items)
             .ThenInclude(i => i.ContentItem)
@@ -23,7 +23,7 @@ public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, I
             .ToListAsync(ct);
 
         // Filter by time, day, and one-time date
-        var activeSchedules = eligibleSchedules.Where(s =>
+        List<Schedule> activeSchedules = eligibleSchedules.Where(s =>
         {
             // One-time date check
             if (s.IsOneTime)
