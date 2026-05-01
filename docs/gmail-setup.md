@@ -10,18 +10,16 @@ PlainSight sends offline/recovery alert emails via SMTP. This guide covers setti
 ## Step 1 — Enable 2-Step Verification
 
 1. Sign in to the Google account at [myaccount.google.com](https://myaccount.google.com).
-2. Go to **Security** → **How you sign in to Google**.
-3. Click **2-Step Verification** and follow the prompts to enable it.
+1. Go to **Security** → **How you sign in to Google**.
+1. Click **2-Step Verification** and follow the prompts to enable it.
 
 ## Step 2 — Create an App Password
 
-1. Return to **Security** in myaccount.google.com.
-2. Under "How you sign in to Google", click **2-Step Verification**, then scroll to the bottom and click **App passwords**.  
-   *(If you don't see "App passwords", make sure 2-Step Verification is enabled and you are not using a Google Workspace account with that feature disabled by an admin.)*
-3. In the **App name** box, enter `PlainSight` (or any label you will recognise).
-4. Click **Create**.
-5. Google shows a 16-character password such as `abcd efgh ijkl mnop`. **Copy it now** — it will not be shown again.
-6. Remove the spaces before pasting (i.e. use `abcdefghijklmnop`).
+1. Go directly to the Google App Passwords page here: https://myaccount.google.com/apppasswords
+1. In the **App name** box, enter `PlainSight` (or any label you will recognise).
+1. Click **Create**.
+1. Google shows a 16-character password such as `abcd efgh ijkl mnop`. **Copy it now** — it will not be shown again.
+1. Remove the spaces before pasting (i.e. use `abcdefghijklmnop`).
 
 ## Step 3 — Configure PlainSight
 
