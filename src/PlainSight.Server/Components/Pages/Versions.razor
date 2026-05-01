@@ -154,6 +154,11 @@
                                             disabled="@(versions == null || versions.Count == 0)">
                                         @if (versions != null)
                                         {
+                                            @* Always show the current assignment even if that binary isn't uploaded yet *@
+                                            @if (!versions.Any(v => v.VersionNumber == g.TargetVersion))
+                                            {
+                                                <option value="@g.TargetVersion" selected>@g.TargetVersion</option>
+                                            }
                                             @foreach (PlayerVersion v in versions)
                                             {
                                                 <option value="@v.VersionNumber" selected="@(v.VersionNumber == g.TargetVersion)">@v.VersionNumber</option>
