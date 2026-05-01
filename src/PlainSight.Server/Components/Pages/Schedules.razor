@@ -4,6 +4,7 @@
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject ILogger<Schedules> Logger
 @inject IJSRuntime JS
+@inject IConfiguration Configuration
 @using Microsoft.EntityFrameworkCore
 @using PlainSight.Shared.Models
 @using PlainSight.Server.Data
@@ -13,7 +14,13 @@
 <div class="page-header d-flex align-items-center justify-content-between">
     <div>
         <h1>Content Schedules</h1>
-        <p class="text-muted">Define when and where your playlists should play.</p>
+        <p class="text-muted">
+            Define when and where your playlists should play. 
+            <span class="badge bg-light text-dark border ms-2">
+                <i class="bi bi-clock me-1"></i>
+                Server Time: @GetDisplayTime() (@(Configuration["SystemTimeZone"] ?? "Local"))
+            </span>
+        </p>
     </div>
     <button class="btn btn-primary" @onclick="ShowCreateForm">
         <i class="bi bi-calendar-plus me-1"></i> New Schedule
@@ -470,6 +477,22 @@ else
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error toggling schedule status");
+        }
+    }
+
+    private string GetDisplayTime()
+    {
+        string? tzId = Configuration["SystemTimeZone"];
+        if (string.IsNullOrEmpty(tzId)) return DateTime.Now.ToString("HH:mm");
+        
+        try
+        {
+            TimeZoneInfo tz = TimeZoneInfo.FindSystemTimeZoneById(tzId);
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz).ToString("HH:mm");
+        }
+        catch
+        {
+            return DateTime.Now.ToString("HH:mm");
         }
     }
 

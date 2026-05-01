@@ -4,12 +4,13 @@ using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Services;
 
-public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, ILogger<ScheduleService> logger)
+public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, ILogger<ScheduleService> logger, IConfiguration configuration)
 {
     public async Task<Playlist?> GetActivePlaylistAsync(string deviceGroup, CancellationToken ct = default)
     {
         using var context = await dbFactory.CreateDbContextAsync(ct);
-        DateTime now = DateTime.UtcNow;
+        
+        DateTime now = GetSystemTime();
         DateOnly currentDate = DateOnly.FromDateTime(now);
         TimeOnly currentTime = TimeOnly.FromDateTime(now);
         DayOfWeekFlags dayFlag = GetDayOfWeekFlag(now.DayOfWeek);
@@ -72,6 +73,26 @@ public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, I
         }
 
         return null;
+    }
+
+    private DateTime GetSystemTime()
+    {
+        string? tzId = configuration["SystemTimeZone"];
+        if (string.IsNullOrEmpty(tzId))
+        {
+            return DateTime.Now;
+        }
+
+        try
+        {
+            TimeZoneInfo tz = TimeZoneInfo.FindSystemTimeZoneById(tzId);
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Invalid SystemTimeZone '{TimeZone}'; falling back to local time", tzId);
+            return DateTime.Now;
+        }
     }
 
     private static DayOfWeekFlags GetDayOfWeekFlag(DayOfWeek day)
