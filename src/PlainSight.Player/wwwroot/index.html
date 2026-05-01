@@ -306,6 +306,8 @@
                 
                 if (nextPlayer.tagName === 'VIDEO') {
                     nextPlayer.loop = false;
+                    // For videos, we rely on the 'ended' event and natural duration.
+                    // The server-provided duration is primarily for the UI/Manifest.
                     await nextPlayer.play();
                 } else {
                     // For images, we wait for load
