@@ -139,7 +139,7 @@ app.MapPost("/auth/logout", async (HttpContext ctx) =>
 {
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.Redirect("/login");
-});
+}).DisableAntiforgery();
 
 // Map default endpoints
 app.MapDefaultEndpoints();
