@@ -12,8 +12,8 @@ using PlainSight.Server.Data;
 namespace PlainSight.Server.Migrations
 {
     [DbContext(typeof(PlainSightDbContext))]
-    [Migration("20260501062253_AddScheduleTableFinal")]
-    partial class AddScheduleTableFinal
+    [Migration("20260501070812_FinalScheduleAdjustments")]
+    partial class FinalScheduleAdjustments
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
