@@ -150,14 +150,13 @@
                                 </div>
                                 <div class="mt-1">
                                     <select class="form-select form-select-sm"
-                                            value="@g.TargetVersion"
                                             @onchange="e => SaveGroupVersion(g.GroupName, e.Value?.ToString() ?? g.TargetVersion)"
                                             disabled="@(versions == null || versions.Count == 0)">
                                         @if (versions != null)
                                         {
                                             @foreach (PlayerVersion v in versions)
                                             {
-                                                <option value="@v.VersionNumber">@v.VersionNumber</option>
+                                                <option value="@v.VersionNumber" selected="@(v.VersionNumber == g.TargetVersion)">@v.VersionNumber</option>
                                             }
                                         }
                                     </select>
