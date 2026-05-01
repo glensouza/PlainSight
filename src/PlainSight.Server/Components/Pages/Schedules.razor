@@ -1,292 +1,276 @@
 @page "/schedules"
 @rendermode InteractiveServer
 @attribute [Authorize]
-@inject IHttpClientFactory HttpClientFactory
-@inject NavigationManager Navigation
-@inject IJSRuntime JS
+@inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject ILogger<Schedules> Logger
+@inject IJSRuntime JS
+@using Microsoft.EntityFrameworkCore
 @using PlainSight.Shared.Models
-@using PlainSight.Server.Api
-@implements IDisposable
+@using PlainSight.Server.Data
 
 <PageTitle>Schedules — PlainSight</PageTitle>
 
-<div class="page-header d-flex justify-content-between align-items-end">
+<div class="page-header d-flex align-items-center justify-content-between">
     <div>
-        <h1>Content Schedule</h1>
-        <p class="text-muted mb-0">Define which playlists play on specific days and times</p>
+        <h1>Content Schedules</h1>
+        <p class="text-muted">Define when and where your playlists should play.</p>
     </div>
-    <button class="btn btn-primary" @onclick="ShowCreateSchedule">
+    <button class="btn btn-primary" @onclick="ShowCreateForm">
         <i class="bi bi-calendar-plus me-1"></i> New Schedule
     </button>
 </div>
 
-@if (loadError != null)
+@if (schedules == null)
 {
-    <div class="alert alert-danger mb-4"><i class="bi bi-exclamation-triangle"></i> @loadError</div>
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="mt-2">Loading schedules...</p>
+    </div>
+}
+else if (!schedules.Any())
+{
+    <div class="card shadow-sm border-0">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-calendar-x text-muted" style="font-size: 3rem;"></i>
+            <h5 class="mt-3">No schedules found</h5>
+            <p class="text-muted">Create a schedule to start displaying content on your devices.</p>
+            <button class="btn btn-outline-primary mt-2" @onclick="ShowCreateForm">
+                Create First Schedule
+            </button>
+        </div>
+    </div>
+}
+else
+{
+    <div class="table-responsive shadow-sm rounded-3 border">
+        <table class="table table-hover align-middle mb-0 bg-white">
+            <thead class="table-light">
+                <tr>
+                    <th>Name</th>
+                    <th>Target Groups</th>
+                    <th>Playlist</th>
+                    <th>Timing</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var schedule in schedules.OrderByDescending(s => s.Priority))
+                {
+                    <tr>
+                        <td>
+                            <strong>@schedule.Name</strong>
+                            @if (schedule.ScheduledDate.HasValue)
+                            {
+                                <div class="small text-warning"><i class="bi bi-info-circle me-1"></i>One-time</div>
+                            }
+                        </td>
+                        <td>
+                            @if (schedule.TargetGroups == null || schedule.TargetGroups.Count == 0)
+                            {
+                                <span class="badge bg-secondary">All Groups</span>
+                            }
+                            else
+                            {
+                                <div class="d-flex gap-1 flex-wrap" style="max-width: 250px;">
+                                    @foreach (var tg in schedule.TargetGroups)
+                                    {
+                                        <span class="badge bg-info text-dark">@tg.GroupName</span>
+                                    }
+                                </div>
+                            }
+                        </td>
+                        <td>@schedule.Playlist.Name</td>
+                        <td>
+                            <div class="small">
+                                <code>@schedule.StartTime.ToString("HH:mm")</code> – <code>@schedule.EndTime.ToString("HH:mm")</code>
+                            </div>
+                            @if (schedule.ScheduledDate.HasValue)
+                            {
+                                <div class="small text-muted">@schedule.ScheduledDate.Value.ToShortDateString()</div>
+                            }
+                            else
+                            {
+                                <div class="d-flex gap-1 mt-1">
+                                    @foreach (var day in GetSelectedDays(schedule.DaysOfWeek))
+                                    {
+                                        <span class="badge bg-light text-dark border" style="font-size: 0.7rem;">@day</span>
+                                    }
+                                </div>
+                            }
+                        </td>
+                        <td>
+                            <span class="badge bg-primary">@schedule.Priority</span>
+                        </td>
+                        <td>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" checked="@schedule.IsActive" 
+                                       @onchange="() => ToggleActive(schedule)" />
+                                <span class="badge @(schedule.IsActive ? "bg-success-subtle text-success" : "bg-secondary-subtle text-secondary")">
+                                    @(schedule.IsActive ? "Active" : "Inactive")
+                                </span>
+                            </div>
+                        </td>
+                        <td class="text-end">
+                            <div class="btn-group">
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => EditSchedule(schedule)">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(schedule)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
 }
 
-<div class="card mb-4">
-    <div class="card-body p-0">
-        @if (schedules == null)
-        {
-            <div class="p-4 text-center">
-                <div class="spinner-border text-primary" role="status"></div>
-                <div class="mt-2 text-muted">Loading schedules...</div>
-            </div>
-        }
-        else if (schedules.Count == 0)
-        {
-            <div class="p-5 text-center">
-                <i class="bi bi-calendar-x text-muted display-4"></i>
-                <p class="mt-3 text-muted">No schedules defined yet. Create one to get started.</p>
-            </div>
-        }
-        else
-        {
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Target Groups</th>
-                            <th>Playlist</th>
-                            <th>Schedule Type</th>
-                            <th>Time Range</th>
-                            <th>Priority</th>
-                            <th>Status</th>
-                            <th class="text-end">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (Schedule s in schedules)
-                        {
-                            <tr>
-                                <td><strong>@s.Name</strong></td>
-                                <td>
-                                    @if (s.TargetGroups == null || s.TargetGroups.Count == 0)
-                                    {
-                                        <span class="badge bg-secondary">All Groups</span>
-                                    }
-                                    else
-                                    {
-                                        <div class="d-flex gap-1 flex-wrap" style="max-width: 250px;">
-                                            @foreach (ScheduleTargetGroup tg in s.TargetGroups)
-                                            {
-                                                <span class="badge bg-info text-dark">@tg.GroupName</span>
-                                            }
-                                        </div>
-                                    }
-                                </td>
-                                <td><i class="bi bi-collection-play me-1"></i> @s.Playlist?.Name</td>
-                                <td>
-                                    @if (s.ScheduledDate.HasValue)
-                                    {
-                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
-                                            <i class="bi bi-calendar-event me-1"></i> @s.ScheduledDate.Value.ToString("yyyy-MM-dd")
-                                        </span>
-                                    }
-                                    else
-                                    {
-                                        <div class="d-flex gap-1 flex-wrap" style="max-width: 200px;">
-                                            @foreach (string day in GetActiveDays(s.DaysOfWeek))
-                                            {
-                                                <span class="badge bg-light text-dark border">@day</span>
-                                            }
-                                        </div>
-                                    }
-                                </td>
-                                <td>
-                                    <code>@s.StartTime.ToString("HH:mm")</code> – <code>@s.EndTime.ToString("HH:mm")</code>
-                                </td>
-                                <td>@s.Priority</td>
-                                <td>
-                                    @if (s.IsActive)
-                                    {
-                                        <span class="badge bg-success-subtle text-success border border-success-subtle">Active</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Inactive</span>
-                                    }
-                                </td>
-                                <td class="text-end">
-                                    <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => EditSchedule(s)">
-                                        <i class="bi bi-pencil"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteSchedule(s.Id)">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
-    </div>
-</div>
-
-@if (showModal)
+@if (showForm)
 {
-    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5)">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content shadow-lg border-0">
-                <div class="modal-header">
-                    <h5 class="modal-title">@(editingId.HasValue ? "Edit Schedule" : "New Schedule")</h5>
-                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header bg-primary text-white border-0">
+                    <h5 class="modal-title">@(editingId.HasValue ? "Edit" : "Create") Schedule</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseForm"></button>
                 </div>
-                <div class="modal-body">
-                    <div class="row mb-3">
+                <div class="modal-body p-4">
+                    <div class="row g-3">
                         <div class="col-md-8">
-                            <label class="form-label">Schedule Name</label>
-                            <input class="form-control" @bind="model.Name" placeholder="e.g. Morning Lobby Loop" />
+                            <label class="form-label fw-bold">Schedule Name</label>
+                            <input type="text" class="form-control" @bind="formModel.Name" placeholder="e.g., Morning Announcements" />
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Priority</label>
-                            <input type="number" class="form-control" @bind="model.Priority" />
-                            <small class="text-muted">Higher number wins on overlap</small>
+                            <label class="form-label fw-bold">Priority (Higher Wins)</label>
+                            <input type="number" class="form-control" @bind="formModel.Priority" />
                         </div>
-                    </div>
 
-                    <div class="row mb-3">
                         <div class="col-md-12">
-                            <label class="form-label d-block">Target Device Groups</label>
+                            <label class="form-label fw-bold d-block">Target Device Groups</label>
                             <div class="dropdown" style="position: relative;">
-                                <button class="group-dropdown-btn dropdown-toggle w-100 d-flex justify-content-between align-items-center rounded" 
+                                <button class="btn btn-outline-secondary dropdown-toggle w-100 d-flex justify-content-between align-items-center rounded" 
                                         type="button" @onclick="ToggleGroupDropdown">
                                     <span>
-                                        @if (model.TargetGroups.Count == 0)
+                                        @if (formModel.TargetGroups.Count == 0)
                                         {
                                             <span class="text-muted">All Groups (Global)</span>
                                         }
                                         else
                                         {
-                                            @foreach (string gName in model.TargetGroups)
+                                            @foreach (string gName in formModel.TargetGroups)
                                             {
                                                 <span class="badge bg-primary me-1">@gName</span>
                                             }
                                         }
                                     </span>
                                 </button>
-                                <div class="group-dropdown-menu w-100 shadow @(showGroupDropdown ? "show" : "")" 
-                                     style="position: absolute; top: 100%; left: 0; z-index: 1000; display: @(showGroupDropdown ? "block" : "none");"
-                                     @onclick:stopPropagation="true">
-                                    <button class="group-item-btn" type="button" @onclick="() => { model.TargetGroups.Clear(); showGroupDropdown = false; }">
-                                        <i class="bi @(model.TargetGroups.Count == 0 ? "bi-check-circle-fill text-primary" : "bi-circle") me-2"></i>
-                                        <strong>All Groups (Global)</strong>
-                                    </button>
-                                    <hr class="dropdown-divider my-1">
-                                    @if (groups == null)
-                                    {
-                                        <div class="px-3 py-2 text-muted small"><span class="spinner-border spinner-border-sm me-1"></span> Loading groups...</div>
-                                    }
-                                    else if (groups.Count == 0)
-                                    {
-                                        <div class="px-3 py-2 text-muted small">No groups found. Manage them in <a href="versions" @onclick="CloseModal">Versions</a>.</div>
-                                    }
-                                    else
-                                    {
-                                        @foreach (DeviceGroupVersion g in groups)
+                                @if (showGroupDropdown)
+                                {
+                                    <div class="dropdown-menu w-100 shadow show" style="display: block;">
+                                        <button class="dropdown-item" type="button" @onclick="() => { formModel.TargetGroups.Clear(); showGroupDropdown = false; }">
+                                            <i class="bi @(formModel.TargetGroups.Count == 0 ? "bi-check-circle-fill text-primary" : "bi-circle") me-2"></i>
+                                            <strong>All Groups (Global)</strong>
+                                        </button>
+                                        <hr class="dropdown-divider my-1">
+                                        @foreach (var g in deviceGroups ?? new())
                                         {
-                                            <button class="group-item-btn" type="button" @onclick="() => ToggleGroup(g.GroupName)">
-                                                <i class="bi @(model.TargetGroups.Contains(g.GroupName) ? "bi-check-square-fill text-primary" : "bi-square") me-2"></i>
-                                                @g.GroupName
+                                            <button class="dropdown-item" type="button" @onclick="() => ToggleGroup(g.Name)">
+                                                <i class="bi @(formModel.TargetGroups.Contains(g.Name) ? "bi-check-square-fill text-primary" : "bi-square") me-2"></i>
+                                                @g.Name
                                             </button>
                                         }
-                                    }
-                                </div>
+                                    </div>
+                                }
                             </div>
-                            <small class="text-muted">Choose specific groups or leave as "Global" to target all devices.</small>
                         </div>
-                    </div>
 
-                    <div class="row mb-3">
                         <div class="col-md-6">
-                            <label class="form-label">Playlist</label>
-                            <select class="form-select" @bind="model.PlaylistId">
-                                <option value="0">Select a playlist...</option>
-                                @if (playlists != null)
+                            <label class="form-label fw-bold">Playlist</label>
+                            <select class="form-select" @bind="formModel.PlaylistId">
+                                <option value="0">-- Select Playlist --</option>
+                                @foreach (var playlist in playlists ?? new())
                                 {
-                                    @foreach (Playlist p in playlists)
-                                    {
-                                        <option value="@p.Id">@p.Name</option>
-                                    }
+                                    <option value="@playlist.Id">@playlist.Name</option>
                                 }
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label d-block">Recurrence</label>
+                            <label class="form-label fw-bold d-block">Schedule Type</label>
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="scheduleType" id="typeRecurring" 
-                                       checked="@(!model.UseSpecificDate)" @onchange="() => model.UseSpecificDate = false">
-                                <label class="form-check-label" for="typeRecurring">Recurring Days</label>
+                                <input class="form-check-input" type="radio" name="stype" id="st_rec" checked="@(!formModel.UseSpecificDate)" @onchange="() => formModel.UseSpecificDate = false" />
+                                <label class="form-check-label" for="st_rec">Recurring</label>
                             </div>
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="scheduleType" id="typeOneTime" 
-                                       checked="@(model.UseSpecificDate)" @onchange="() => model.UseSpecificDate = true">
-                                <label class="form-check-label" for="typeOneTime">One-time</label>
+                                <input class="form-check-input" type="radio" name="stype" id="st_one" checked="@(formModel.UseSpecificDate)" @onchange="() => formModel.UseSpecificDate = true" />
+                                <label class="form-check-label" for="st_one">One-time</label>
                             </div>
                         </div>
-                    </div>
 
-                    @if (model.UseSpecificDate)
-                    {
-                        <div class="mb-3">
-                            <label class="form-label">Scheduled Date</label>
-                            <input type="date" class="form-control" 
-                                   value="@model.ScheduledDate?.ToString("yyyy-MM-dd")" 
-                                   @onchange="e => { if (DateOnly.TryParse(e.Value?.ToString(), out DateOnly d)) model.ScheduledDate = d; }" />
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="mb-3">
-                            <label class="form-label d-block">Days of Week</label>
-                            <div class="btn-group w-100" role="group">
-                                @foreach (DayOfWeekFlags day in Enum.GetValues<DayOfWeekFlags>())
-                                {
-                                    if (day == DayOfWeekFlags.None || day == DayOfWeekFlags.All) continue;
-                                    
-                                    <input type="checkbox" class="btn-check" id="btncheck-@day" autocomplete="off"
-                                           checked="@((model.DaysOfWeek & day) != 0)"
-                                           @onchange="() => ToggleDay(day)">
-                                    <label class="btn btn-outline-primary" for="btncheck-@day">@day.ToString().Substring(0, 3)</label>
-                                }
+                        @if (formModel.UseSpecificDate)
+                        {
+                            <div class="col-md-12">
+                                <label class="form-label fw-bold">Event Date</label>
+                                <input type="date" class="form-control" @bind="formModel.ScheduledDate" />
                             </div>
-                        </div>
-                    }
+                        }
+                        else
+                        {
+                            <div class="col-md-12">
+                                <label class="form-label fw-bold mb-2">Days of Week</label>
+                                <div class="d-flex gap-2 flex-wrap bg-light p-3 rounded-3 border">
+                                    @foreach (DayOfWeekFlags day in Enum.GetValues<DayOfWeekFlags>().Where(d => d != DayOfWeekFlags.None && d != DayOfWeekFlags.All))
+                                    {
+                                        <div class="form-check form-check-inline m-0 me-2">
+                                            <input class="form-check-input" type="checkbox" id="day-@day" 
+                                                   checked="@((formModel.DaysOfWeek & day) != 0)"
+                                                   @onchange="e => ToggleDay(day, (bool)e.Value!)" />
+                                            <label class="form-check-label" for="day-@day">@day</label>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
 
-                    <div class="row mb-3">
                         <div class="col-md-6">
-                            <label class="form-label">Start Time</label>
-                            <input type="time" class="form-control" 
-                                   value="@model.StartTime.ToString("HH:mm")" 
-                                   @onchange="e => { if (TimeOnly.TryParse(e.Value?.ToString(), out TimeOnly t)) model.StartTime = t; }" />
+                            <label class="form-label fw-bold">Start Time</label>
+                            <input type="time" class="form-control" @bind="formModel.StartTime" />
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">End Time</label>
-                            <input type="time" class="form-control" 
-                                   value="@model.EndTime.ToString("HH:mm")" 
-                                   @onchange="e => { if (TimeOnly.TryParse(e.Value?.ToString(), out TimeOnly t)) model.EndTime = t; }" />
+                            <label class="form-label fw-bold">End Time</label>
+                            <input type="time" class="form-control" @bind="formModel.EndTime" />
                         </div>
-                    </div>
-
-                    <div class="form-check form-switch mt-4">
-                        <input class="form-check-input" type="checkbox" id="isActiveSwitch" @bind="model.IsActive">
-                        <label class="form-check-label" for="isActiveSwitch">Schedule is active</label>
                     </div>
                 </div>
-                <div class="modal-footer bg-light">
-                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
-                    <button type="button" class="btn btn-primary" @onclick="SaveSchedule" 
-                            disabled="@(!IsValid() || saving)">
-                        @if (saving)
-                        {
-                            <span class="spinner-border spinner-border-sm me-1"></span>
-                        }
-                        <i class="bi bi-check-lg me-1"></i> Save Schedule
+                <div class="modal-footer border-0 p-4 pt-0">
+                    <button class="btn btn-light" @onclick="CloseForm">Cancel</button>
+                    <button class="btn btn-primary px-4" @onclick="SaveSchedule" disabled="@(formModel.PlaylistId == 0 || saving)">
+                        <i class="bi bi-check-lg me-1"></i> @(editingId.HasValue ? "Update" : "Create") Schedule
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showDeleteConfirm && deleteTarget != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title text-danger">Delete Schedule</h5>
+                    <button type="button" class="btn-close" @onclick="() => showDeleteConfirm = false"></button>
+                </div>
+                <div class="modal-body">
+                    Are you sure you want to delete the schedule <strong>@deleteTarget.Name</strong>?
+                </div>
+                <div class="modal-footer border-0">
+                    <button class="btn btn-light" @onclick="() => showDeleteConfirm = false">Cancel</button>
+                    <button class="btn btn-danger" @onclick="DeleteSchedule">Delete</button>
                 </div>
             </div>
         </div>
@@ -296,72 +280,55 @@
 @code {
     private List<Schedule>? schedules;
     private List<Playlist>? playlists;
-    private List<DeviceGroupVersion>? groups;
-    private HttpClient? httpClient;
-    private string? loadError;
+    private List<DeviceGroup>? deviceGroups;
 
-    private bool showModal;
+    private bool showForm;
     private bool showGroupDropdown;
-    private int? editingId;
     private bool saving;
-    private ScheduleModel model = new();
+    private int? editingId;
+    private ScheduleFormModel formModel = new();
+    
+    private bool showDeleteConfirm;
+    private Schedule? deleteTarget;
 
     protected override async Task OnInitializedAsync()
     {
-        httpClient = HttpClientFactory.CreateClient();
-        httpClient.BaseAddress = new Uri(Navigation.BaseUri);
-        await LoadData();
+        await LoadAll();
     }
 
-    private async Task LoadData()
+    private async Task LoadAll()
     {
-        loadError = null;
-        try
-        {
-            schedules = await httpClient!.GetFromJsonAsync<List<Schedule>>("/api/schedules");
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error loading schedules");
-            loadError = "Failed to load schedules.";
-        }
-
-        try
-        {
-            playlists = await httpClient!.GetFromJsonAsync<List<Playlist>>("/api/playlists");
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error loading playlists");
-            if (loadError == null) loadError = "Failed to load playlists.";
-        }
-
-        try
-        {
-            groups = await httpClient!.GetFromJsonAsync<List<DeviceGroupVersion>>("/api/versions/groups");
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error loading groups");
-            if (loadError == null) loadError = "Failed to load device groups.";
-        }
+        using var context = await DbFactory.CreateDbContextAsync();
+        schedules = await context.Schedules
+            .Include(s => s.Playlist)
+            .Include(s => s.TargetGroups)
+            .OrderByDescending(s => s.Priority)
+            .ToListAsync();
+            
+        playlists = await context.Playlists
+            .OrderBy(p => p.Name)
+            .ToListAsync();
+            
+        deviceGroups = await context.DeviceGroups
+            .OrderBy(g => g.Name)
+            .ToListAsync();
     }
 
-    private void ShowCreateSchedule()
+    private void ShowCreateForm()
     {
         editingId = null;
-        model = new ScheduleModel();
-        showModal = true;
+        formModel = new ScheduleFormModel();
+        showForm = true;
     }
 
     private void EditSchedule(Schedule s)
     {
         editingId = s.Id;
-        model = new ScheduleModel
+        formModel = new ScheduleFormModel
         {
             Name = s.Name,
             PlaylistId = s.PlaylistId,
-            TargetGroups = s.TargetGroups?.Select(tg => tg.GroupName).ToList() ?? new List<string>(),
+            TargetGroups = s.TargetGroups.Select(tg => tg.GroupName).ToList(),
             DaysOfWeek = s.DaysOfWeek,
             ScheduledDate = s.ScheduledDate,
             UseSpecificDate = s.ScheduledDate.HasValue,
@@ -370,86 +337,88 @@
             Priority = s.Priority,
             IsActive = s.IsActive
         };
-        showModal = true;
+        showForm = true;
     }
 
-    private void CloseModal()
+    private void CloseForm()
     {
-        showModal = false;
+        showForm = false;
         showGroupDropdown = false;
     }
 
-    private void ToggleGroupDropdown()
-    {
-        showGroupDropdown = !showGroupDropdown;
-    }
-
-    private void ToggleDay(DayOfWeekFlags day)
-    {
-        if ((model.DaysOfWeek & day) != 0)
-            model.DaysOfWeek &= ~day;
-        else
-            model.DaysOfWeek |= day;
-    }
+    private void ToggleGroupDropdown() => showGroupDropdown = !showGroupDropdown;
 
     private void ToggleGroup(string groupName)
     {
-        if (model.TargetGroups.Contains(groupName))
-            model.TargetGroups.Remove(groupName);
+        if (formModel.TargetGroups.Contains(groupName))
+            formModel.TargetGroups.Remove(groupName);
         else
-            model.TargetGroups.Add(groupName);
+            formModel.TargetGroups.Add(groupName);
     }
 
-    private bool IsValid()
+    private void ToggleDay(DayOfWeekFlags day, bool value)
     {
-        if (string.IsNullOrWhiteSpace(model.Name) || model.PlaylistId == 0)
-            return false;
-
-        if (model.UseSpecificDate)
-            return model.ScheduledDate.HasValue;
-        
-        return model.DaysOfWeek != DayOfWeekFlags.None;
+        if (value)
+            formModel.DaysOfWeek |= day;
+        else
+            formModel.DaysOfWeek &= ~day;
     }
 
     private async Task SaveSchedule()
     {
-        if (!IsValid()) return;
-
         saving = true;
         try
         {
-            ScheduleCreateDto payload = new(
-                model.Name,
-                model.PlaylistId,
-                model.TargetGroups,
-                model.UseSpecificDate ? DayOfWeekFlags.None : model.DaysOfWeek,
-                model.UseSpecificDate ? model.ScheduledDate : null,
-                model.StartTime,
-                model.EndTime,
-                model.Priority,
-                model.IsActive);
-
-            HttpResponseMessage response;
+            using var context = await DbFactory.CreateDbContextAsync();
+            Schedule? entity;
             if (editingId.HasValue)
-                response = await httpClient!.PutAsJsonAsync($"/api/schedules/{editingId}", payload);
-            else
-                response = await httpClient!.PostAsJsonAsync("/api/schedules", payload);
+            {
+                entity = await context.Schedules
+                    .Include(s => s.TargetGroups)
+                    .FirstOrDefaultAsync(s => s.Id == editingId.Value);
+                
+                if (entity == null) return;
 
-            if (response.IsSuccessStatusCode)
-            {
-                showModal = false;
-                await LoadData();
+                entity.Name = formModel.Name;
+                entity.PlaylistId = formModel.PlaylistId;
+                entity.DaysOfWeek = formModel.UseSpecificDate ? DayOfWeekFlags.None : formModel.DaysOfWeek;
+                entity.ScheduledDate = formModel.UseSpecificDate ? formModel.ScheduledDate : null;
+                entity.StartTime = formModel.StartTime;
+                entity.EndTime = formModel.EndTime;
+                entity.Priority = formModel.Priority;
+                entity.IsActive = formModel.IsActive;
+                entity.UpdatedAt = DateTime.UtcNow;
+
+                // Sync groups
+                context.RemoveRange(entity.TargetGroups);
+                entity.TargetGroups = formModel.TargetGroups.Select(g => new ScheduleTargetGroup { GroupName = g }).ToList();
             }
             else
             {
-                string body = await response.Content.ReadAsStringAsync();
-                loadError = $"Failed to save schedule: {body}";
+                entity = new Schedule
+                {
+                    Name = formModel.Name,
+                    PlaylistId = formModel.PlaylistId,
+                    DaysOfWeek = formModel.UseSpecificDate ? DayOfWeekFlags.None : formModel.DaysOfWeek,
+                    ScheduledDate = formModel.UseSpecificDate ? formModel.ScheduledDate : null,
+                    StartTime = formModel.StartTime,
+                    EndTime = formModel.EndTime,
+                    Priority = formModel.Priority,
+                    IsActive = formModel.IsActive,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    TargetGroups = formModel.TargetGroups.Select(g => new ScheduleTargetGroup { GroupName = g }).ToList()
+                };
+                context.Schedules.Add(entity);
             }
+
+            await context.SaveChangesAsync();
+            showForm = false;
+            await LoadAll();
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error saving schedule");
-            loadError = "Error saving schedule.";
         }
         finally
         {
@@ -457,46 +426,66 @@
         }
     }
 
-    private async Task DeleteSchedule(int id)
+    private void ConfirmDelete(Schedule s)
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete this schedule?");
-        if (!confirmed) return;
+        deleteTarget = s;
+        showDeleteConfirm = true;
+    }
 
+    private async Task DeleteSchedule()
+    {
+        if (deleteTarget == null) return;
         try
         {
-            HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/schedules/{id}");
-            if (response.IsSuccessStatusCode)
-                await LoadData();
-            else
-                loadError = "Failed to delete schedule.";
+            using var context = await DbFactory.CreateDbContextAsync();
+            var existing = await context.Schedules.FindAsync(deleteTarget.Id);
+            if (existing != null)
+            {
+                context.Schedules.Remove(existing);
+                await context.SaveChangesAsync();
+                showDeleteConfirm = false;
+                await LoadAll();
+            }
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error deleting schedule {Id}", id);
-            loadError = "Failed to delete schedule.";
+            Logger.LogError(ex, "Error deleting schedule");
         }
     }
 
-    private List<string> GetActiveDays(DayOfWeekFlags flags)
+    private async Task ToggleActive(Schedule s)
     {
-        if (flags == DayOfWeekFlags.All) return new List<string> { "Daily" };
-        
-        List<string> days = new();
-        foreach (DayOfWeekFlags day in Enum.GetValues<DayOfWeekFlags>())
+        try
         {
-            if (day == DayOfWeekFlags.None || day == DayOfWeekFlags.All) continue;
-            if ((flags & day) != 0)
-                days.Add(day.ToString().Substring(0, 3));
+            using var context = await DbFactory.CreateDbContextAsync();
+            var existing = await context.Schedules.FindAsync(s.Id);
+            if (existing != null)
+            {
+                existing.IsActive = !existing.IsActive;
+                existing.UpdatedAt = DateTime.UtcNow;
+                await context.SaveChangesAsync();
+                await LoadAll();
+            }
         }
-        return days;
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error toggling schedule status");
+        }
     }
 
-    public void Dispose()
+    private List<string> GetSelectedDays(DayOfWeekFlags days)
     {
-        httpClient?.Dispose();
+        if (days == DayOfWeekFlags.All) return new List<string> { "Daily" };
+        
+        var list = new List<string>();
+        foreach (DayOfWeekFlags day in Enum.GetValues<DayOfWeekFlags>().Where(d => d != DayOfWeekFlags.None && d != DayOfWeekFlags.All))
+        {
+            if ((days & day) != 0) list.Add(day.ToString().Substring(0, 3));
+        }
+        return list;
     }
 
-    private sealed class ScheduleModel
+    private sealed class ScheduleFormModel
     {
         public string Name { get; set; } = "";
         public int PlaylistId { get; set; }
@@ -505,7 +494,7 @@
         public DayOfWeekFlags DaysOfWeek { get; set; } = DayOfWeekFlags.All;
         public DateOnly? ScheduledDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
         public TimeOnly StartTime { get; set; } = new TimeOnly(0, 0);
-        public TimeOnly EndTime { get; set; } = new TimeOnly(23, 59);
+        public TimeOnly EndTime { get; set; } = new TimeOnly(23, 59, 59);
         public int Priority { get; set; } = 1;
         public bool IsActive { get; set; } = true;
     }

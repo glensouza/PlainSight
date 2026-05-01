@@ -11,7 +11,7 @@ public class PlayerWorker(
     ScreenCaptureService screenshot,
     ScreenshotUploadService screenshotUpload,
     PlaylistService playlist,
-    CacheService cache,
+    CacheManager cache,
     ILogger<PlayerWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -19,7 +19,7 @@ public class PlayerWorker(
         logger.LogInformation("PlainSight Player started");
 
         // Sync and load initial playlist before the browser page polls for it
-        await cache.SyncAsync(stoppingToken);
+        await cache.SyncAllAsync(stoppingToken);
         await playlist.RefreshAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -46,9 +46,9 @@ public class PlayerWorker(
                             logger.LogWarning("Screenshot capture returned empty result; skipping upload");
                     }
 
-                    if (response.PlaylistFiles != null)
+                    if (response.PlaylistItems != null)
                     {
-                        playlist.UpdatePlaylist(response.PlaylistFiles);
+                        playlist.UpdatePlaylist(response.PlaylistItems);
                     }
                     else
                     {
@@ -62,15 +62,8 @@ public class PlayerWorker(
                     await playlist.RefreshAsync(stoppingToken);
                 }
 
-                // Sync from SMB to local cache; isolated so an SMB outage doesn't suppress the heartbeat
-                try
-                {
-                    await cache.SyncAsync(stoppingToken);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "SMB cache sync failed; continuing with cached content");
-                }
+                // Sync and refresh playlist on the same cadence as the heartbeat
+                await cache.SyncAllAsync(stoppingToken);
 
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
             }

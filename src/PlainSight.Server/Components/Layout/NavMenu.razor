@@ -1,34 +1,32 @@
-<div class="sidebar-brand">
-    <i class="bi bi-display-fill sidebar-brand-icon"></i>
-    <div>
-        <div class="sidebar-brand-name">PlainSight</div>
-        <div class="sidebar-brand-sub">PlainSight</div>
+@using Microsoft.AspNetCore.Components.Authorization
+
+<div class="sidebar">
+    <div class="sidebar-brand">
+        <i class="bi bi-display-fill sidebar-brand-icon"></i>
+        <div>
+            <div class="sidebar-brand-name">PlainSight</div>
+            <div class="sidebar-brand-sub">Digital Signage</div>
+        </div>
     </div>
-</div>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
-
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-section-label">Dashboard</div>
-
+    <nav class="nav-menu">
         <div class="nav-item">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <i class="bi bi-grid-1x2-fill"></i> Overview
+                <i class="bi bi-speedometer2"></i> Dashboard
             </NavLink>
         </div>
-
-        <div class="nav-section-label">Manage</div>
 
         <div class="nav-item">
             <NavLink class="nav-link" href="devices">
-                <i class="bi bi-display"></i> Devices
+                <i class="bi bi-cpu"></i> Devices
             </NavLink>
         </div>
 
+        <div class="nav-section-title">Library</div>
+
         <div class="nav-item">
             <NavLink class="nav-link" href="content">
-                <i class="bi bi-film"></i> Content
+                <i class="bi bi-images"></i> Content Library
             </NavLink>
         </div>
 
@@ -40,38 +38,39 @@
 
         <div class="nav-item">
             <NavLink class="nav-link" href="schedules">
-                <i class="bi bi-calendar3"></i> Schedule
+                <i class="bi bi-calendar-event"></i> Schedules
             </NavLink>
         </div>
 
+        <div class="nav-section-title">System</div>
+
         <div class="nav-item">
             <NavLink class="nav-link" href="versions">
-                <i class="bi bi-box-seam"></i> Versions
+                <i class="bi bi-box-seam"></i> Software Versions
             </NavLink>
         </div>
 
         <AuthorizeView Roles="Admin">
             <Authorized>
-                <div class="nav-section-label">Admin</div>
                 <div class="nav-item">
                     <NavLink class="nav-link" href="users">
-                        <i class="bi bi-people-fill"></i> Users
+                        <i class="bi bi-people"></i> Manage Users
                     </NavLink>
                 </div>
             </Authorized>
         </AuthorizeView>
 
+        <div class="nav-spacer"></div>
+
         <AuthorizeView>
             <Authorized>
-                <div class="nav-item mt-auto">
-                    <span class="nav-link text-muted small">
+                <div class="nav-footer">
+                    <div class="nav-user-info mb-2 px-3 small text-muted">
                         <i class="bi bi-person-circle"></i> @context.User.Identity?.Name
-                    </span>
-                </div>
-                <div class="nav-item">
-                    <form action="/auth/logout" method="post">
+                    </div>
+                    <form action="auth/logout" method="post">
                         <AntiforgeryToken />
-                        <button type="submit" class="nav-link btn btn-link w-100 text-start text-danger">
+                        <button type="submit" class="btn btn-link nav-link text-danger w-100 text-start px-3">
                             <i class="bi bi-box-arrow-right"></i> Sign Out
                         </button>
                     </form>

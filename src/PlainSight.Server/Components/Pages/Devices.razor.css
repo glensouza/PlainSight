@@ -1,0 +1,41 @@
+.bulk-action-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1050;
+    background-color: var(--bs-body-bg, #fff);
+    border-top: 2px solid var(--bs-primary, #0d6efd);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
+    padding: 0.625rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.bulk-action-bar__info {
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+    font-size: 0.9rem;
+}
+
+.bulk-action-bar__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    flex: 1;
+}
+
+.bulk-action-bar__sep {
+    color: var(--bs-secondary, #6c757d);
+    font-size: 1rem;
+    padding: 0 0.25rem;
+}
+
+.bulk-action-bar__select {
+    min-width: 140px;
+    width: auto;
+}

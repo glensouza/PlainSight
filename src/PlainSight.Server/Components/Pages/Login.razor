@@ -6,7 +6,7 @@
 @using Microsoft.AspNetCore.Authentication.Cookies
 @using Microsoft.EntityFrameworkCore
 @using PlainSight.Server.Data
-@inject PlainSightDbContext DbContext
+@inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject NavigationManager Navigation
 
 <PageTitle>Sign In — PlainSight</PageTitle>
@@ -59,7 +59,8 @@
 
     private async Task HandleLoginAsync()
     {
-        AdminUser? user = await DbContext.AdminUsers
+        using var context = await DbFactory.CreateDbContextAsync();
+        AdminUser? user = await context.AdminUsers
             .FirstOrDefaultAsync(u => u.Username == Model!.Username && u.IsActive);
 
         if (user is null || !BCrypt.Net.BCrypt.Verify(Model!.Password, user.PasswordHash))
@@ -69,7 +70,7 @@
         }
 
         user.LastLoginAt = DateTime.UtcNow;
-        await DbContext.SaveChangesAsync();
+        await context.SaveChangesAsync();
 
         List<Claim> claims =
         [

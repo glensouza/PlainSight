@@ -1,127 +1,100 @@
 # PlainSight
 
-Enterprise-grade digital signage system for churches and organizations, built with .NET 10 and optimized for Raspberry Pi 5.
+Enterprise-grade digital signage system for organizations, built with .NET 10 and optimized for Raspberry Pi 5.
 
 ## 🎯 Overview
 
-PlainSight is a distributed digital signage solution that provides zero-touch maintenance and high reliability through:
+PlainSight is a distributed digital signage solution that provides zero-touch maintenance and high reliability through server-side rendering, SMB-based content streaming, and automated self-updating fleets.
 
-- **Server-Side Rendering**: Complex websites rendered to video on the server, not the device
-- **Self-Updating Fleet**: Devices automatically update themselves without human intervention
-- **SMB Streaming**: Content streamed directly from network share - no local synchronization
-- **Live Monitoring**: Real-time device status and on-demand screenshot capture
-- **Canary Deployments**: Test updates on specific devices before fleet-wide rollout
+---
 
-## 🚀 Quick Start
+## 🏗️ Software Architecture
 
-### Deploy Server (Docker)
+PlainSight follows a modern, decoupled architecture designed for high availability and low maintenance overhead.
 
-```bash
-git clone https://github.com/glensouza/PlainSight.git
-cd PlainSight
-docker compose up -d
-open http://localhost:8080
-```
+### 1. Hybrid Server Model
+The system uses a unique hybrid interaction model:
+- **Internal Logic (Blazor Interactive Server)**: The administrative dashboard uses direct database access via `IDbContextFactory<PlainSightDbContext>`. This eliminates the overhead and security complexity of an internal API loop for UI tasks.
+- **External API (Minimal APIs)**: A dedicated set of REST endpoints exists strictly for physical device communication. This "Edge-Only API" surface ensures that Raspberry Pi players have a secure, authenticated channel for heartbeats and content coordination.
 
-### Deploy Player (Raspberry Pi)
+### 2. Rendering Engine
+Instead of requiring high-performance GPUs on player devices, complex web content (dashboards, animated signs) is rendered to high-quality MP4/WebM video on the server using **PuppeteerSharp**. This ensures a consistent, fluid visual experience across all screens regardless of device age.
 
-```bash
-curl -sSL https://raw.githubusercontent.com/glensouza/PlainSight/main/deployment/raspberry-pi/install.sh | bash
-```
+### 3. Distribution & Playback Control
+- **Explicit Content Control**: The system uses a "No Fallback" policy for main content. Players only display content explicitly assigned to their active playlist via the **Schedules** system.
+- **Idle Content Library**: A dedicated "Idle" system provides branded signage when no schedules are active. Files placed in the `idle` folder on the SMB share are automatically synced to the Pi's local cache and played in alphabetical order during unscheduled time slots. This ensures the screen is never blank, even if the network is down.
+- **Command & Control**: Heartbeat-based polling (every 30s) where devices report health and receive commands (screenshot, update, playlist changes).
+- **Data Plane**: Content is served via **SMB (Samba)**. Players stream video directly from the network share, with local caching for offline resilience.
 
-## 📚 Documentation
+---
 
-- **[Complete Documentation](docs/README.md)** - Full system overview
-- **[Deployment Guide](docs/deployment.md)** - Server deployment with Docker
-- **[Raspberry Pi Setup](docs/raspberry-pi-setup.md)** - Player device setup
-- **[GitHub Actions](docs/github-actions.md)** - CI/CD pipeline
-- **[Architecture](docs/architecture.md)** - System design details
-- **[API Reference](docs/api.md)** - REST API documentation
+## 📂 File Purpose & Project Structure
 
-## 🏗️ Architecture
+### `src/PlainSight.Server` (The Control Plane)
+The heart of the system, handling administration and device coordination.
+- **`Api/`**: REST endpoints for Raspberry Pi players (Heartbeat, Screenshot Upload, etc.).
+- **`Components/Pages/`**: The Admin Dashboard. All logic here executes server-side with direct DB access.
+  - **`Schedules.razor`**: Manage time-based playlist assignments with priorities.
+- **`Data/`**: EF Core context and database configuration.
+- **`Services/`**: Core background logic, including `ScheduleService.cs` (priority calculation) and `WebsiteRecorder.cs` (rendering).
 
-### Components
+### `src/PlainSight.Player` (The Edge)
+A lightweight .NET 10 background worker running on the Raspberry Pi.
+- **`PlayerWorker.cs`**: Orchestrates the local Chromium kiosk and handles the heartbeat loop.
+- **`Services/`**: Local logic for update application, screen capture, and multi-folder cache syncing.
+- **`wwwroot/index.html`**: A hardware-accelerated HTML5 video player.
+  - **Playback Mode**: Automatically switches between **Scheduled** and **Idle** content based on the server's control signals.
 
-1. **PlainSight.Server** - Admin web app (ASP.NET Core, Blazor)
-   - Device management
-   - Content rendering (PuppeteerSharp)
-   - Update distribution
-   
-2. **PlainSight.Player** - Raspberry Pi client (.NET 10)
-   - SMB streaming via Chromium kiosk + HTML5 video player
-   - Heartbeat reporting
-   - Self-updating
-   
-3. **Infrastructure**
-   - PostgreSQL database
-   - Samba file share
-   - .NET Aspire orchestration
+### `src/PlainSight.Shared`
+Shared POCOs and DTOs used by both the Server and the Player to ensure type-safe communication.
 
-### Technology Stack
+### `src/PlainSight.AppHost`
+.NET Aspire orchestrator that spins up the Server, Player, and PostgreSQL containers during development.
 
-- .NET 10 (LTS)
-- ASP.NET Core & Blazor
-- Entity Framework Core
-- PostgreSQL
-- Docker & Docker Compose
-- .NET Aspire
-- PuppeteerSharp
-- Chromium (kiosk display on Raspberry Pi)
+---
 
-## 🔧 System Requirements
+## 🛠️ Infrastructure
 
-### Server
-- Docker Desktop (macOS/Linux)
-- 2GB RAM minimum
-- 10GB disk space
+### Data Storage
+- **PostgreSQL**: Stores device telemetry, playlist metadata, and user accounts.
+- **Samba (SMB)**: Used as the CDN. Contains two primary shares:
+  - `content/`: Managed library items and rendered videos.
+  - `idle/`: Branded fallback content played when no schedule is active.
 
-### Player
-- Raspberry Pi 5 (4GB/8GB)
-- Industrial MicroSD (32GB+)
-- Active cooling (mandatory)
-- Gigabit Ethernet
-- HDMI 2.1 display
+### Deployment & Orchestration
+- **Docker**: The Server project is containerized for easy deployment.
+- **Systemd**: The Player runs as a hardened systemd service on Raspberry Pi OS.
+- **.NET Aspire**: Used for local development orchestration.
 
-## 🎓 Features
+---
 
-- ✅ Zero-touch device maintenance
-- ✅ Automatic software updates
-- ✅ Real-time telemetry
-- ✅ Live screenshot capture
-- ✅ Canary deployment strategy
-- ✅ 4K@60fps video playback
-- ✅ 5 previous images retained for rollback
-- ✅ SMB-based content delivery
+## 🔧 Technology Stack
 
-## 📦 Building from Source
+- **Framework**: .NET 10 (C# 13)
+- **UI**: Blazor Web App (Interactive Server)
+- **Database**: Entity Framework Core & PostgreSQL
+- **Rendering**: PuppeteerSharp (Headless Chromium)
+- **Authentication**: Cookie-based Auth for Admins; API Key (SHA256) for Devices.
+- **Client**: Raspberry Pi 5 running Chromium in Kiosk Mode.
+
+---
+
+## 🚀 Building & Running
 
 ```bash
-# Restore dependencies
-dotnet restore
-
-# Build solution
-dotnet build
-
-# Run with Aspire (development)
+# Run the entire ecosystem locally (Aspire)
 dotnet run --project src/PlainSight.AppHost
 
-# Build Docker image
+# Build the Server Docker image
 docker build -t plainsight-server -f src/PlainSight.Server/Dockerfile .
 
-# Build Player for Raspberry Pi
+# Build the Player for ARM64 (Raspberry Pi)
 dotnet publish src/PlainSight.Player/PlainSight.Player.csproj \
   -r linux-arm64 --self-contained -p:PublishSingleFile=true
 ```
 
-## 🤝 Contributing
+## 📚 Further Reading
 
-This is a church digital signage project. Contributions welcome!
-
-## 📄 License
-
-Copyright (c) 2026. All rights reserved.
-
-## 💬 Support
-
-For issues and questions, please open an issue on GitHub.
-
+- [API Reference](docs/api.md)
+- [Architecture Deep-Dive](docs/architecture.md)
+- [Raspberry Pi Setup](docs/raspberry-pi-setup.md)

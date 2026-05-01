@@ -10,14 +10,14 @@ builder.AddServiceDefaults();
 string contentPath = builder.Configuration["ContentPath"] ?? "/mnt/plainsight/content";
 string cachePath = builder.Configuration["CachePath"] ?? "/var/cache/plainsight/content";
 
+string idleSourcePath = builder.Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+string idleCachePath = builder.Configuration["IdleCachePath"] ?? "/var/cache/plainsight/idle";
+
 // Under Aspire the ServerUrl resolves via service discovery ("http://plainsight-server").
 // On the Pi without Aspire, override ServerUrl in appsettings or env to the real address.
 string serverUrl = builder.Configuration["ServerUrl"] ?? "http://plainsight-server";
 
 // Remove the Polly resilience handlers that AddServiceDefaults adds to all clients.
-// HeartbeatService and UpdateService have their own failure handling — the
-// PlayerWorker loop retries every 30 seconds. Polly's 10s attempt timeout
-// and retries just produce misleading noise in the logs.
 #pragma warning disable EXTEXP0001
 builder.Services.AddHttpClient<HeartbeatService>(client =>
 {
@@ -39,12 +39,37 @@ builder.Services.AddHttpClient<ScreenshotUploadService>(client =>
 #pragma warning restore EXTEXP0001
 
 builder.Services.AddSingleton<ScreenCaptureService>();
+
+// Register cache manager for both content and idle folders
+builder.Services.AddSingleton(sp => new CacheManager(
+    new[] {
+        (contentPath, cachePath),
+        (idleSourcePath, idleCachePath)
+    },
+    sp.GetRequiredService<ILogger<CacheService>>()));
+
 builder.Services.AddSingleton(sp =>
-    new CacheService(contentPath, cachePath, sp.GetRequiredService<ILogger<CacheService>>()));
-builder.Services.AddSingleton(sp =>
-    new PlaylistService(cachePath, sp.GetRequiredService<ILogger<PlaylistService>>()));
+    new PlaylistService(cachePath, idleCachePath, sp.GetRequiredService<ILogger<PlaylistService>>()));
+
 builder.Services.AddHostedService<KioskService>();
 builder.Services.AddHostedService<PlayerWorker>();
+
+// Ensure storage directories exist
+string[] storagePaths = [contentPath, cachePath, idleSourcePath, idleCachePath];
+foreach (string path in storagePaths)
+{
+    if (!Directory.Exists(path))
+    {
+        try
+        {
+            Directory.CreateDirectory(path);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to create storage directory {path}: {ex.Message}");
+        }
+    }
+}
 
 WebApplication app = builder.Build();
 
@@ -54,8 +79,6 @@ app.MapDefaultEndpoints();
 app.MapGet("/", () => Results.Redirect("/player"));
 
 // Serve the HTML5 video player page.
-// IWebHostEnvironment.WebRootPath resolves to the wwwroot folder correctly
-// in both development (source tree) and production (publish directory).
 app.MapGet("/player", (IWebHostEnvironment env) =>
 {
     string htmlPath = Path.Combine(env.WebRootPath, "index.html");
@@ -64,7 +87,7 @@ app.MapGet("/player", (IWebHostEnvironment env) =>
     return Results.File(htmlPath, "text/html; charset=utf-8");
 });
 
-// Serve content files from local cache with range support for video seeking
+// Serve content files from both local cache and idle cache
 app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
 {
     if (string.IsNullOrWhiteSpace(filename) ||
@@ -80,14 +103,12 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
         return Results.BadRequest("Unsupported file type");
     }
 
-    string normalizedCachePath = Path.GetFullPath(cachePath);
-    string filePath = Path.GetFullPath(Path.Combine(normalizedCachePath, filename));
-    string relPath = Path.GetRelativePath(normalizedCachePath, filePath);
-
-    if (Path.IsPathRooted(relPath) || relPath.StartsWith(".."))
+    // Check main cache first
+    string filePath = Path.Combine(cachePath, filename);
+    if (!File.Exists(filePath))
     {
-        logger.LogWarning("Path traversal attempt blocked for filename: {Filename}", filename);
-        return Results.BadRequest("Invalid filename");
+        // Fallback to idle cache
+        filePath = Path.Combine(idleCachePath, filename);
     }
 
     if (!File.Exists(filePath))
@@ -97,7 +118,7 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
     return Results.File(filePath, contentType, enableRangeProcessing: true);
 });
 
-// Return current playlist so the browser page can poll for updates
+// Return current playlist (switches to idle automatically)
 app.MapGet("/api/playlist", (PlaylistService playlist) =>
     Results.Json(playlist.GetCurrentPlaylist()));
 

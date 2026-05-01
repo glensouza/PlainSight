@@ -4,19 +4,20 @@ using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Services;
 
-public class ScheduleService(PlainSightDbContext dbContext)
+public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, ILogger<ScheduleService> logger)
 {
-    public async Task<Playlist?> GetActivePlaylistAsync(string deviceGroup, DateTime utcNow)
+    public async Task<Playlist?> GetActivePlaylistAsync(string deviceGroup, CancellationToken ct = default)
     {
-        DateOnly currentDate = DateOnly.FromDateTime(utcNow);
-        TimeOnly currentTime = TimeOnly.FromDateTime(utcNow);
-        DayOfWeek currentDay = utcNow.DayOfWeek;
-        DayOfWeekFlags dayFlag = GetDayOfWeekFlag(currentDay);
+        using var context = await dbFactory.CreateDbContextAsync(ct);
+        DateTime now = DateTime.UtcNow;
+        DateOnly currentDate = DateOnly.FromDateTime(now);
+        TimeOnly currentTime = TimeOnly.FromDateTime(now);
+        DayOfWeekFlags dayFlag = GetDayOfWeekFlag(now.DayOfWeek);
 
-        // 1. Check for active schedules matching group and current day/time
+        // 1. Find all active schedules matching group and current day/time
         // Matches if: (TargetGroups is empty [Global] OR TargetGroups contains deviceGroup)
         // AND ((ScheduledDate matches today) OR (ScheduledDate is null AND DaysOfWeek matches today))
-        Playlist? scheduledPlaylist = await dbContext.Schedules
+        var eligibleSchedules = await context.Schedules
             .Include(s => s.TargetGroups)
             .Include(s => s.Playlist)
             .ThenInclude(p => p.Items)
@@ -26,21 +27,32 @@ public class ScheduleService(PlainSightDbContext dbContext)
                         ((s.ScheduledDate == currentDate) || (s.ScheduledDate == null && (s.DaysOfWeek & dayFlag) != 0)) &&
                         s.StartTime <= currentTime &&
                         s.EndTime >= currentTime)
-            .OrderByDescending(s => s.Priority)
-            .Select(s => s.Playlist)
-            .FirstOrDefaultAsync();
+            .ToListAsync(ct);
 
-        if (scheduledPlaylist != null)
+        if (eligibleSchedules.Any())
         {
-            return scheduledPlaylist;
+            // Selection Logic:
+            // 1. Specific group takes precedence over "Global"
+            // 2. Higher Priority wins
+            // 3. One-time events win over repeating schedules
+            // 4. Most recently updated wins
+            // 5. Alphabetical tie-breaker
+            return eligibleSchedules
+                .OrderByDescending(s => s.TargetGroups.Any()) // Specific targets first
+                .ThenByDescending(s => s.Priority)
+                .ThenByDescending(s => s.ScheduledDate.HasValue) // One-time first
+                .ThenByDescending(s => s.UpdatedAt)
+                .ThenBy(s => s.Playlist.Name)
+                .Select(s => s.Playlist)
+                .FirstOrDefault();
         }
 
         // 2. Fallback to the group's default playlist
-        DeviceGroupVersion? groupConfig = await dbContext.DeviceGroupVersions
+        DeviceGroupVersion? groupConfig = await context.DeviceGroupVersions
             .Include(g => g.DefaultPlaylist!)
             .ThenInclude(p => p.Items)
             .ThenInclude(i => i.ContentItem)
-            .FirstOrDefaultAsync(g => g.GroupName == deviceGroup);
+            .FirstOrDefaultAsync(g => g.GroupName == deviceGroup, ct);
 
         if (groupConfig?.DefaultPlaylist != null)
         {
@@ -50,11 +62,11 @@ public class ScheduleService(PlainSightDbContext dbContext)
         // 3. Last resort fallback: "Default" group's playlist if current group isn't "Default"
         if (deviceGroup != "Default")
         {
-            DeviceGroupVersion? defaultConfig = await dbContext.DeviceGroupVersions
+            DeviceGroupVersion? defaultConfig = await context.DeviceGroupVersions
                 .Include(g => g.DefaultPlaylist!)
                 .ThenInclude(p => p.Items)
                 .ThenInclude(i => i.ContentItem)
-                .FirstOrDefaultAsync(g => g.GroupName == "Default");
+                .FirstOrDefaultAsync(g => g.GroupName == "Default", ct);
             
             return defaultConfig?.DefaultPlaylist;
         }

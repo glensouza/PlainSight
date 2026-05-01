@@ -1,11 +1,12 @@
 @page "/playlists"
 @rendermode InteractiveServer
 @attribute [Authorize]
-@inject IHttpClientFactory HttpClientFactory
+@inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject NavigationManager Navigation
 @inject ILogger<Playlists> Logger
+@using Microsoft.EntityFrameworkCore
 @using PlainSight.Shared.Models
-@implements IDisposable
+@using PlainSight.Server.Data
 
 <PageTitle>Playlists — PlainSight</PageTitle>
 
@@ -126,23 +127,43 @@ else
                     <button type="button" class="btn-close" @onclick="CloseManageItems"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle"></i> This feature allows you to add content items to the playlist. 
-                        Full drag-and-drop reordering will be implemented with JavaScript interop.
-                    </div>
+
                     <h6>Current Items (@selectedPlaylist.Items.Count)</h6>
                     @if (selectedPlaylist.Items.Any())
                     {
-                        <div class="list-group">
-                            @foreach (PlaylistItem item in selectedPlaylist.Items.OrderBy(i => i.Order))
+                        <div class="list-group mb-3">
+                            @{
+                                List<PlaylistItem> orderedItems = selectedPlaylist.Items.OrderBy(i => i.Order).ToList();
+                            }
+                            @foreach (PlaylistItem item in orderedItems)
                             {
                                 <div class="list-group-item d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <strong>@item.Order.</strong> @item.ContentItem.Name
-                                        <span class="badge bg-secondary ms-2">@item.ContentItem.DurationSeconds s</span>
+                                    <div class="d-flex align-items-center">
+                                        <div class="d-flex flex-column me-3">
+                                            <button class="btn btn-sm btn-light mb-1 border" 
+                                                    style="padding: 4px 8px; line-height: 1; min-width: 32px;"
+                                                    @onclick="() => MoveItem(item, -1)" 
+                                                    disabled="@(item.Id == orderedItems.First().Id || isReordering)"
+                                                    title="Move Up">
+                                                <i class="bi bi-caret-up-fill" style="font-size: 1.2rem;"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-light border" 
+                                                    style="padding: 4px 8px; line-height: 1; min-width: 32px;"
+                                                    @onclick="() => MoveItem(item, 1)" 
+                                                    disabled="@(item.Id == orderedItems.Last().Id || isReordering)"
+                                                    title="Move Down">
+                                                <i class="bi bi-caret-down-fill" style="font-size: 1.2rem;"></i>
+                                            </button>
+                                        </div>
+                                        <div>
+                                            <strong>@item.Order.</strong> @item.ContentItem.Name
+                                            <span class="badge bg-secondary ms-2">@item.ContentItem.DurationSeconds s</span>
+                                        </div>
                                     </div>
-                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveFromPlaylist(item.Id)">
-                                        <i class="bi bi-x"></i>
+                                    <button class="btn btn-sm btn-outline-danger" 
+                                            @onclick="() => RemoveFromPlaylist(item.Id)"
+                                            disabled="@isReordering">
+                                        <i class="bi bi-trash"></i>
                                     </button>
                                 </div>
                             }
@@ -154,6 +175,7 @@ else
                     }
 
                     <hr />
+
                     <h6>Add Content</h6>
                     @if (availableContent == null)
                     {
@@ -162,26 +184,27 @@ else
                     else if (!availableContent.Any())
                     {
                         <div class="alert alert-warning py-2 small">
-                            No content available. Upload videos in the <a href="content">Content</a> page first.
+                            No content available. Upload content on the <a href="content">Content</a> page first.
                         </div>
                     }
                     else
                     {
-                        <div class="row g-2">
-                            <div class="col-md-8">
-                                <select class="form-select form-select-sm" @bind="selectedContentId">
-                                    <option value="0">Select content to add...</option>
-                                    @foreach (var content in availableContent)
-                                    {
-                                        <option value="@content.Id">@content.Name (@content.DurationSeconds s)</option>
-                                    }
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <button class="btn btn-sm btn-success w-100" @onclick="AddToPlaylist" disabled="@(selectedContentId == 0)">
-                                    <i class="bi bi-plus"></i> Add to Playlist
-                                </button>
-                            </div>
+                        <div class="list-group">
+                            @foreach (ContentItem content in availableContent)
+                            {
+                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span>@content.Name</span>
+                                        <span class="badge bg-secondary ms-2">@content.DurationSeconds s</span>
+                                        <span class="badge bg-info ms-1">@content.Type</span>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-primary"
+                                            @onclick="() => AddToPlaylist(content.Id)"
+                                            disabled="@isAddingItem">
+                                        <i class="bi bi-plus"></i> Add
+                                    </button>
+                                </div>
+                            }
                         </div>
                     }
                 </div>
@@ -195,21 +218,19 @@ else
 
 @code {
     private List<Playlist>? playlists;
-    private HttpClient? httpClient;
+    private List<ContentItem>? availableContent;
     private bool showCreateForm;
     private int? editingPlaylistId;
-    private string playlistName = "";
-    private string playlistDescription = "";
+    private string playlistName = string.Empty;
+    private string playlistDescription = string.Empty;
     private bool playlistIsActive = true;
     private int? managingPlaylistId;
     private Playlist? selectedPlaylist;
-    private List<ContentItem>? availableContent;
-    private int selectedContentId;
+    private bool isAddingItem;
+    private bool isReordering;
 
     protected override async Task OnInitializedAsync()
     {
-        httpClient = HttpClientFactory.CreateClient();
-        httpClient.BaseAddress = new Uri(Navigation.BaseUri);
         await LoadPlaylists();
     }
 
@@ -217,7 +238,12 @@ else
     {
         try
         {
-            playlists = await httpClient!.GetFromJsonAsync<List<Playlist>>("/api/playlists");
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            playlists = await context.Playlists
+                .Include(p => p.Items)
+                .ThenInclude(i => i.ContentItem)
+                .OrderByDescending(p => p.UpdatedAt)
+                .ToListAsync();
         }
         catch (Exception ex)
         {
@@ -226,12 +252,28 @@ else
         }
     }
 
+    private async Task LoadAvailableContent()
+    {
+        try
+        {
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            availableContent = await context.ContentItems
+                .OrderByDescending(c => c.UploadedAt)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading content items");
+            availableContent = new List<ContentItem>();
+        }
+    }
+
     private void ShowCreatePlaylist()
     {
         showCreateForm = true;
         editingPlaylistId = null;
-        playlistName = "";
-        playlistDescription = "";
+        playlistName = string.Empty;
+        playlistDescription = string.Empty;
         playlistIsActive = true;
     }
 
@@ -243,7 +285,7 @@ else
             showCreateForm = true;
             editingPlaylistId = id;
             playlistName = playlist.Name;
-            playlistDescription = playlist.Description ?? "";
+            playlistDescription = playlist.Description ?? string.Empty;
             playlistIsActive = playlist.IsActive;
         }
     }
@@ -264,29 +306,36 @@ else
 
         try
         {
-            var playlistData = new
-            {
-                Name = playlistName,
-                Description = playlistDescription,
-                IsActive = playlistIsActive
-            };
-
-            HttpResponseMessage? response;
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            
             if (editingPlaylistId.HasValue)
             {
-                response = await httpClient!.PutAsJsonAsync($"/api/playlists/{editingPlaylistId}", playlistData);
+                Playlist? playlist = await context.Playlists.FindAsync(editingPlaylistId.Value);
+                if (playlist != null)
+                {
+                    playlist.Name = playlistName;
+                    playlist.Description = playlistDescription;
+                    playlist.IsActive = playlistIsActive;
+                    playlist.UpdatedAt = DateTime.UtcNow;
+                }
             }
             else
             {
-                response = await httpClient!.PostAsJsonAsync("/api/playlists", playlistData);
+                Playlist playlist = new()
+                {
+                    Name = playlistName,
+                    Description = playlistDescription,
+                    IsActive = playlistIsActive,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                context.Playlists.Add(playlist);
             }
 
-            if (response.IsSuccessStatusCode)
-            {
-                showCreateForm = false;
-                editingPlaylistId = null;
-                await LoadPlaylists();
-            }
+            await context.SaveChangesAsync();
+            showCreateForm = false;
+            editingPlaylistId = null;
+            await LoadPlaylists();
         }
         catch (Exception ex)
         {
@@ -298,9 +347,12 @@ else
     {
         try
         {
-            HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/playlists/{id}");
-            if (response.IsSuccessStatusCode)
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            Playlist? playlist = await context.Playlists.FindAsync(id);
+            if (playlist != null)
             {
+                context.Playlists.Remove(playlist);
+                await context.SaveChangesAsync();
                 await LoadPlaylists();
             }
         }
@@ -313,15 +365,114 @@ else
     private async Task ManagePlaylistItems(int playlistId)
     {
         managingPlaylistId = playlistId;
+        availableContent = null;
         try
         {
-            selectedPlaylist = await httpClient!.GetFromJsonAsync<Playlist>($"/api/playlists/{playlistId}");
-            availableContent = await httpClient!.GetFromJsonAsync<List<ContentItem>>("/api/content");
-            selectedContentId = 0;
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            selectedPlaylist = await context.Playlists
+                .Include(p => p.Items)
+                .ThenInclude(i => i.ContentItem)
+                .FirstOrDefaultAsync(p => p.Id == playlistId);
+            
+            await LoadAvailableContent();
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error loading playlist items or available content");
+            Logger.LogError(ex, "Error loading playlist items");
+        }
+    }
+
+    private async Task AddToPlaylist(int contentItemId)
+    {
+        if (!managingPlaylistId.HasValue) return;
+
+        isAddingItem = true;
+        try
+        {
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            Playlist? playlist = await context.Playlists
+                .Include(p => p.Items)
+                .FirstOrDefaultAsync(p => p.Id == managingPlaylistId.Value);
+
+            if (playlist == null) return;
+
+            int nextOrder = playlist.Items.Any() ? playlist.Items.Max(i => i.Order) + 1 : 1;
+
+            PlaylistItem playlistItem = new()
+            {
+                PlaylistId = managingPlaylistId.Value,
+                ContentItemId = contentItemId,
+                Order = nextOrder
+            };
+
+            context.PlaylistItems.Add(playlistItem);
+            playlist.UpdatedAt = DateTime.UtcNow;
+            await context.SaveChangesAsync();
+            
+            await ManagePlaylistItems(managingPlaylistId.Value);
+            await LoadPlaylists();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error adding item to playlist");
+        }
+        finally
+        {
+            isAddingItem = false;
+        }
+    }
+
+    private async Task MoveItem(PlaylistItem item, int direction)
+    {
+        if (selectedPlaylist == null || !managingPlaylistId.HasValue || isReordering) return;
+        int playlistId = managingPlaylistId.Value;
+
+        List<PlaylistItem> items = selectedPlaylist.Items.OrderBy(i => i.Order).ToList();
+        int index = items.FindIndex(i => i.Id == item.Id);
+
+        if (index == -1) return;
+
+        int newIndex = index + direction;
+        if (newIndex >= 0 && newIndex < items.Count)
+        {
+            isReordering = true;
+            try
+            {
+                PlaylistItem itemToMove = items[index];
+                items.RemoveAt(index);
+                items.Insert(newIndex, itemToMove);
+
+                using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+                List<PlaylistItem> dbItems = await context.PlaylistItems
+                    .Where(i => i.PlaylistId == playlistId)
+                    .ToListAsync();
+
+                Dictionary<int, PlaylistItem> itemMap = dbItems.ToDictionary(i => i.Id);
+
+                for (int i = 0; i < items.Count; i++)
+                {
+                    if (itemMap.TryGetValue(items[i].Id, out PlaylistItem? dbItem))
+                    {
+                        dbItem.Order = i + 1;
+                    }
+                }
+
+                Playlist? playlist = await context.Playlists.FindAsync(playlistId);
+                if (playlist != null) playlist.UpdatedAt = DateTime.UtcNow;
+
+                await context.SaveChangesAsync();
+
+                await ManagePlaylistItems(playlistId);
+                await LoadPlaylists();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error reordering items");
+            }
+            finally
+            {
+                isReordering = false;
+            }
         }
     }
 
@@ -332,36 +483,23 @@ else
         availableContent = null;
     }
 
-    private async Task AddToPlaylist()
-    {
-        if (selectedContentId == 0 || !managingPlaylistId.HasValue) return;
-
-        try
-        {
-            AddPlaylistItemRequest itemData = new(selectedContentId);
-            HttpResponseMessage response = await httpClient!.PostAsJsonAsync($"/api/playlists/{managingPlaylistId.Value}/items", itemData);
-            
-            if (response.IsSuccessStatusCode)
-            {
-                selectedContentId = 0;
-                await ManagePlaylistItems(managingPlaylistId.Value);
-                await LoadPlaylists();
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error adding item to playlist");
-        }
-    }
-
     private async Task RemoveFromPlaylist(int playlistItemId)
     {
         try
         {
-            HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/playlists/items/{playlistItemId}");
-            if (response.IsSuccessStatusCode && managingPlaylistId.HasValue)
+            using var context = await DbFactory.CreateDbContextAsync();
+            PlaylistItem? item = await context.PlaylistItems
+                .Include(i => i.Playlist)
+                .FirstOrDefaultAsync(i => i.Id == playlistItemId);
+
+            if (item != null)
             {
-                await ManagePlaylistItems(managingPlaylistId.Value);
+                int playlistId = item.PlaylistId;
+                context.PlaylistItems.Remove(item);
+                item.Playlist.UpdatedAt = DateTime.UtcNow;
+                await context.SaveChangesAsync();
+                
+                await ManagePlaylistItems(playlistId);
                 await LoadPlaylists();
             }
         }
@@ -370,11 +508,4 @@ else
             Logger.LogError(ex, "Error removing item from playlist");
         }
     }
-
-    public void Dispose()
-    {
-        // Cleanup if needed
-    }
-
-    private record AddPlaylistItemRequest(int ContentItemId);
 }

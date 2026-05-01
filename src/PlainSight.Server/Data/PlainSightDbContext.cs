@@ -9,10 +9,12 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
     public DbSet<ContentItem> ContentItems => this.Set<ContentItem>();
     public DbSet<Playlist> Playlists => this.Set<Playlist>();
     public DbSet<PlaylistItem> PlaylistItems => this.Set<PlaylistItem>();
-    public DbSet<Schedule> Schedules => this.Set<Schedule>();
     public DbSet<PlayerVersion> PlayerVersions => this.Set<PlayerVersion>();
     public DbSet<DeviceGroupVersion> DeviceGroupVersions => this.Set<DeviceGroupVersion>();
+    public DbSet<DeviceGroup> DeviceGroups => this.Set<DeviceGroup>();
     public DbSet<AdminUser> AdminUsers => this.Set<AdminUser>();
+    public DbSet<Schedule> Schedules => this.Set<Schedule>();
+    public DbSet<ScheduleTargetGroup> ScheduleTargetGroups => this.Set<ScheduleTargetGroup>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -46,50 +48,29 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
                 .WithMany()
                 .HasForeignKey(e => e.PlaylistId)
                 .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        modelBuilder.Entity<ScheduleTargetGroup>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.HasOne(e => e.Schedule)
-                .WithMany(s => s.TargetGroups)
+            
+            entity.HasMany(e => e.TargetGroups)
+                .WithOne(e => e.Schedule)
                 .HasForeignKey(e => e.ScheduleId)
                 .OnDelete(DeleteBehavior.Cascade);
-            entity.HasIndex(e => new { e.ScheduleId, e.GroupName }).IsUnique();
         });
 
         modelBuilder.Entity<PlaylistItem>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.HasOne(e => e.ContentItem)
-                .WithMany()
-                .HasForeignKey(e => e.ContentItemId)
-                .OnDelete(DeleteBehavior.Restrict);
-        });
-
-        modelBuilder.Entity<PlayerVersion>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.HasIndex(e => e.VersionNumber).IsUnique();
         });
 
         modelBuilder.Entity<DeviceGroupVersion>(entity =>
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.GroupName).IsUnique();
+        });
 
-            entity.HasOne(e => e.DefaultPlaylist)
-                .WithMany()
-                .HasForeignKey(e => e.DefaultPlaylistId)
-                .OnDelete(DeleteBehavior.SetNull);
-
-            // Seed Default group
-            entity.HasData(new DeviceGroupVersion
-            {
-                Id = 1,
-                GroupName = "Default",
-                TargetVersion = "1.0.0"
-            });
+        modelBuilder.Entity<DeviceGroup>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Name).IsUnique();
+            entity.HasData(new DeviceGroup { Id = 1, Name = "Default" });
         });
 
         modelBuilder.Entity<AdminUser>(entity =>

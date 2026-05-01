@@ -86,13 +86,9 @@ public static class DeviceApi
 
                 // Check for "Canary" Update assignment
                 string targetVersion = await versionService.GetTargetVersionAsync(device.Group, ct);
-
-                // Check for Scheduled Playlist
-                Playlist? activePlaylist = await scheduleService.GetActivePlaylistAsync(device.Group, DateTime.UtcNow);
-                List<string>? playlistFiles = activePlaylist?.Items
-                    .OrderBy(i => i.Order)
-                    .Select(i => i.ContentItem.FileName)
-                    .ToList();
+                
+                // Get scheduled playlist
+                Playlist? activePlaylist = await scheduleService.GetActivePlaylistAsync(device.Group, ct);
 
                 HeartbeatResponse response = new()
                 {
@@ -102,7 +98,10 @@ public static class DeviceApi
                         ? $"/api/updates/{targetVersion}/binary"
                         : null,
                     AssignedApiKey = assignedApiKey,
-                    PlaylistFiles = playlistFiles
+                    PlaylistItems = activePlaylist?.Items
+                        .OrderBy(i => i.Order)
+                        .Select(i => i.ContentItem.FileName)
+                        .ToList()
                 };
 
                 // Reset screenshot request
@@ -121,71 +120,6 @@ public static class DeviceApi
                 logger.LogError(ex, "Error processing heartbeat from device {DeviceId}", SanitizeForLog(data.DeviceId));
                 return Results.Problem("Internal server error", statusCode: 500);
             }
-        });
-
-        group.MapGet("/", async (PlainSightDbContext context, CancellationToken ct) =>
-        {
-            List<Device> devices = await context.Devices.ToListAsync(ct);
-            return Results.Ok(devices);
-        });
-
-        group.MapPost("/{deviceId}/screenshot", async (
-            string deviceId,
-            PlainSightDbContext context,
-            IHttpClientFactory httpClientFactory,
-            IConfiguration configuration,
-            ILoggerFactory loggerFactory,
-            CancellationToken ct) =>
-        {
-            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
-            if (device == null)
-                return Results.NotFound();
-
-            ILogger logger = loggerFactory.CreateLogger("DeviceApi");
-
-            if (!string.IsNullOrEmpty(device.CallbackUrl))
-            {
-                try
-                {
-                    HttpClient client = httpClientFactory.CreateClient("player");
-                    HttpResponseMessage response = await client.GetAsync($"{device.CallbackUrl.TrimEnd('/')}/api/screenshot", ct);
-
-                    if (response.IsSuccessStatusCode)
-                    {
-                        byte[] bytes = await response.Content.ReadAsByteArrayAsync(ct);
-                        if (bytes.Length > 0)
-                        {
-                            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
-                            string deviceDir = Path.Combine(screenshotsRoot, deviceId);
-                            Directory.CreateDirectory(deviceDir);
-
-                            string timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
-                            string fileName = $"{timestamp}_{Guid.NewGuid():N}.png";
-                            string filePath = Path.Combine(deviceDir, fileName);
-
-                            await File.WriteAllBytesAsync(filePath, bytes, ct);
-
-                            device.LatestScreenshotPath = filePath;
-                            device.LatestScreenshotAt = DateTime.UtcNow;
-                            device.ScreenshotRequested = false;
-                            await context.SaveChangesAsync(ct);
-
-                            logger.LogInformation("Live screenshot saved for device {DeviceId}: {Path}", deviceId, filePath);
-                            return Results.Ok();
-                        }
-                    }
-                    logger.LogWarning("Direct screenshot call failed for {DeviceId} with status {Status}, falling back to poll-based", deviceId, response.StatusCode);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Direct screenshot call failed for {DeviceId}, falling back to poll-based", deviceId);
-                }
-            }
-
-            device.ScreenshotRequested = true;
-            await context.SaveChangesAsync(ct);
-
-            return Results.Ok();
         });
 
         group.MapPost("/{deviceId}/screenshot/upload", async (
@@ -293,46 +227,6 @@ public static class DeviceApi
             return Results.File(device.LatestScreenshotPath, "image/png");
         });
 
-        group.MapPost("/{deviceId}/reset-api-key", async (
-            string deviceId,
-            PlainSightDbContext context,
-            ILoggerFactory loggerFactory,
-            CancellationToken ct) =>
-        {
-            ILogger logger = loggerFactory.CreateLogger("DeviceApi");
-            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
-            if (device == null)
-                return Results.NotFound();
-
-            device.ApiKey = null;
-            await context.SaveChangesAsync(ct);
-
-            logger.LogInformation("API key reset for device {DeviceId}", SanitizeForLog(deviceId));
-            return Results.Ok();
-        }).RequireAuthorization();
-
-        group.MapPut("/{deviceId}/group", async (
-            string deviceId,
-            DeviceGroupUpdateRequest request,
-            PlainSightDbContext context,
-            ILoggerFactory loggerFactory,
-            CancellationToken ct) =>
-        {
-            ILogger logger = loggerFactory.CreateLogger("DeviceApi");
-            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
-            if (device == null)
-                return Results.NotFound();
-
-            string oldGroup = device.Group;
-            device.Group = request.Group;
-            await context.SaveChangesAsync(ct);
-
-            logger.LogInformation("Device {DeviceId} moved from group {OldGroup} to {NewGroup}", deviceId, oldGroup, request.Group);
-            return Results.Ok();
-        }).RequireAuthorization();
-
         return group;
     }
 }
-
-public record DeviceGroupUpdateRequest(string Group);

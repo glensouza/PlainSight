@@ -1,9 +1,14 @@
 @page "/devices"
 @rendermode InteractiveServer
 @attribute [Authorize]
-@inject IHttpClientFactory HttpClientFactory
+@inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject NavigationManager Navigation
 @inject ILogger<Devices> Logger
+@inject IHttpClientFactory HttpClientFactory
+@using Microsoft.EntityFrameworkCore
+@using PlainSight.Shared.Models
+@using PlainSight.Server.Data
+@implements IDisposable
 
 <PageTitle>Devices — PlainSight</PageTitle>
 
@@ -11,6 +16,14 @@
     <h1>Devices</h1>
     <p class="text-muted mb-0">Monitor and manage your digital signage fleet</p>
 </div>
+
+@if (bulkResultMessage != null)
+{
+    <div class="alert @(bulkResultIsSuccess ? "alert-success" : "alert-danger") alert-dismissible fade show" role="alert">
+        @bulkResultMessage
+        <button type="button" class="btn-close" @onclick="DismissBulkResult"></button>
+    </div>
+}
 
 @if (devices == null)
 {
@@ -28,6 +41,13 @@ else
         <table class="table table-striped table-hover">
             <thead>
                 <tr>
+                    <th>
+                        <input type="checkbox"
+                               class="form-check-input"
+                               checked="@(devices.Count > 0 && selectedDeviceIds.Count == devices.Count)"
+                               @onchange="e => ToggleSelectAll((bool)(e.Value ?? false))"
+                               title="Select all" />
+                    </th>
                     <th>Status</th>
                     <th>Device ID</th>
                     <th>Name</th>
@@ -44,6 +64,12 @@ else
                 {
                     bool isOnline = IsDeviceOnline(device.LastSeen);
                     <tr class="@(isOnline ? "" : "table-secondary")">
+                        <td>
+                            <input type="checkbox"
+                                   class="form-check-input"
+                                   checked="@selectedDeviceIds.Contains(device.DeviceId)"
+                                   @onchange="e => ToggleDevice(device.DeviceId, (bool)(e.Value ?? false))" />
+                        </td>
                         <td>
                             @if (isOnline)
                             {
@@ -64,11 +90,11 @@ else
                             <select class="form-select form-select-sm"
                                     value="@device.Group"
                                     @onchange="e => ChangeGroup(device.DeviceId, e.Value?.ToString() ?? device.Group)">
-                                @if (groups != null)
+                                @if (deviceGroups != null)
                                 {
-                                    @foreach (DeviceGroupVersion g in groups)
+                                    @foreach (DeviceGroup g in deviceGroups)
                                     {
-                                        <option value="@g.GroupName">@g.GroupName</option>
+                                        <option value="@g.Name">@g.Name</option>
                                     }
                                 }
                                 else
@@ -136,7 +162,7 @@ else
         </table>
     </div>
 
-    <div class="mt-3">
+    <div class="mt-3 @(selectedDeviceIds.Count > 0 ? "mb-5 pb-4" : "")">
         <button class="btn btn-primary" @onclick="LoadDevices">
             <i class="bi bi-arrow-clockwise"></i> Refresh
         </button>
@@ -170,25 +196,111 @@ else
     </div>
 }
 
-@using PlainSight.Shared.Models
-@implements IDisposable
+@if (selectedDeviceIds.Count > 0)
+{
+    <div class="bulk-action-bar">
+        <div class="bulk-action-bar__info">
+            <strong>@selectedDeviceIds.Count device(s) selected</strong>
+            <button class="btn btn-sm btn-link p-0 ms-2" @onclick="ClearSelection">Clear</button>
+        </div>
+
+        <div class="bulk-action-bar__actions">
+            <button class="btn btn-sm btn-primary"
+                    @onclick="BulkScreenshot"
+                    disabled="@isBulkScreenshotting"
+                    title="Request screenshot from all selected devices">
+                @if (isBulkScreenshotting)
+                {
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                }
+                else
+                {
+                    <i class="bi bi-camera"></i>
+                }
+                Screenshot (@selectedDeviceIds.Count)
+            </button>
+
+            <span class="bulk-action-bar__sep d-none d-md-inline">|</span>
+
+            <div class="bulk-action-bar__group d-flex gap-2 align-items-center">
+                <select class="form-select form-select-sm bulk-action-bar__select"
+                        @bind="bulkGroupSelection">
+                    <option value="">— Move to group —</option>
+                    @foreach (DeviceGroup g in deviceGroups ?? new List<DeviceGroup>())
+                    {
+                        <option value="@g.Name">@g.Name</option>
+                    }
+                </select>
+                <button class="btn btn-sm btn-secondary"
+                        @onclick="BulkMoveGroup"
+                        disabled="@(isBulkMovingGroup || string.IsNullOrEmpty(bulkGroupSelection))">
+                    @if (isBulkMovingGroup)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    }
+                    Move
+                </button>
+            </div>
+
+            <span class="bulk-action-bar__sep d-none d-md-inline">|</span>
+
+            <div class="bulk-action-bar__version d-flex gap-2 align-items-center">
+                <select class="form-select form-select-sm bulk-action-bar__select"
+                        @bind="bulkVersionGroup">
+                    <option value="">— Group —</option>
+                    @foreach (DeviceGroup g in deviceGroups ?? new List<DeviceGroup>())
+                    {
+                        <option value="@g.Name">@g.Name</option>
+                    }
+                </select>
+                <select class="form-select form-select-sm bulk-action-bar__select"
+                        @bind="bulkVersionSelection">
+                    <option value="">— Version —</option>
+                    @foreach (PlayerVersion v in playerVersions ?? new List<PlayerVersion>())
+                    {
+                        <option value="@v.VersionNumber">@v.VersionNumber</option>
+                    }
+                </select>
+                <button class="btn btn-sm btn-warning"
+                        @onclick="BulkAssignVersion"
+                        disabled="@(isBulkAssigningVersion || string.IsNullOrEmpty(bulkVersionGroup) || string.IsNullOrEmpty(bulkVersionSelection))">
+                    @if (isBulkAssigningVersion)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    }
+                    Assign Version
+                </button>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
     private List<Device>? devices;
-    private List<DeviceGroupVersion>? groups;
     private HashSet<string> requestingScreenshot = new();
     private HashSet<string> resettingApiKey = new();
+    private HashSet<string> selectedDeviceIds = new();
+    private List<DeviceGroup>? deviceGroups;
+    private List<PlayerVersion>? playerVersions;
     private Timer? refreshTimer;
-    private HttpClient? httpClient;
     private Device? previewDevice;
     private string previewCacheBust = string.Empty;
+    private string? bulkGroupSelection;
+    private string? bulkVersionGroup;
+    private string? bulkVersionSelection;
+    private bool isBulkScreenshotting;
+    private bool isBulkMovingGroup;
+    private bool isBulkAssigningVersion;
+    private string? bulkResultMessage;
+    private bool bulkResultIsSuccess;
 
     protected override async Task OnInitializedAsync()
     {
-        httpClient = HttpClientFactory.CreateClient();
-        httpClient.BaseAddress = new Uri(Navigation.BaseUri);
-
-        await LoadDevices();
+        await Task.WhenAll(
+            LoadDevices(),
+            LoadGroupsAsync(),
+            LoadVersionsAsync()
+        );
 
         refreshTimer = new Timer(async _ =>
         {
@@ -204,13 +316,47 @@ else
     {
         try
         {
-            devices = await httpClient!.GetFromJsonAsync<List<Device>>("/api/device");
-            groups = await httpClient!.GetFromJsonAsync<List<DeviceGroupVersion>>("/api/versions/groups");
+            using var context = await DbFactory.CreateDbContextAsync();
+            devices = await context.Devices
+                .OrderByDescending(d => d.LastSeen)
+                .ToListAsync();
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error loading devices or groups");
+            Logger.LogError(ex, "Error loading devices");
             devices = new List<Device>();
+        }
+    }
+
+    private async Task LoadGroupsAsync()
+    {
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            deviceGroups = await context.DeviceGroups
+                .OrderBy(g => g.Name)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading device groups");
+            deviceGroups = new List<DeviceGroup>();
+        }
+    }
+
+    private async Task LoadVersionsAsync()
+    {
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            playerVersions = await context.PlayerVersions
+                .OrderByDescending(v => v.VersionNumber)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading player versions");
+            playerVersions = new List<PlayerVersion>();
         }
     }
 
@@ -218,15 +364,13 @@ else
     {
         try
         {
-            HttpResponseMessage response = await httpClient!.PutAsJsonAsync($"/api/device/{deviceId}/group", new { Group = newGroup });
-            if (response.IsSuccessStatusCode)
+            using var context = await DbFactory.CreateDbContextAsync();
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+            if (device != null)
             {
-                Logger.LogInformation("Device {DeviceId} moved to group {Group}", deviceId, newGroup);
+                device.Group = newGroup;
+                await context.SaveChangesAsync();
                 await LoadDevices();
-            }
-            else
-            {
-                Logger.LogWarning("Failed to change group for device {DeviceId}", deviceId);
             }
         }
         catch (Exception ex)
@@ -240,22 +384,16 @@ else
         requestingScreenshot.Add(deviceId);
         try
         {
-            HttpResponseMessage response = await httpClient!.PostAsync($"/api/device/{deviceId}/screenshot", null);
-            if (response.IsSuccessStatusCode)
+            using var context = await DbFactory.CreateDbContextAsync();
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+            if (device != null && !string.IsNullOrEmpty(device.CallbackUrl))
             {
-                Logger.LogInformation("Screenshot requested for device {DeviceId}", deviceId);
-
-                // Reload devices to get the new screenshot info and show it immediately
-                await LoadDevices();
-                Device? updated = devices?.FirstOrDefault(d => d.DeviceId == deviceId);
-                if (updated != null && updated.LatestScreenshotAt.HasValue)
+                var client = HttpClientFactory.CreateClient("player");
+                var response = await client.PostAsync($"{device.CallbackUrl}/screenshot", null);
+                if (response.IsSuccessStatusCode)
                 {
-                    ShowScreenshot(updated);
+                    Logger.LogInformation("Screenshot requested for device {DeviceId} via {CallbackUrl}", deviceId, device.CallbackUrl);
                 }
-            }
-            else
-            {
-                Logger.LogWarning("Failed to request screenshot for device {DeviceId}", deviceId);
             }
         }
         catch (Exception ex)
@@ -274,14 +412,21 @@ else
         resettingApiKey.Add(deviceId);
         try
         {
-            HttpResponseMessage response = await httpClient!.PostAsync($"/api/device/{deviceId}/reset-api-key", null);
-            if (response.IsSuccessStatusCode)
+            using var context = await DbFactory.CreateDbContextAsync();
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+            if (device != null)
             {
+                device.ApiKey = null;
+                await context.SaveChangesAsync();
                 Logger.LogInformation("API key reset for device {DeviceId}", deviceId);
-            }
-            else
-            {
-                Logger.LogWarning("Failed to reset API key for device {DeviceId}", deviceId);
+                
+                if (!string.IsNullOrEmpty(device.CallbackUrl))
+                {
+                    var client = HttpClientFactory.CreateClient("player");
+                    await client.PostAsync($"{device.CallbackUrl}/reset-api-key", null);
+                }
+                
+                await LoadDevices();
             }
         }
         catch (Exception ex)
@@ -293,6 +438,152 @@ else
             resettingApiKey.Remove(deviceId);
             StateHasChanged();
         }
+    }
+
+    private void ToggleSelectAll(bool value)
+    {
+        selectedDeviceIds.Clear();
+        if (value && devices != null)
+        {
+            foreach (Device device in devices)
+                selectedDeviceIds.Add(device.DeviceId);
+        }
+    }
+
+    private void ToggleDevice(string deviceId, bool value)
+    {
+        if (value)
+            selectedDeviceIds.Add(deviceId);
+        else
+            selectedDeviceIds.Remove(deviceId);
+    }
+
+    private void ClearSelection()
+    {
+        selectedDeviceIds.Clear();
+    }
+
+    private async Task BulkScreenshot()
+    {
+        if (selectedDeviceIds.Count == 0)
+            return;
+
+        isBulkScreenshotting = true;
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            var targetDevices = await context.Devices
+                .Where(d => selectedDeviceIds.Contains(d.DeviceId) && !string.IsNullOrEmpty(d.CallbackUrl))
+                .ToListAsync();
+
+            var client = HttpClientFactory.CreateClient("player");
+            var tasks = targetDevices.Select(d => client.PostAsync($"{d.CallbackUrl}/screenshot", null));
+            await Task.WhenAll(tasks);
+
+            bulkResultMessage = $"Screenshot requested for {targetDevices.Count} online device(s).";
+            bulkResultIsSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error requesting bulk screenshot");
+            bulkResultMessage = "Error requesting bulk screenshot.";
+            bulkResultIsSuccess = false;
+        }
+        finally
+        {
+            isBulkScreenshotting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task BulkMoveGroup()
+    {
+        if (selectedDeviceIds.Count == 0 || string.IsNullOrEmpty(bulkGroupSelection))
+            return;
+
+        isBulkMovingGroup = true;
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            var targetDevices = await context.Devices
+                .Where(d => selectedDeviceIds.Contains(d.DeviceId))
+                .ToListAsync();
+
+            foreach (var d in targetDevices)
+            {
+                d.Group = bulkGroupSelection;
+            }
+
+            await context.SaveChangesAsync();
+
+            bulkResultMessage = $"Moved {targetDevices.Count} device(s) to group '{bulkGroupSelection}'.";
+            bulkResultIsSuccess = true;
+            bulkGroupSelection = null;
+            selectedDeviceIds.Clear();
+            await LoadDevices();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error moving devices to group");
+            bulkResultMessage = "Error moving devices to group.";
+            bulkResultIsSuccess = false;
+        }
+        finally
+        {
+            isBulkMovingGroup = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task BulkAssignVersion()
+    {
+        if (string.IsNullOrEmpty(bulkVersionGroup) || string.IsNullOrEmpty(bulkVersionSelection))
+            return;
+
+        isBulkAssigningVersion = true;
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            var groupVersion = await context.DeviceGroupVersions
+                .FirstOrDefaultAsync(gv => gv.GroupName == bulkVersionGroup);
+
+            if (groupVersion == null)
+            {
+                groupVersion = new DeviceGroupVersion
+                {
+                    GroupName = bulkVersionGroup,
+                    TargetVersion = bulkVersionSelection
+                };
+                context.DeviceGroupVersions.Add(groupVersion);
+            }
+            else
+            {
+                groupVersion.TargetVersion = bulkVersionSelection;
+            }
+
+            await context.SaveChangesAsync();
+
+            bulkResultMessage = $"Assigned version '{bulkVersionSelection}' to group '{bulkVersionGroup}'.";
+            bulkResultIsSuccess = true;
+            bulkVersionGroup = null;
+            bulkVersionSelection = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error assigning version to group");
+            bulkResultMessage = "Error assigning version to group.";
+            bulkResultIsSuccess = false;
+        }
+        finally
+        {
+            isBulkAssigningVersion = false;
+            StateHasChanged();
+        }
+    }
+
+    private void DismissBulkResult()
+    {
+        bulkResultMessage = null;
     }
 
     private void ShowScreenshot(Device device)

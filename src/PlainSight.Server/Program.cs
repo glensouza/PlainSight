@@ -28,9 +28,13 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddHubOptions(o => o.MaximumReceiveMessageSize = 512L * 1024 * 1024); // 512 MB for video uploads
 
-// Add database context
-builder.Services.AddDbContext<PlainSightDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("plainsightdb")));
+// Add database context factory
+builder.Services.AddDbContextFactory<PlainSightDbContext>(options =>
+{
+    options.UseNpgsql(builder.Configuration.GetConnectionString("plainsightdb"));
+    // Suppress the warning for pending model changes to allow automatic migrations on startup
+    options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+});
 
 // Add cookie authentication
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -135,7 +139,7 @@ app.MapPost("/auth/logout", async (HttpContext ctx) =>
 {
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.Redirect("/login");
-});
+}).DisableAntiforgery();
 
 // Map default endpoints
 app.MapDefaultEndpoints();
@@ -144,9 +148,39 @@ app.MapDefaultEndpoints();
 app.MapContentApi();
 app.MapDeviceApi();
 app.MapPlaylistApi();
-app.MapScheduleApi();
 app.MapUpdateApi();
 app.MapVersionApi();
+
+// Ensure storage directories exist
+using (IServiceScope scope = app.Services.CreateScope())
+{
+    IConfiguration config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+    ILogger startupLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+    
+    string[] paths = 
+    [
+        config["ContentPath"] ?? "/mnt/plainsight/content",
+        config["IdlePath"] ?? "/mnt/plainsight/idle",
+        config["UpdatesPath"] ?? "/mnt/plainsight/updates",
+        config["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots"
+    ];
+
+    foreach (string path in paths)
+    {
+        if (!Directory.Exists(path))
+        {
+            try
+            {
+                Directory.CreateDirectory(path);
+                startupLogger.LogInformation("Created storage directory: {Path}", path);
+            }
+            catch (Exception ex)
+            {
+                startupLogger.LogError(ex, "Failed to create storage directory: {Path}", path);
+            }
+        }
+    }
+}
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()

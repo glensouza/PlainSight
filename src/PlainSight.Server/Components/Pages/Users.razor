@@ -4,7 +4,7 @@
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.EntityFrameworkCore
 @using PlainSight.Server.Data
-@inject PlainSightDbContext DbContext
+@inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject ILogger<Users> Logger
 
 <PageTitle>Users — PlainSight</PageTitle>
@@ -271,7 +271,8 @@ else
 
     private async Task LoadUsersAsync()
     {
-        users = await DbContext.AdminUsers
+        using var context = await DbFactory.CreateDbContextAsync();
+        users = await context.AdminUsers
             .AsNoTracking()
             .OrderBy(u => u.Username)
             .ToListAsync();
@@ -315,7 +316,8 @@ else
         if (addErrors.Count > 0)
             return;
 
-        bool exists = await DbContext.AdminUsers.AnyAsync(u => u.Username == addUsername.Trim());
+        using var context = await DbFactory.CreateDbContextAsync();
+        bool exists = await context.AdminUsers.AnyAsync(u => u.Username == addUsername.Trim());
         if (exists)
         {
             addErrors["username"] = "Username already exists.";
@@ -325,7 +327,7 @@ else
         saving = true;
         try
         {
-            DbContext.AdminUsers.Add(new AdminUser
+            context.AdminUsers.Add(new AdminUser
             {
                 Username = addUsername.Trim(),
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(addPassword),
@@ -333,7 +335,7 @@ else
                 Role = addRole,
                 CreatedAt = DateTime.UtcNow
             });
-            await DbContext.SaveChangesAsync();
+            await context.SaveChangesAsync();
             showAddForm = false;
             await LoadUsersAsync();
         }
@@ -380,11 +382,12 @@ else
         saving = true;
         try
         {
-            AdminUser? user = await DbContext.AdminUsers.FindAsync(userId);
+            using var context = await DbFactory.CreateDbContextAsync();
+            AdminUser? user = await context.AdminUsers.FindAsync(userId);
             if (user is null) { globalError = "User not found."; return; }
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(editPassword);
             user.MustChangePassword = false;
-            await DbContext.SaveChangesAsync();
+            await context.SaveChangesAsync();
             editingPasswordUserId = null;
             await LoadUsersAsync();
         }
@@ -405,11 +408,12 @@ else
         try
         {
             string tempPassword = GenerateTempPassword();
-            AdminUser? entity = await DbContext.AdminUsers.FindAsync(user.Id);
+            using var context = await DbFactory.CreateDbContextAsync();
+            AdminUser? entity = await context.AdminUsers.FindAsync(user.Id);
             if (entity is null) { globalError = "User not found."; return; }
             entity.PasswordHash = BCrypt.Net.BCrypt.HashPassword(tempPassword);
             entity.MustChangePassword = true;
-            await DbContext.SaveChangesAsync();
+            await context.SaveChangesAsync();
 
             tempPasswordToShow = tempPassword;
             tempPasswordUsername = entity.Username;
@@ -437,10 +441,11 @@ else
         saving = true;
         try
         {
-            AdminUser? entity = await DbContext.AdminUsers.FindAsync(user.Id);
+            using var context = await DbFactory.CreateDbContextAsync();
+            AdminUser? entity = await context.AdminUsers.FindAsync(user.Id);
             if (entity is null) return;
             entity.Role = entity.Role == AdminUserRole.Admin ? AdminUserRole.User : AdminUserRole.Admin;
-            await DbContext.SaveChangesAsync();
+            await context.SaveChangesAsync();
             await LoadUsersAsync();
         }
         catch (Exception ex)
@@ -465,10 +470,11 @@ else
         saving = true;
         try
         {
-            AdminUser? entity = await DbContext.AdminUsers.FindAsync(user.Id);
+            using var context = await DbFactory.CreateDbContextAsync();
+            AdminUser? entity = await context.AdminUsers.FindAsync(user.Id);
             if (entity is null) return;
             entity.IsActive = !entity.IsActive;
-            await DbContext.SaveChangesAsync();
+            await context.SaveChangesAsync();
             await LoadUsersAsync();
         }
         catch (Exception ex)
@@ -500,7 +506,8 @@ else
         saving = true;
         try
         {
-            AdminUser? entity = await DbContext.AdminUsers.FindAsync(deleteTarget.Id);
+            using var context = await DbFactory.CreateDbContextAsync();
+            AdminUser? entity = await context.AdminUsers.FindAsync(deleteTarget.Id);
             if (entity is null)
             {
                 deleteTarget = null;
@@ -508,7 +515,7 @@ else
                 return;
             }
 
-            int totalCount = await DbContext.AdminUsers.CountAsync();
+            int totalCount = await context.AdminUsers.CountAsync();
             if (totalCount <= 1)
             {
                 globalError = "Cannot delete the only user.";
@@ -518,7 +525,7 @@ else
 
             if (entity.IsActive)
             {
-                int activeUserCount = await DbContext.AdminUsers.CountAsync(u => u.IsActive);
+                int activeUserCount = await context.AdminUsers.CountAsync(u => u.IsActive);
                 if (activeUserCount <= 1)
                 {
                     globalError = "Cannot delete the last active user.";
@@ -527,8 +534,8 @@ else
                 }
             }
 
-            DbContext.AdminUsers.Remove(entity);
-            await DbContext.SaveChangesAsync();
+            context.AdminUsers.Remove(entity);
+            await context.SaveChangesAsync();
             deleteTarget = null;
             await LoadUsersAsync();
         }

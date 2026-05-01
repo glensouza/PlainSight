@@ -44,7 +44,7 @@ Implementation plan for completing incomplete features and improving the app. Is
 ## Phase 5 — New Features
 
 - [x] **[#19](https://github.com/glensouza/PlainSight/issues/19) Content scheduling: time-based playlist assignment**
-  No way to schedule which playlist plays when. Add a `Schedule` table (playlist, device group, days of week, time range, priority). `ScheduleService` returns the active playlist for a group at the current time. Heartbeat response includes the active file list; player switches content when it changes. New Schedule admin page. *(Depends on #13)*
+  No way to schedule which playlist plays when. Add a `Schedule` table (playlist, device group, days of week, time range, priority). `ScheduleService` returns the active playlist for a group at the current time. Heartbeat response includes the active file list; player switches content when it changes. New Schedule admin page.
 
 - [ ] **[#20](https://github.com/glensouza/PlainSight/issues/20) Device offline alerts via email**
   Devices go offline silently. Add `DeviceMonitorService` (background service) that detects devices missing for >5 minutes and sends an email alert. Sends a recovery email when the device comes back. Configurable threshold and SMTP settings via `appsettings.json` / environment variables.
@@ -52,7 +52,7 @@ Implementation plan for completing incomplete features and improving the app. Is
 - [ ] **[#21](https://github.com/glensouza/PlainSight/issues/21) Periodic auto-screenshot with screenshot history**
   Screenshots are on-demand only. Add automatic capture every N minutes from all online devices. Retain last N screenshots per device in a `DeviceScreenshot` table. Devices page shows a thumbnail strip of recent captures. *(Depends on #14)*
 
-- [ ] **[#22](https://github.com/glensouza/PlainSight/issues/22) Bulk device actions: mass screenshot, group assignment, version assignment**
+- [x] **[#22](https://github.com/glensouza/PlainSight/issues/22) Bulk device actions: mass screenshot, group assignment, version assignment**
   Devices page only supports per-device actions. Add multi-select checkboxes and a floating action bar for bulk screenshot requests, group moves, and version assignments. Promote device groups to a first-class `DeviceGroup` table (dropdown, not freetext). *(Depends on #13, #14)*
 
 ---
@@ -92,4 +92,4 @@ Implementation plan for completing incomplete features and improving the app. Is
 | 8 | #20 | Standalone; no blockers | |
 | 9 | #19 | Depends on #13 | ✅ Done |
 | 10 | #21 | Depends on #14 | |
-| 11 | #22 | Depends on #13 and #14 | |
+| 11 | #22 | Depends on #13 and #14 | ✅ Done |

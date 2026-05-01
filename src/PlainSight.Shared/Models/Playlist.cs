@@ -10,8 +10,7 @@ public class Playlist
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public bool IsActive { get; set; }
-    
-    // Navigation properties
+
     public List<PlaylistItem> Items { get; set; } = new();
 }
 
@@ -21,9 +20,8 @@ public class PlaylistItem
     public int PlaylistId { get; set; }
     public int ContentItemId { get; set; }
     public int Order { get; set; }
-    public int? OverrideDurationSeconds { get; set; } // Optional override for this playlist
-    
-    // Navigation properties
+    public int? OverrideDurationSeconds { get; set; }
+
     [JsonIgnore]
     public Playlist Playlist { get; set; } = null!;
     public ContentItem ContentItem { get; set; } = null!;
