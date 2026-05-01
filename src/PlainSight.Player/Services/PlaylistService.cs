@@ -44,7 +44,7 @@ public class PlaylistService
             if (Directory.Exists(_idlePath))
             {
                 newIdlePlaylist = Directory.GetFiles(_idlePath)
-                    .Where(f => VideoFormats.SupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+                    .Where(f => VideoFormats.SupportedMediaExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
                     .Select(Path.GetFileName)
                     .Where(f => !string.IsNullOrEmpty(f))
                     .OrderBy(f => f)
@@ -70,7 +70,7 @@ public class PlaylistService
     {
         List<string> validFiles = filenames
             .Where(f => IsValidFilename(f))
-            .Where(f => VideoFormats.SupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+            .Where(f => VideoFormats.SupportedMediaExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
             .ToList();
 
         lock (_lock)
