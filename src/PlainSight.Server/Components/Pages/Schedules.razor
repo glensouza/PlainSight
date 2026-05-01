@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject ILogger<Schedules> Logger
+@inject IJSRuntime JS
 @using Microsoft.EntityFrameworkCore
 @using PlainSight.Shared.Models
 @using PlainSight.Server.Data
@@ -15,7 +16,7 @@
         <p class="text-muted">Define when and where your playlists should play.</p>
     </div>
     <button class="btn btn-primary" @onclick="ShowCreateForm">
-        <i class="bi bi-plus-lg me-1"></i> Create Schedule
+        <i class="bi bi-calendar-plus me-1"></i> New Schedule
     </button>
 </div>
 
@@ -45,55 +46,62 @@ else
         <table class="table table-hover align-middle mb-0 bg-white">
             <thead class="table-light">
                 <tr>
-                    <th>Priority</th>
                     <th>Name</th>
-                    <th>Group</th>
+                    <th>Target Groups</th>
                     <th>Playlist</th>
                     <th>Timing</th>
-                    <th>Days</th>
+                    <th>Priority</th>
                     <th>Status</th>
                     <th class="text-end">Actions</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (Schedule schedule in schedules.OrderByDescending(s => s.Priority))
+                @foreach (var schedule in schedules.OrderByDescending(s => s.Priority))
                 {
                     <tr>
                         <td>
-                            <span class="badge bg-primary">@schedule.Priority</span>
-                        </td>
-                        <td>
                             <strong>@schedule.Name</strong>
-                            @if (schedule.IsOneTime)
+                            @if (schedule.ScheduledDate.HasValue)
                             {
                                 <div class="small text-warning"><i class="bi bi-info-circle me-1"></i>One-time</div>
                             }
                         </td>
-                        <td>@schedule.GroupName</td>
-                        <td>@schedule.Playlist.Name</td>
                         <td>
-                            <div class="small">
-                                @schedule.StartTime.ToString(@"hh\:mm") - @schedule.EndTime.ToString(@"hh\:mm")
-                            </div>
-                            @if (schedule.IsOneTime && schedule.OneTimeDate.HasValue)
+                            @if (schedule.TargetGroups == null || schedule.TargetGroups.Count == 0)
                             {
-                                <div class="small text-muted">@schedule.OneTimeDate.Value.ToShortDateString()</div>
-                            }
-                        </td>
-                        <td>
-                            @if (schedule.IsOneTime)
-                            {
-                                <span class="text-muted">—</span>
+                                <span class="badge bg-secondary">All Groups</span>
                             }
                             else
                             {
-                                <div class="d-flex gap-1 flex-wrap" style="max-width: 200px;">
-                                    @foreach (string day in GetSelectedDays(schedule.DaysOfWeek))
+                                <div class="d-flex gap-1 flex-wrap" style="max-width: 250px;">
+                                    @foreach (var tg in schedule.TargetGroups)
                                     {
-                                        <span class="badge bg-light text-dark border">@day</span>
+                                        <span class="badge bg-info text-dark">@tg.GroupName</span>
                                     }
                                 </div>
                             }
+                        </td>
+                        <td>@schedule.Playlist.Name</td>
+                        <td>
+                            <div class="small">
+                                <code>@schedule.StartTime.ToString("HH:mm")</code> – <code>@schedule.EndTime.ToString("HH:mm")</code>
+                            </div>
+                            @if (schedule.ScheduledDate.HasValue)
+                            {
+                                <div class="small text-muted">@schedule.ScheduledDate.Value.ToShortDateString()</div>
+                            }
+                            else
+                            {
+                                <div class="d-flex gap-1 mt-1">
+                                    @foreach (var day in GetSelectedDays(schedule.DaysOfWeek))
+                                    {
+                                        <span class="badge bg-light text-dark border" style="font-size: 0.7rem;">@day</span>
+                                    }
+                                </div>
+                            }
+                        </td>
+                        <td>
+                            <span class="badge bg-primary">@schedule.Priority</span>
                         </td>
                         <td>
                             <div class="form-check form-switch">
@@ -134,46 +142,79 @@ else
                     <div class="row g-3">
                         <div class="col-md-8">
                             <label class="form-label fw-bold">Schedule Name</label>
-                            <input type="text" class="form-control" @bind="model.Name" placeholder="e.g., Morning Announcements" />
+                            <input type="text" class="form-control" @bind="formModel.Name" placeholder="e.g., Morning Announcements" />
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-bold">Priority (Higher = Wins)</label>
-                            <input type="number" class="form-control" @bind="model.Priority" />
+                            <label class="form-label fw-bold">Priority (Higher Wins)</label>
+                            <input type="number" class="form-control" @bind="formModel.Priority" />
+                        </div>
+
+                        <div class="col-md-12">
+                            <label class="form-label fw-bold d-block">Target Device Groups</label>
+                            <div class="dropdown" style="position: relative;">
+                                <button class="btn btn-outline-secondary dropdown-toggle w-100 d-flex justify-content-between align-items-center rounded" 
+                                        type="button" @onclick="ToggleGroupDropdown">
+                                    <span>
+                                        @if (formModel.TargetGroups.Count == 0)
+                                        {
+                                            <span class="text-muted">All Groups (Global)</span>
+                                        }
+                                        else
+                                        {
+                                            @foreach (string gName in formModel.TargetGroups)
+                                            {
+                                                <span class="badge bg-primary me-1">@gName</span>
+                                            }
+                                        }
+                                    </span>
+                                </button>
+                                @if (showGroupDropdown)
+                                {
+                                    <div class="dropdown-menu w-100 shadow show" style="display: block;">
+                                        <button class="dropdown-item" type="button" @onclick="() => { formModel.TargetGroups.Clear(); showGroupDropdown = false; }">
+                                            <i class="bi @(formModel.TargetGroups.Count == 0 ? "bi-check-circle-fill text-primary" : "bi-circle") me-2"></i>
+                                            <strong>All Groups (Global)</strong>
+                                        </button>
+                                        <hr class="dropdown-divider my-1">
+                                        @foreach (var g in deviceGroups ?? new())
+                                        {
+                                            <button class="dropdown-item" type="button" @onclick="() => ToggleGroup(g.Name)">
+                                                <i class="bi @(formModel.TargetGroups.Contains(g.Name) ? "bi-check-square-fill text-primary" : "bi-square") me-2"></i>
+                                                @g.Name
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
                         </div>
 
                         <div class="col-md-6">
-                            <label class="form-label fw-bold">Device Group</label>
-                            <select class="form-select" @bind="model.GroupName">
-                                @foreach (DeviceGroup group in deviceGroups ?? new())
-                                {
-                                    <option value="@group.Name">@group.Name</option>
-                                }
-                            </select>
-                        </div>
-                        <div class="col-md-6">
                             <label class="form-label fw-bold">Playlist</label>
-                            <select class="form-select" @bind="model.PlaylistId">
+                            <select class="form-select" @bind="formModel.PlaylistId">
                                 <option value="0">-- Select Playlist --</option>
-                                @foreach (Playlist playlist in playlists ?? new())
+                                @foreach (var playlist in playlists ?? new())
                                 {
                                     <option value="@playlist.Id">@playlist.Name</option>
                                 }
                             </select>
                         </div>
-
-                        <div class="col-md-12">
-                            <hr class="my-2" />
-                            <div class="form-check form-switch mb-3">
-                                <input class="form-check-input" type="checkbox" id="isOneTime" @bind="model.IsOneTime" />
-                                <label class="form-check-label fw-bold" for="isOneTime">One-Time Event (Not Repeating)</label>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold d-block">Schedule Type</label>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="stype" id="st_rec" checked="@(!formModel.UseSpecificDate)" @onchange="() => formModel.UseSpecificDate = false" />
+                                <label class="form-check-label" for="st_rec">Recurring</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="stype" id="st_one" checked="@(formModel.UseSpecificDate)" @onchange="() => formModel.UseSpecificDate = true" />
+                                <label class="form-check-label" for="st_one">One-time</label>
                             </div>
                         </div>
 
-                        @if (model.IsOneTime)
+                        @if (formModel.UseSpecificDate)
                         {
                             <div class="col-md-12">
                                 <label class="form-label fw-bold">Event Date</label>
-                                <input type="date" class="form-control" @bind="model.OneTimeDate" />
+                                <input type="date" class="form-control" @bind="formModel.ScheduledDate" />
                             </div>
                         }
                         else
@@ -181,37 +222,32 @@ else
                             <div class="col-md-12">
                                 <label class="form-label fw-bold mb-2">Days of Week</label>
                                 <div class="d-flex gap-2 flex-wrap bg-light p-3 rounded-3 border">
-                                    @foreach (ScheduledDays day in Enum.GetValues<ScheduledDays>().Where(d => d != ScheduledDays.None && d != ScheduledDays.All && d != ScheduledDays.Weekdays && d != ScheduledDays.Weekends))
+                                    @foreach (DayOfWeekFlags day in Enum.GetValues<DayOfWeekFlags>().Where(d => d != DayOfWeekFlags.None && d != DayOfWeekFlags.All))
                                     {
                                         <div class="form-check form-check-inline m-0 me-2">
                                             <input class="form-check-input" type="checkbox" id="day-@day" 
-                                                   checked="@((model.DaysOfWeek & day) != 0)"
+                                                   checked="@((formModel.DaysOfWeek & day) != 0)"
                                                    @onchange="e => ToggleDay(day, (bool)e.Value!)" />
                                             <label class="form-check-label" for="day-@day">@day</label>
                                         </div>
                                     }
-                                    <div class="w-100 mt-2 pt-2 border-top">
-                                        <button class="btn btn-sm btn-link p-0 me-3" @onclick="() => model.DaysOfWeek = ScheduledDays.Weekdays">Weekdays</button>
-                                        <button class="btn btn-sm btn-link p-0 me-3" @onclick="() => model.DaysOfWeek = ScheduledDays.Weekends">Weekends</button>
-                                        <button class="btn btn-sm btn-link p-0" @onclick="() => model.DaysOfWeek = ScheduledDays.All">Every Day</button>
-                                    </div>
                                 </div>
                             </div>
                         }
 
                         <div class="col-md-6">
                             <label class="form-label fw-bold">Start Time</label>
-                            <input type="time" class="form-control" @bind="model.StartTime" />
+                            <input type="time" class="form-control" @bind="formModel.StartTime" />
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold">End Time</label>
-                            <input type="time" class="form-control" @bind="model.EndTime" />
+                            <input type="time" class="form-control" @bind="formModel.EndTime" />
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer border-0 p-4 pt-0">
                     <button class="btn btn-light" @onclick="CloseForm">Cancel</button>
-                    <button class="btn btn-primary px-4" @onclick="SaveSchedule" disabled="@(model.PlaylistId == 0)">
+                    <button class="btn btn-primary px-4" @onclick="SaveSchedule" disabled="@(formModel.PlaylistId == 0 || saving)">
                         <i class="bi bi-check-lg me-1"></i> @(editingId.HasValue ? "Update" : "Create") Schedule
                     </button>
                 </div>
@@ -224,7 +260,7 @@ else
 {
     <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content border-0">
+            <div class="modal-content border-0 shadow">
                 <div class="modal-header border-0">
                     <h5 class="modal-title text-danger">Delete Schedule</h5>
                     <button type="button" class="btn-close" @onclick="() => showDeleteConfirm = false"></button>
@@ -247,8 +283,10 @@ else
     private List<DeviceGroup>? deviceGroups;
 
     private bool showForm;
+    private bool showGroupDropdown;
+    private bool saving;
     private int? editingId;
-    private Schedule model = new();
+    private ScheduleFormModel formModel = new();
     
     private bool showDeleteConfirm;
     private Schedule? deleteTarget;
@@ -263,6 +301,7 @@ else
         using var context = await DbFactory.CreateDbContextAsync();
         schedules = await context.Schedules
             .Include(s => s.Playlist)
+            .Include(s => s.TargetGroups)
             .OrderByDescending(s => s.Priority)
             .ToListAsync();
             
@@ -278,30 +317,23 @@ else
     private void ShowCreateForm()
     {
         editingId = null;
-        model = new Schedule 
-        { 
-            GroupName = deviceGroups?.FirstOrDefault()?.Name ?? "Default",
-            StartTime = new TimeOnly(8, 0),
-            EndTime = new TimeOnly(17, 0),
-            OneTimeDate = DateOnly.FromDateTime(DateTime.Today)
-        };
+        formModel = new ScheduleFormModel();
         showForm = true;
     }
 
     private void EditSchedule(Schedule s)
     {
         editingId = s.Id;
-        model = new Schedule
+        formModel = new ScheduleFormModel
         {
-            Id = s.Id,
             Name = s.Name,
             PlaylistId = s.PlaylistId,
-            GroupName = s.GroupName,
+            TargetGroups = s.TargetGroups.Select(tg => tg.GroupName).ToList(),
+            DaysOfWeek = s.DaysOfWeek,
+            ScheduledDate = s.ScheduledDate,
+            UseSpecificDate = s.ScheduledDate.HasValue,
             StartTime = s.StartTime,
             EndTime = s.EndTime,
-            DaysOfWeek = s.DaysOfWeek,
-            IsOneTime = s.IsOneTime,
-            OneTimeDate = s.OneTimeDate,
             Priority = s.Priority,
             IsActive = s.IsActive
         };
@@ -311,34 +343,73 @@ else
     private void CloseForm()
     {
         showForm = false;
+        showGroupDropdown = false;
+    }
+
+    private void ToggleGroupDropdown() => showGroupDropdown = !showGroupDropdown;
+
+    private void ToggleGroup(string groupName)
+    {
+        if (formModel.TargetGroups.Contains(groupName))
+            formModel.TargetGroups.Remove(groupName);
+        else
+            formModel.TargetGroups.Add(groupName);
+    }
+
+    private void ToggleDay(DayOfWeekFlags day, bool value)
+    {
+        if (value)
+            formModel.DaysOfWeek |= day;
+        else
+            formModel.DaysOfWeek &= ~day;
     }
 
     private async Task SaveSchedule()
     {
+        saving = true;
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            using var context = await DbFactory.CreateDbContextAsync();
+            Schedule? entity;
             if (editingId.HasValue)
             {
-                Schedule? existing = await context.Schedules.FindAsync(editingId.Value);
-                if (existing != null)
-                {
-                    existing.Name = model.Name;
-                    existing.PlaylistId = model.PlaylistId;
-                    existing.GroupName = model.GroupName;
-                    existing.StartTime = model.StartTime;
-                    existing.EndTime = model.EndTime;
-                    existing.DaysOfWeek = model.DaysOfWeek;
-                    existing.IsOneTime = model.IsOneTime;
-                    existing.OneTimeDate = model.OneTimeDate;
-                    existing.Priority = model.Priority;
-                    existing.IsActive = model.IsActive;
-                    existing.UpdatedAt = DateTime.UtcNow;
-                }
+                entity = await context.Schedules
+                    .Include(s => s.TargetGroups)
+                    .FirstOrDefaultAsync(s => s.Id == editingId.Value);
+                
+                if (entity == null) return;
+
+                entity.Name = formModel.Name;
+                entity.PlaylistId = formModel.PlaylistId;
+                entity.DaysOfWeek = formModel.UseSpecificDate ? DayOfWeekFlags.None : formModel.DaysOfWeek;
+                entity.ScheduledDate = formModel.UseSpecificDate ? formModel.ScheduledDate : null;
+                entity.StartTime = formModel.StartTime;
+                entity.EndTime = formModel.EndTime;
+                entity.Priority = formModel.Priority;
+                entity.IsActive = formModel.IsActive;
+                entity.UpdatedAt = DateTime.UtcNow;
+
+                // Sync groups
+                context.RemoveRange(entity.TargetGroups);
+                entity.TargetGroups = formModel.TargetGroups.Select(g => new ScheduleTargetGroup { GroupName = g }).ToList();
             }
             else
             {
-                context.Schedules.Add(model);
+                entity = new Schedule
+                {
+                    Name = formModel.Name,
+                    PlaylistId = formModel.PlaylistId,
+                    DaysOfWeek = formModel.UseSpecificDate ? DayOfWeekFlags.None : formModel.DaysOfWeek,
+                    ScheduledDate = formModel.UseSpecificDate ? formModel.ScheduledDate : null,
+                    StartTime = formModel.StartTime,
+                    EndTime = formModel.EndTime,
+                    Priority = formModel.Priority,
+                    IsActive = formModel.IsActive,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    TargetGroups = formModel.TargetGroups.Select(g => new ScheduleTargetGroup { GroupName = g }).ToList()
+                };
+                context.Schedules.Add(entity);
             }
 
             await context.SaveChangesAsync();
@@ -348,6 +419,10 @@ else
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error saving schedule");
+        }
+        finally
+        {
+            saving = false;
         }
     }
 
@@ -362,7 +437,7 @@ else
         if (deleteTarget == null) return;
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            using var context = await DbFactory.CreateDbContextAsync();
             var existing = await context.Schedules.FindAsync(deleteTarget.Id);
             if (existing != null)
             {
@@ -382,7 +457,7 @@ else
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            using var context = await DbFactory.CreateDbContextAsync();
             var existing = await context.Schedules.FindAsync(s.Id);
             if (existing != null)
             {
@@ -398,25 +473,29 @@ else
         }
     }
 
-    private void ToggleDay(ScheduledDays day, bool value)
+    private List<string> GetSelectedDays(DayOfWeekFlags days)
     {
-        if (value)
-            model.DaysOfWeek |= day;
-        else
-            model.DaysOfWeek &= ~day;
-    }
-
-    private List<string> GetSelectedDays(ScheduledDays days)
-    {
-        if (days == ScheduledDays.All) return new List<string> { "Daily" };
-        if (days == ScheduledDays.Weekdays) return new List<string> { "Weekdays" };
-        if (days == ScheduledDays.Weekends) return new List<string> { "Weekends" };
+        if (days == DayOfWeekFlags.All) return new List<string> { "Daily" };
         
-        List<string> list = new List<string>();
-        foreach (ScheduledDays day in Enum.GetValues<ScheduledDays>().Where(d => d != ScheduledDays.None && d != ScheduledDays.All && d != ScheduledDays.Weekdays && d != ScheduledDays.Weekends))
+        var list = new List<string>();
+        foreach (DayOfWeekFlags day in Enum.GetValues<DayOfWeekFlags>().Where(d => d != DayOfWeekFlags.None && d != DayOfWeekFlags.All))
         {
             if ((days & day) != 0) list.Add(day.ToString().Substring(0, 3));
         }
         return list;
+    }
+
+    private sealed class ScheduleFormModel
+    {
+        public string Name { get; set; } = "";
+        public int PlaylistId { get; set; }
+        public List<string> TargetGroups { get; set; } = new();
+        public bool UseSpecificDate { get; set; }
+        public DayOfWeekFlags DaysOfWeek { get; set; } = DayOfWeekFlags.All;
+        public DateOnly? ScheduledDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public TimeOnly StartTime { get; set; } = new TimeOnly(0, 0);
+        public TimeOnly EndTime { get; set; } = new TimeOnly(23, 59, 59);
+        public int Priority { get; set; } = 1;
+        public bool IsActive { get; set; } = true;
     }
 }

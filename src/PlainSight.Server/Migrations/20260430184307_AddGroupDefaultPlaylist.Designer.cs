@@ -12,15 +12,15 @@ using PlainSight.Server.Data;
 namespace PlainSight.Server.Migrations
 {
     [DbContext(typeof(PlainSightDbContext))]
-    [Migration("20260501042841_AddScheduleTable")]
-    partial class AddScheduleTable
+    [Migration("20260430184307_AddGroupDefaultPlaylist")]
+    partial class AddGroupDefaultPlaylist
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.4")
+                .HasAnnotation("ProductVersion", "10.0.7")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -114,9 +114,6 @@ namespace PlainSight.Server.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("ApiKey")
-                        .HasColumnType("text");
-
                     b.Property<string>("CallbackUrl")
                         .HasColumnType("text");
 
@@ -159,36 +156,6 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("Devices");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.DeviceGroup", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name")
-                        .IsUnique();
-
-                    b.ToTable("DeviceGroups");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1,
-                            Name = "Default"
-                        });
-                });
-
             modelBuilder.Entity("PlainSight.Shared.Models.DeviceGroupVersion", b =>
                 {
                     b.Property<int>("Id")
@@ -196,6 +163,9 @@ namespace PlainSight.Server.Migrations
                         .HasColumnType("integer");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("DefaultPlaylistId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("GroupName")
                         .IsRequired()
@@ -206,6 +176,8 @@ namespace PlainSight.Server.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("DefaultPlaylistId");
 
                     b.HasIndex("GroupName")
                         .IsUnique();
@@ -320,31 +292,21 @@ namespace PlainSight.Server.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<int>("DaysOfWeek")
                         .HasColumnType("integer");
 
-                    b.Property<TimeSpan>("EndTime")
-                        .HasColumnType("interval");
-
-                    b.Property<string>("GroupName")
-                        .IsRequired()
+                    b.Property<string>("DeviceGroup")
                         .HasColumnType("text");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                    b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("time without time zone");
 
-                    b.Property<bool>("IsOneTime")
+                    b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("OneTimeDate")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("PlaylistId")
                         .HasColumnType("integer");
@@ -352,19 +314,24 @@ namespace PlainSight.Server.Migrations
                     b.Property<int>("Priority")
                         .HasColumnType("integer");
 
-                    b.Property<TimeSpan>("StartTime")
-                        .HasColumnType("interval");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<TimeOnly>("StartTime")
+                        .HasColumnType("time without time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("GroupName");
 
                     b.HasIndex("PlaylistId");
 
                     b.ToTable("Schedules");
+                });
+
+            modelBuilder.Entity("PlainSight.Shared.Models.DeviceGroupVersion", b =>
+                {
+                    b.HasOne("PlainSight.Shared.Models.Playlist", "DefaultPlaylist")
+                        .WithMany()
+                        .HasForeignKey("DefaultPlaylistId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("DefaultPlaylist");
                 });
 
             modelBuilder.Entity("PlainSight.Shared.Models.PlaylistItem", b =>

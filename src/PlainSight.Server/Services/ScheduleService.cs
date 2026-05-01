@@ -4,81 +4,88 @@ using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Services;
 
-public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory)
+public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, ILogger<ScheduleService> logger)
 {
-    public async Task<Playlist?> GetActivePlaylistAsync(string groupName, CancellationToken ct = default)
+    public async Task<Playlist?> GetActivePlaylistAsync(string deviceGroup, CancellationToken ct = default)
     {
-        using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(ct);
+        using var context = await dbFactory.CreateDbContextAsync(ct);
         DateTime now = DateTime.UtcNow;
-        TimeOnly currentTime = TimeOnly.FromDateTime(now);
         DateOnly currentDate = DateOnly.FromDateTime(now);
-        ScheduledDays currentDay = GetScheduledDay(now.DayOfWeek);
+        TimeOnly currentTime = TimeOnly.FromDateTime(now);
+        DayOfWeekFlags dayFlag = GetDayOfWeekFlag(now.DayOfWeek);
 
-        // Find all active schedules for this group or Default
-        List<Schedule> eligibleSchedules = await context.Schedules
+        // 1. Find all active schedules matching group and current day/time
+        // Matches if: (TargetGroups is empty [Global] OR TargetGroups contains deviceGroup)
+        // AND ((ScheduledDate matches today) OR (ScheduledDate is null AND DaysOfWeek matches today))
+        var eligibleSchedules = await context.Schedules
+            .Include(s => s.TargetGroups)
             .Include(s => s.Playlist)
             .ThenInclude(p => p.Items)
             .ThenInclude(i => i.ContentItem)
-            .Where(s => s.IsActive && (s.GroupName == groupName || s.GroupName == "Default"))
+            .Where(s => s.IsActive &&
+                        (!s.TargetGroups.Any() || s.TargetGroups.Any(tg => tg.GroupName == deviceGroup)) &&
+                        ((s.ScheduledDate == currentDate) || (s.ScheduledDate == null && (s.DaysOfWeek & dayFlag) != 0)) &&
+                        s.StartTime <= currentTime &&
+                        s.EndTime >= currentTime)
             .ToListAsync(ct);
 
-        // Filter by time, day, and one-time date
-        List<Schedule> activeSchedules = eligibleSchedules.Where(s =>
+        if (eligibleSchedules.Any())
         {
-            // One-time date check
-            if (s.IsOneTime)
-            {
-                if (!s.OneTimeDate.HasValue || s.OneTimeDate.Value != currentDate)
-                    return false;
-            }
-            else
-            {
-                // Day of week check
-                if ((s.DaysOfWeek & currentDay) == 0)
-                    return false;
-            }
-
-            // Time range check (handles wrap-around like 10 PM to 2 AM)
-            if (s.StartTime <= s.EndTime)
-            {
-                return currentTime >= s.StartTime && currentTime <= s.EndTime;
-            }
-            else
-            {
-                // Wrap around midnight
-                return currentTime >= s.StartTime || currentTime <= s.EndTime;
-            }
-        }).ToList();
-
-        if (!activeSchedules.Any())
-        {
-            return null;
+            // Selection Logic:
+            // 1. Specific group takes precedence over "Global"
+            // 2. Higher Priority wins
+            // 3. One-time events win over repeating schedules
+            // 4. Most recently updated wins
+            // 5. Alphabetical tie-breaker
+            return eligibleSchedules
+                .OrderByDescending(s => s.TargetGroups.Any()) // Specific targets first
+                .ThenByDescending(s => s.Priority)
+                .ThenByDescending(s => s.ScheduledDate.HasValue) // One-time first
+                .ThenByDescending(s => s.UpdatedAt)
+                .ThenBy(s => s.Playlist.Name)
+                .Select(s => s.Playlist)
+                .FirstOrDefault();
         }
 
-        // Selection Logic:
-        // 1. Specific group takes precedence over "Default" group
-        // 2. Higher Priority wins
-        // 3. One-time events win over repeating schedules
-        // 4. Most recently updated wins
-        return activeSchedules
-            .OrderByDescending(s => s.GroupName == groupName) // Group specific first
-            .ThenByDescending(s => s.Priority)                 // Highest priority
-            .ThenByDescending(s => s.IsOneTime)               // One-time events preferred
-            .ThenByDescending(s => s.UpdatedAt)              // Recency tie-breaker
-            .ThenBy(s => s.Playlist.Name)                   // Alphabetical tie-breaker
-            .Select(s => s.Playlist)
-            .FirstOrDefault();
+        // 2. Fallback to the group's default playlist
+        DeviceGroupVersion? groupConfig = await context.DeviceGroupVersions
+            .Include(g => g.DefaultPlaylist!)
+            .ThenInclude(p => p.Items)
+            .ThenInclude(i => i.ContentItem)
+            .FirstOrDefaultAsync(g => g.GroupName == deviceGroup, ct);
+
+        if (groupConfig?.DefaultPlaylist != null)
+        {
+            return groupConfig.DefaultPlaylist;
+        }
+
+        // 3. Last resort fallback: "Default" group's playlist if current group isn't "Default"
+        if (deviceGroup != "Default")
+        {
+            DeviceGroupVersion? defaultConfig = await context.DeviceGroupVersions
+                .Include(g => g.DefaultPlaylist!)
+                .ThenInclude(p => p.Items)
+                .ThenInclude(i => i.ContentItem)
+                .FirstOrDefaultAsync(g => g.GroupName == "Default", ct);
+            
+            return defaultConfig?.DefaultPlaylist;
+        }
+
+        return null;
     }
 
-    private static ScheduledDays GetScheduledDay(DayOfWeek day) => day switch
+    private static DayOfWeekFlags GetDayOfWeekFlag(DayOfWeek day)
     {
-        DayOfWeek.Monday => ScheduledDays.Monday,
-        DayOfWeek.Tuesday => ScheduledDays.Tuesday,
-        DayOfWeek.Wednesday => ScheduledDays.Wednesday,
-        DayOfWeek.Thursday => ScheduledDays.Thursday,
-        DayOfWeek.Friday => ScheduledDays.Friday,
-        DayOfWeek.Saturday => ScheduledDays.Saturday,
-        DayOfWeek.Sunday => ScheduledDays.Sunday,
-        _ => ScheduledDays.None
-    };
+        return day switch
+        {
+            DayOfWeek.Sunday => DayOfWeekFlags.Sunday,
+            DayOfWeek.Monday => DayOfWeekFlags.Monday,
+            DayOfWeek.Tuesday => DayOfWeekFlags.Tuesday,
+            DayOfWeek.Wednesday => DayOfWeekFlags.Wednesday,
+            DayOfWeek.Thursday => DayOfWeekFlags.Thursday,
+            DayOfWeek.Friday => DayOfWeekFlags.Friday,
+            DayOfWeek.Saturday => DayOfWeekFlags.Saturday,
+            _ => DayOfWeekFlags.None
+        };
+    }
 }

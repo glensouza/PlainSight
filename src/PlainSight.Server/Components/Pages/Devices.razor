@@ -86,7 +86,23 @@ else
                         </td>
                         <td><code>@device.DeviceId</code></td>
                         <td>@device.Name</td>
-                        <td><span class="badge bg-primary">@device.Group</span></td>
+                        <td>
+                            <select class="form-select form-select-sm"
+                                    value="@device.Group"
+                                    @onchange="e => ChangeGroup(device.DeviceId, e.Value?.ToString() ?? device.Group)">
+                                @if (deviceGroups != null)
+                                {
+                                    @foreach (DeviceGroup g in deviceGroups)
+                                    {
+                                        <option value="@g.Name">@g.Name</option>
+                                    }
+                                }
+                                else
+                                {
+                                    <option value="@device.Group">@device.Group</option>
+                                }
+                            </select>
+                        </td>
                         <td>
                             <span title="@device.LastSeen.ToString("yyyy-MM-dd HH:mm:ss")">
                                 @GetTimeSince(device.LastSeen)
@@ -300,7 +316,7 @@ else
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            using var context = await DbFactory.CreateDbContextAsync();
             devices = await context.Devices
                 .OrderByDescending(d => d.LastSeen)
                 .ToListAsync();
@@ -316,7 +332,7 @@ else
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            using var context = await DbFactory.CreateDbContextAsync();
             deviceGroups = await context.DeviceGroups
                 .OrderBy(g => g.Name)
                 .ToListAsync();
@@ -332,7 +348,7 @@ else
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            using var context = await DbFactory.CreateDbContextAsync();
             playerVersions = await context.PlayerVersions
                 .OrderByDescending(v => v.VersionNumber)
                 .ToListAsync();
@@ -344,17 +360,36 @@ else
         }
     }
 
+    private async Task ChangeGroup(string deviceId, string newGroup)
+    {
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+            if (device != null)
+            {
+                device.Group = newGroup;
+                await context.SaveChangesAsync();
+                await LoadDevices();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error changing group for device {DeviceId}", deviceId);
+        }
+    }
+
     private async Task RequestScreenshot(string deviceId)
     {
         requestingScreenshot.Add(deviceId);
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            using var context = await DbFactory.CreateDbContextAsync();
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
             if (device != null && !string.IsNullOrEmpty(device.CallbackUrl))
             {
-                HttpClient client = HttpClientFactory.CreateClient("player");
-                HttpResponseMessage response = await client.PostAsync($"{device.CallbackUrl}/screenshot", null);
+                var client = HttpClientFactory.CreateClient("player");
+                var response = await client.PostAsync($"{device.CallbackUrl}/screenshot", null);
                 if (response.IsSuccessStatusCode)
                 {
                     Logger.LogInformation("Screenshot requested for device {DeviceId} via {CallbackUrl}", deviceId, device.CallbackUrl);
@@ -377,7 +412,7 @@ else
         resettingApiKey.Add(deviceId);
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            using var context = await DbFactory.CreateDbContextAsync();
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
             if (device != null)
             {
@@ -387,7 +422,7 @@ else
                 
                 if (!string.IsNullOrEmpty(device.CallbackUrl))
                 {
-                    HttpClient client = HttpClientFactory.CreateClient("player");
+                    var client = HttpClientFactory.CreateClient("player");
                     await client.PostAsync($"{device.CallbackUrl}/reset-api-key", null);
                 }
                 
@@ -436,13 +471,13 @@ else
         isBulkScreenshotting = true;
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-            List<Device> targetDevices = await context.Devices
+            using var context = await DbFactory.CreateDbContextAsync();
+            var targetDevices = await context.Devices
                 .Where(d => selectedDeviceIds.Contains(d.DeviceId) && !string.IsNullOrEmpty(d.CallbackUrl))
                 .ToListAsync();
 
-            HttpClient client = HttpClientFactory.CreateClient("player");
-            IEnumerable<Task<HttpResponseMessage>> tasks = targetDevices.Select(d => client.PostAsync($"{d.CallbackUrl}/screenshot", null));
+            var client = HttpClientFactory.CreateClient("player");
+            var tasks = targetDevices.Select(d => client.PostAsync($"{d.CallbackUrl}/screenshot", null));
             await Task.WhenAll(tasks);
 
             bulkResultMessage = $"Screenshot requested for {targetDevices.Count} online device(s).";
@@ -469,12 +504,12 @@ else
         isBulkMovingGroup = true;
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-            List<Device> targetDevices = await context.Devices
+            using var context = await DbFactory.CreateDbContextAsync();
+            var targetDevices = await context.Devices
                 .Where(d => selectedDeviceIds.Contains(d.DeviceId))
                 .ToListAsync();
 
-            foreach (Device d in targetDevices)
+            foreach (var d in targetDevices)
             {
                 d.Group = bulkGroupSelection;
             }
@@ -508,8 +543,8 @@ else
         isBulkAssigningVersion = true;
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-            DeviceGroupVersion? groupVersion = await context.DeviceGroupVersions
+            using var context = await DbFactory.CreateDbContextAsync();
+            var groupVersion = await context.DeviceGroupVersions
                 .FirstOrDefaultAsync(gv => gv.GroupName == bulkVersionGroup);
 
             if (groupVersion == null)

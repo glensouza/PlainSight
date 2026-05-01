@@ -50,11 +50,20 @@ public class PlayerWorker(
                     {
                         playlist.UpdatePlaylist(response.PlaylistItems);
                     }
+                    else
+                    {
+                        // No scheduled playlist from server, refresh from the local playlist.json (synced from SMB)
+                        await playlist.RefreshAsync(stoppingToken);
+                    }
+                }
+                else
+                {
+                    // Fallback to disk if heartbeat fails
+                    await playlist.RefreshAsync(stoppingToken);
                 }
 
                 // Sync and refresh playlist on the same cadence as the heartbeat
                 await cache.SyncAllAsync(stoppingToken);
-                await playlist.RefreshAsync(stoppingToken);
 
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
             }

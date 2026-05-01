@@ -152,19 +152,36 @@
                                     </button>
                                 </div>
                                 <div class="mt-1">
+                                    <label class="small text-muted mb-0">Target Version</label>
                                     <select class="form-select form-select-sm"
-                                            @onchange="e => SaveGroupVersion(g.GroupName, e.Value?.ToString() ?? g.TargetVersion)"
-                                            disabled="@(versions == null || versions.Count == 0)">
+                                            value="@g.TargetVersion"
+                                            @onchange="e => SaveGroupVersion(g.GroupName, e.Value?.ToString() ?? g.TargetVersion, g.DefaultPlaylistId)"
+                                            disabled="@(versions == null)">
                                         @if (versions != null)
                                         {
                                             @* Always show the current assignment even if that binary isn't uploaded yet *@
                                             @if (!versions.Any(v => v.VersionNumber == g.TargetVersion))
                                             {
-                                                <option value="@g.TargetVersion" selected>@g.TargetVersion</option>
+                                                <option value="@g.TargetVersion">@g.TargetVersion (Missing)</option>
                                             }
                                             @foreach (PlayerVersion v in versions)
                                             {
-                                                <option value="@v.VersionNumber" selected="@(v.VersionNumber == g.TargetVersion)">@v.VersionNumber</option>
+                                                <option value="@v.VersionNumber">@v.VersionNumber</option>
+                                            }
+                                        }
+                                    </select>
+                                </div>
+                                <div class="mt-1">
+                                    <label class="small text-muted mb-0">Default Playlist</label>
+                                    <select class="form-select form-select-sm"
+                                            value="@g.DefaultPlaylistId"
+                                            @onchange="e => SaveGroupVersion(g.GroupName, g.TargetVersion, int.TryParse(e.Value?.ToString(), out int id) ? id : null)">
+                                        <option value="">(None)</option>
+                                        @if (playlists != null)
+                                        {
+                                            @foreach (Playlist p in playlists)
+                                            {
+                                                <option value="@p.Id">@p.Name</option>
                                             }
                                         }
                                     </select>
@@ -210,6 +227,7 @@
 @code {
     private List<PlayerVersion>? versions;
     private List<DeviceGroupVersion>? groups;
+    private List<Playlist>? playlists;
 
     private string uploadVersion = string.Empty;
     private string? uploadNotes;
@@ -231,13 +249,17 @@
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            using var context = await DbFactory.CreateDbContextAsync();
             versions = await context.PlayerVersions
                 .OrderByDescending(v => v.UploadedAt)
                 .ToListAsync();
             
             groups = await context.DeviceGroupVersions
                 .OrderBy(g => g.GroupName)
+                .ToListAsync();
+
+            playlists = await context.Playlists
+                .OrderBy(p => p.Name)
                 .ToListAsync();
                 
             loadError = null;
@@ -265,7 +287,7 @@
         {
             string versionNumber = uploadVersion.Trim();
             
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            using var context = await DbFactory.CreateDbContextAsync();
             bool exists = await context.PlayerVersions.AnyAsync(v => v.VersionNumber == versionNumber);
             if (exists)
             {
@@ -285,8 +307,8 @@
                 return;
             }
 
-            using (Stream stream = selectedFile.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024))
-            using (FileStream fs = new FileStream(destPath, FileMode.CreateNew))
+            using (var stream = selectedFile.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024))
+            using (var fs = new FileStream(destPath, FileMode.CreateNew))
             {
                 await stream.CopyToAsync(fs);
             }
@@ -327,7 +349,7 @@
         loadError = null;
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            using var context = await DbFactory.CreateDbContextAsync();
             PlayerVersion? version = await context.PlayerVersions.FindAsync(id);
             if (version == null) return;
 
@@ -359,11 +381,11 @@
         }
     }
 
-    private async Task SaveGroupVersion(string groupName, string targetVersion)
+    private async Task SaveGroupVersion(string groupName, string targetVersion, int? defaultPlaylistId)
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            using var context = await DbFactory.CreateDbContextAsync();
             
             bool anyBinariesExist = await context.PlayerVersions.AnyAsync();
             if (anyBinariesExist)
@@ -390,6 +412,7 @@
             }
 
             existing.TargetVersion = targetVersion;
+            existing.DefaultPlaylistId = defaultPlaylistId;
             await context.SaveChangesAsync();
             groupError = null;
             await LoadAll();
@@ -408,8 +431,9 @@
         string defaultVersion = groups.FirstOrDefault(g => g.GroupName == "Default")?.TargetVersion
                                ?? versions?.FirstOrDefault()?.VersionNumber
                                ?? "1.0.0";
+        int? defaultPlaylistId = groups.FirstOrDefault(g => g.GroupName == "Default")?.DefaultPlaylistId;
         
-        await SaveGroupVersion(newGroupName.Trim(), defaultVersion);
+        await SaveGroupVersion(newGroupName.Trim(), defaultVersion, defaultPlaylistId);
         newGroupName = null;
     }
 
@@ -419,7 +443,7 @@
         
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            using var context = await DbFactory.CreateDbContextAsync();
             DeviceGroupVersion? existing = await context.DeviceGroupVersions
                 .FirstOrDefaultAsync(g => g.GroupName == groupName);
 
@@ -448,7 +472,7 @@
         if (bytes >= 1024 * 1024)
             return $"{bytes / 1024.0 / 1024.0:F1} MB";
         if (bytes >= 1024)
-            return $"{bytes / 1024.0:F1} KB";
+            return $"{bytes / 1024.0 / 1024.0:F1} KB";
         return $"{bytes} B";
     }
 

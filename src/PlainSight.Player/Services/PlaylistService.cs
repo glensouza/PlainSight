@@ -66,6 +66,36 @@ public class PlaylistService
         }
     }
 
+    public void UpdatePlaylist(List<string> filenames)
+    {
+        List<string> validFiles = filenames
+            .Where(f => IsValidFilename(f))
+            .Where(f => VideoFormats.SupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+            .ToList();
+
+        lock (_lock)
+        {
+            // Only update if the playlist has actually changed
+            if (!_playlist.SequenceEqual(validFiles))
+            {
+                _playlist = validFiles;
+                _logger.LogInformation("Playlist updated via heartbeat: {Count} item(s)", _playlist.Count);
+
+                // Persist to playlist.json for offline resilience
+                try
+                {
+                    string playlistFile = Path.Combine(_contentPath, "playlist.json");
+                    string json = JsonSerializer.Serialize(new PlaylistData { Items = _playlist });
+                    File.WriteAllText(playlistFile, json);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to persist playlist.json for offline use");
+                }
+            }
+        }
+    }
+
     public IReadOnlyList<string> GetCurrentPlaylist()
     {
         lock (_lock)
@@ -88,27 +118,6 @@ public class PlaylistService
         lock (_lock)
         {
             _currentFile = filename;
-        }
-    }
-
-    public void UpdatePlaylist(List<string> items)
-    {
-        lock (_lock)
-        {
-            _playlist = items;
-        }
-        _logger.LogInformation("Playlist updated via heartbeat: {Count} item(s)", items.Count);
-
-        // Persist to playlist.json for offline resilience
-        try
-        {
-            string playlistFile = Path.Combine(_contentPath, "playlist.json");
-            string json = JsonSerializer.Serialize(new PlaylistData { Items = items });
-            File.WriteAllText(playlistFile, json);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to persist playlist.json for offline use");
         }
     }
 
