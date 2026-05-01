@@ -1,10 +1,16 @@
 @page "/content"
 @rendermode InteractiveServer
 @attribute [Authorize]
-@inject IHttpClientFactory HttpClientFactory
+@inject IDbContextFactory<PlainSightDbContext> DbFactory
+@inject ContentSyncService ContentSyncService
+@inject RenderQueue RenderQueue
+@inject IConfiguration Configuration
 @inject NavigationManager Navigation
 @inject ILogger<Content> Logger
+@using Microsoft.EntityFrameworkCore
 @using PlainSight.Shared.Models
+@using PlainSight.Server.Data
+@using PlainSight.Server.Services
 @implements IDisposable
 
 <PageTitle>Content Library — PlainSight</PageTitle>
@@ -300,10 +306,6 @@ else
 }
 
 @code {
-    private record RenderJobResponse(string JobId, string Status);
-    private record RenderStatusResponse(string JobId, string Status, string? Error, int? ContentItemId);
-    private record SyncResult(int Added, int Removed);
-
     private sealed class RenderJobState
     {
         public string JobId { get; set; } = "";
@@ -314,7 +316,6 @@ else
     }
 
     private List<ContentItem>? contentItems;
-    private HttpClient? httpClient;
     private bool uploading;
     private bool syncing;
     private IBrowserFile? selectedFile;
@@ -334,8 +335,6 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        httpClient = HttpClientFactory.CreateClient();
-        httpClient.BaseAddress = new Uri(Navigation.BaseUri);
         await RunSync();
     }
 
@@ -367,22 +366,42 @@ else
 
         try
         {
-            HttpResponseMessage response = await httpClient!.PatchAsJsonAsync($"/api/content/{renamingItem.Id}/rename", new
-            {
-                NewName = newName,
-                NewFileName = newFileName
-            }, cts.Token);
+            using var context = await DbFactory.CreateDbContextAsync();
+            ContentItem? item = await context.ContentItems.FindAsync(renamingItem.Id);
+            if (item == null) return;
 
-            if (response.IsSuccessStatusCode)
+            string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+            string oldFileName = item.FileName;
+            string sanitizedInput = Path.GetFileName(newFileName);
+            string oldExt = Path.GetExtension(oldFileName);
+            string updatedFileName = sanitizedInput;
+            if (!updatedFileName.EndsWith(oldExt, StringComparison.OrdinalIgnoreCase))
             {
-                renamingItem = null;
-                await LoadContent();
+                updatedFileName += oldExt;
             }
-            else
+
+            if (updatedFileName != oldFileName)
             {
-                string error = await response.Content.ReadAsStringAsync();
-                uploadError = $"Rename failed: {error}";
+                string oldPath = Path.Combine(contentPath, oldFileName);
+                string newPath = Path.Combine(contentPath, updatedFileName);
+
+                if (File.Exists(oldPath))
+                {
+                    if (File.Exists(newPath))
+                    {
+                        uploadError = "A file with that name already exists on disk";
+                        return;
+                    }
+                    File.Move(oldPath, newPath);
+                }
+                item.FileName = updatedFileName;
             }
+
+            item.Name = newName;
+            await context.SaveChangesAsync();
+
+            renamingItem = null;
+            await LoadContent();
         }
         catch (Exception ex)
         {
@@ -410,13 +429,9 @@ else
         syncing = true;
         try
         {
-            HttpResponseMessage response = await httpClient!.PostAsync("/api/content/sync", null, cts.Token);
-            if (response.IsSuccessStatusCode)
-            {
-                SyncResult? result = await response.Content.ReadFromJsonAsync<SyncResult>(cts.Token);
-                if (result != null && (result.Added > 0 || result.Removed > 0))
-                    syncMessage = $"Folder sync: +{result.Added} added, -{result.Removed} removed from library";
-            }
+            (int added, int removed) = await ContentSyncService.SyncAsync(cts.Token);
+            if (added > 0 || removed > 0)
+                syncMessage = $"Folder sync: +{added} added, -{removed} removed from library";
         }
         catch (Exception ex)
         {
@@ -429,11 +444,15 @@ else
         await LoadContent();
     }
 
+
     private async Task LoadContent()
     {
         try
         {
-            contentItems = await httpClient!.GetFromJsonAsync<List<ContentItem>>("/api/content", cts.Token);
+            using var context = await DbFactory.CreateDbContextAsync();
+            contentItems = await context.ContentItems
+                .OrderByDescending(c => c.UploadedAt)
+                .ToListAsync(cts.Token);
         }
         catch (Exception ex)
         {
@@ -456,24 +475,51 @@ else
         uploadError = null;
         try
         {
-            const long maxAllowedSize = 512L * 1024 * 1024; // 512 MB
-            using StreamContent streamContent = new(selectedFile.OpenReadStream(maxAllowedSize));
-            streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
-                string.IsNullOrEmpty(selectedFile.ContentType) ? "application/octet-stream" : selectedFile.ContentType);
+            const long maxAllowedSize = 512L * 1024 * 1024;
+            string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+            Directory.CreateDirectory(contentPath);
 
-            using MultipartFormDataContent formData = new();
-            formData.Add(streamContent, "file", selectedFile.Name);
+            string safeOriginalName = Path.GetFileName(selectedFile.Name);
+            string fileName = $"{DateTime.UtcNow:yyyyMMddHHmmss}_{safeOriginalName}";
+            string filePath = Path.Combine(contentPath, fileName);
 
-            HttpResponseMessage response = await httpClient!.PostAsync("/api/content/upload", formData, cts.Token);
-            if (response.IsSuccessStatusCode)
+            using (var stream = selectedFile.OpenReadStream(maxAllowedSize))
+            using (var fileStream = new FileStream(filePath, FileMode.Create))
             {
-                selectedFile = null;
-                await LoadContent();
+                await stream.CopyToAsync(fileStream);
+            }
+
+            ContentType contentType = selectedFile.ContentType.StartsWith("video/")
+                ? ContentType.Video
+                : ContentType.Image;
+
+            using var context = await DbFactory.CreateDbContextAsync();
+            ContentItem? contentItem = await context.ContentItems.FirstOrDefaultAsync(i => i.FileName == fileName);
+
+            if (contentItem == null)
+            {
+                contentItem = new ContentItem
+                {
+                    Name = Path.GetFileNameWithoutExtension(safeOriginalName),
+                    FileName = fileName,
+                    Type = contentType,
+                    FileSizeBytes = selectedFile.Size,
+                    DurationSeconds = contentType == ContentType.Video ? 10 : 5,
+                    UploadedAt = DateTime.UtcNow
+                };
+                context.ContentItems.Add(contentItem);
             }
             else
             {
-                uploadError = $"Upload failed: {response.StatusCode}";
+                contentItem.Name = Path.GetFileNameWithoutExtension(safeOriginalName);
+                contentItem.Type = contentType;
+                contentItem.FileSizeBytes = selectedFile.Size;
+                contentItem.DurationSeconds = contentType == ContentType.Video ? 10 : 5;
             }
+
+            await context.SaveChangesAsync();
+            selectedFile = null;
+            await LoadContent();
         }
         catch (Exception ex)
         {
@@ -493,22 +539,28 @@ else
         renderSubmitError = null;
         try
         {
-            HttpResponseMessage response = await httpClient!.PostAsJsonAsync("/api/content/render", new
+            if (renderDuration is < 5 or > 300)
             {
-                Url = renderUrl,
-                DurationSeconds = renderDuration
-            }, cts.Token);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                renderSubmitError = $"Server error: {response.StatusCode}";
+                renderSubmitError = "Duration must be between 5 and 300 seconds";
                 return;
             }
 
-            RenderJobResponse? job = await response.Content.ReadFromJsonAsync<RenderJobResponse>(cts.Token);
-            if (job == null) { renderSubmitError = "Invalid server response"; return; }
+            string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+            Directory.CreateDirectory(contentPath);
 
-            renderJobs.Add(new RenderJobState { JobId = job.JobId, Url = renderUrl, DurationSeconds = renderDuration });
+            string fileName = $"rendered_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}.mp4";
+            string outputPath = Path.Combine(contentPath, fileName);
+
+            RenderJob job = new()
+            {
+                Url = renderUrl,
+                DurationSeconds = renderDuration,
+                OutputPath = outputPath,
+                FileName = fileName
+            };
+
+            RenderQueue.Enqueue(job);
+            renderJobs.Add(new RenderJobState { JobId = job.Id, Url = renderUrl, DurationSeconds = renderDuration });
             renderUrl = "";
 
             if (!isPolling)
@@ -532,23 +584,15 @@ else
                 await Task.Delay(2000, cts.Token);
 
                 bool anyFinished = false;
-                foreach (RenderJobState job in renderJobs.Where(j => j.Status is "Queued" or "Processing").ToList())
+                foreach (RenderJobState jobState in renderJobs.Where(j => j.Status is "Queued" or "Processing").ToList())
                 {
-                    try
-                    {
-                        RenderStatusResponse? status = await httpClient!.GetFromJsonAsync<RenderStatusResponse>(
-                            $"/api/content/render/{job.JobId}", cts.Token);
-                        if (status == null) continue;
+                    RenderJob? job = RenderQueue.GetJob(jobState.JobId);
+                    if (job == null) continue;
 
-                        job.Status = status.Status;
-                        job.Error = status.Error;
-                        if (status.Status is "Done" or "Failed")
-                            anyFinished = true;
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
-                    {
-                        Logger.LogWarning(ex, "Error polling job {JobId}", job.JobId);
-                    }
+                    jobState.Status = job.Status.ToString();
+                    jobState.Error = job.Error;
+                    if (job.Status is RenderJobStatus.Done or RenderJobStatus.Failed)
+                        anyFinished = true;
                 }
 
                 if (anyFinished)
@@ -569,16 +613,20 @@ else
     {
         try
         {
-            HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/content/{id}", cts.Token);
-            if (response.IsSuccessStatusCode)
+            using var context = await DbFactory.CreateDbContextAsync();
+            ContentItem? item = await context.ContentItems.FindAsync(id);
+            if (item != null)
             {
+                string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+                string filePath = Path.Combine(contentPath, item.FileName);
+                
+                if (File.Exists(filePath))
+                    File.Delete(filePath);
+
+                context.ContentItems.Remove(item);
+                await context.SaveChangesAsync();
                 itemToDelete = null;
                 await LoadContent();
-            }
-            else
-            {
-                string error = await response.Content.ReadAsStringAsync(cts.Token);
-                uploadError = $"Delete failed: {error}";
             }
         }
         catch (Exception ex)

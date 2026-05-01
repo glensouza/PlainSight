@@ -5,14 +5,17 @@ namespace PlainSight.Player.Services;
 public class PlaylistService
 {
     private readonly string _contentPath;
+    private readonly string _idlePath;
     private readonly ILogger<PlaylistService> _logger;
     private readonly Lock _lock = new();
     private List<string> _playlist = [];
+    private List<string> _idlePlaylist = [];
     private string? _currentFile;
 
-    public PlaylistService(string contentPath, ILogger<PlaylistService> logger)
+    public PlaylistService(string contentPath, string idlePath, ILogger<PlaylistService> logger)
     {
         _contentPath = contentPath;
+        _idlePath = idlePath;
         _logger = logger;
     }
 
@@ -20,8 +23,8 @@ public class PlaylistService
     {
         try
         {
+            // 1. Refresh Main Playlist
             List<string> newPlaylist = [];
-
             string playlistFile = Path.Combine(_contentPath, "playlist.json");
             if (File.Exists(playlistFile))
             {
@@ -31,27 +34,16 @@ public class PlaylistService
                 {
                     foreach (string item in data.Items)
                     {
-                        if (!IsValidFilename(item))
-                        {
-                            _logger.LogWarning("Skipping invalid filename in playlist.json: {Filename}", item);
-                            continue;
-                        }
-
-                        string ext = Path.GetExtension(item).ToLowerInvariant();
-                        if (!VideoFormats.SupportedExtensions.Contains(ext))
-                        {
-                            _logger.LogWarning("Skipping unsupported file type in playlist.json: {Filename}", item);
-                            continue;
-                        }
-
-                        newPlaylist.Add(item);
+                        if (IsValidFilename(item)) newPlaylist.Add(item);
                     }
                 }
             }
 
-            if (newPlaylist.Count == 0 && Directory.Exists(_contentPath))
+            // 2. Refresh Idle Playlist (Alphabetical from idle folder)
+            List<string> newIdlePlaylist = [];
+            if (Directory.Exists(_idlePath))
             {
-                newPlaylist = Directory.GetFiles(_contentPath)
+                newIdlePlaylist = Directory.GetFiles(_idlePath)
                     .Where(f => VideoFormats.SupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
                     .Select(Path.GetFileName)
                     .Where(f => !string.IsNullOrEmpty(f))
@@ -62,14 +54,15 @@ public class PlaylistService
             lock (_lock)
             {
                 _playlist = newPlaylist;
+                _idlePlaylist = newIdlePlaylist;
             }
 
-            _logger.LogInformation("Playlist refreshed: {Count} item(s)", newPlaylist.Count);
+            _logger.LogInformation("Playlists refreshed. Main: {MainCount}, Idle: {IdleCount}", newPlaylist.Count, newIdlePlaylist.Count);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error refreshing playlist");
+            _logger.LogError(ex, "Error refreshing playlists");
         }
     }
 
@@ -77,7 +70,8 @@ public class PlaylistService
     {
         lock (_lock)
         {
-            return _playlist.AsReadOnly();
+            // If main playlist is empty, serve the idle playlist
+            return (_playlist.Count > 0 ? _playlist : _idlePlaylist).AsReadOnly();
         }
     }
 
@@ -94,6 +88,27 @@ public class PlaylistService
         lock (_lock)
         {
             _currentFile = filename;
+        }
+    }
+
+    public void UpdatePlaylist(List<string> items)
+    {
+        lock (_lock)
+        {
+            _playlist = items;
+        }
+        _logger.LogInformation("Playlist updated via heartbeat: {Count} item(s)", items.Count);
+
+        // Persist to playlist.json for offline resilience
+        try
+        {
+            string playlistFile = Path.Combine(_contentPath, "playlist.json");
+            string json = JsonSerializer.Serialize(new PlaylistData { Items = items });
+            File.WriteAllText(playlistFile, json);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist playlist.json for offline use");
         }
     }
 

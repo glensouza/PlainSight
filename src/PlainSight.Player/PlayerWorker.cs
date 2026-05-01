@@ -11,7 +11,7 @@ public class PlayerWorker(
     ScreenCaptureService screenshot,
     ScreenshotUploadService screenshotUpload,
     PlaylistService playlist,
-    CacheService cache,
+    CacheManager cache,
     ILogger<PlayerWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -19,7 +19,7 @@ public class PlayerWorker(
         logger.LogInformation("PlainSight Player started");
 
         // Sync and load initial playlist before the browser page polls for it
-        await cache.SyncAsync(stoppingToken);
+        await cache.SyncAllAsync(stoppingToken);
         await playlist.RefreshAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -45,10 +45,15 @@ public class PlayerWorker(
                         else
                             logger.LogWarning("Screenshot capture returned empty result; skipping upload");
                     }
+
+                    if (response.PlaylistItems != null)
+                    {
+                        playlist.UpdatePlaylist(response.PlaylistItems);
+                    }
                 }
 
                 // Sync and refresh playlist on the same cadence as the heartbeat
-                await cache.SyncAsync(stoppingToken);
+                await cache.SyncAllAsync(stoppingToken);
                 await playlist.RefreshAsync(stoppingToken);
 
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);

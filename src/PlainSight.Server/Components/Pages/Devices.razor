@@ -1,10 +1,14 @@
 @page "/devices"
 @rendermode InteractiveServer
 @attribute [Authorize]
-@inject IHttpClientFactory HttpClientFactory
+@inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject NavigationManager Navigation
 @inject ILogger<Devices> Logger
-@inject IHttpContextAccessor HttpContextAccessor
+@inject IHttpClientFactory HttpClientFactory
+@using Microsoft.EntityFrameworkCore
+@using PlainSight.Shared.Models
+@using PlainSight.Server.Data
+@implements IDisposable
 
 <PageTitle>Devices — PlainSight</PageTitle>
 
@@ -255,10 +259,6 @@ else
     </div>
 }
 
-@using PlainSight.Shared.Models
-@using PlainSight.Server.Api
-@implements IDisposable
-
 @code {
     private List<Device>? devices;
     private HashSet<string> requestingScreenshot = new();
@@ -267,7 +267,6 @@ else
     private List<DeviceGroup>? deviceGroups;
     private List<PlayerVersion>? playerVersions;
     private Timer? refreshTimer;
-    private HttpClient? httpClient;
     private Device? previewDevice;
     private string previewCacheBust = string.Empty;
     private string? bulkGroupSelection;
@@ -281,15 +280,6 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        httpClient = HttpClientFactory.CreateClient();
-        httpClient.BaseAddress = new Uri(Navigation.BaseUri);
-
-        // Forward the auth cookie from the Blazor circuit's initial HTTP request so that
-        // calls to .RequireAuthorization() endpoints succeed from the server-side component.
-        string? cookieHeader = HttpContextAccessor.HttpContext?.Request.Headers.Cookie;
-        if (cookieHeader != null)
-            httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", cookieHeader);
-
         await Task.WhenAll(
             LoadDevices(),
             LoadGroupsAsync(),
@@ -310,7 +300,10 @@ else
     {
         try
         {
-            devices = await httpClient!.GetFromJsonAsync<List<Device>>("/api/device");
+            using var context = await DbFactory.CreateDbContextAsync();
+            devices = await context.Devices
+                .OrderByDescending(d => d.LastSeen)
+                .ToListAsync();
         }
         catch (Exception ex)
         {
@@ -323,7 +316,10 @@ else
     {
         try
         {
-            deviceGroups = await httpClient!.GetFromJsonAsync<List<DeviceGroup>>("/api/device/groups");
+            using var context = await DbFactory.CreateDbContextAsync();
+            deviceGroups = await context.DeviceGroups
+                .OrderBy(g => g.Name)
+                .ToListAsync();
         }
         catch (Exception ex)
         {
@@ -336,7 +332,10 @@ else
     {
         try
         {
-            playerVersions = await httpClient!.GetFromJsonAsync<List<PlayerVersion>>("/api/versions");
+            using var context = await DbFactory.CreateDbContextAsync();
+            playerVersions = await context.PlayerVersions
+                .OrderByDescending(v => v.VersionNumber)
+                .ToListAsync();
         }
         catch (Exception ex)
         {
@@ -350,22 +349,16 @@ else
         requestingScreenshot.Add(deviceId);
         try
         {
-            HttpResponseMessage response = await httpClient!.PostAsync($"/api/device/{deviceId}/screenshot", null);
-            if (response.IsSuccessStatusCode)
+            using var context = await DbFactory.CreateDbContextAsync();
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+            if (device != null && !string.IsNullOrEmpty(device.CallbackUrl))
             {
-                Logger.LogInformation("Screenshot requested for device {DeviceId}", deviceId);
-
-                // Reload devices to get the new screenshot info and show it immediately
-                await LoadDevices();
-                Device? updated = devices?.FirstOrDefault(d => d.DeviceId == deviceId);
-                if (updated != null && updated.LatestScreenshotAt.HasValue)
+                var client = HttpClientFactory.CreateClient("player");
+                var response = await client.PostAsync($"{device.CallbackUrl}/screenshot", null);
+                if (response.IsSuccessStatusCode)
                 {
-                    ShowScreenshot(updated);
+                    Logger.LogInformation("Screenshot requested for device {DeviceId} via {CallbackUrl}", deviceId, device.CallbackUrl);
                 }
-            }
-            else
-            {
-                Logger.LogWarning("Failed to request screenshot for device {DeviceId}", deviceId);
             }
         }
         catch (Exception ex)
@@ -384,14 +377,21 @@ else
         resettingApiKey.Add(deviceId);
         try
         {
-            HttpResponseMessage response = await httpClient!.PostAsync($"/api/device/{deviceId}/reset-api-key", null);
-            if (response.IsSuccessStatusCode)
+            using var context = await DbFactory.CreateDbContextAsync();
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+            if (device != null)
             {
+                device.ApiKey = null;
+                await context.SaveChangesAsync();
                 Logger.LogInformation("API key reset for device {DeviceId}", deviceId);
-            }
-            else
-            {
-                Logger.LogWarning("Failed to reset API key for device {DeviceId}", deviceId);
+                
+                if (!string.IsNullOrEmpty(device.CallbackUrl))
+                {
+                    var client = HttpClientFactory.CreateClient("player");
+                    await client.PostAsync($"{device.CallbackUrl}/reset-api-key", null);
+                }
+                
+                await LoadDevices();
             }
         }
         catch (Exception ex)
@@ -436,19 +436,17 @@ else
         isBulkScreenshotting = true;
         try
         {
-            BatchScreenshotRequest request = new(selectedDeviceIds.ToList());
-            HttpResponseMessage response = await httpClient!.PostAsJsonAsync("/api/device/batch/screenshot", request);
-            if (response.IsSuccessStatusCode)
-            {
-                bulkResultMessage = $"Screenshot requested for {selectedDeviceIds.Count} device(s).";
-                bulkResultIsSuccess = true;
-                await LoadDevices();
-            }
-            else
-            {
-                bulkResultMessage = "Failed to request bulk screenshot.";
-                bulkResultIsSuccess = false;
-            }
+            using var context = await DbFactory.CreateDbContextAsync();
+            var targetDevices = await context.Devices
+                .Where(d => selectedDeviceIds.Contains(d.DeviceId) && !string.IsNullOrEmpty(d.CallbackUrl))
+                .ToListAsync();
+
+            var client = HttpClientFactory.CreateClient("player");
+            var tasks = targetDevices.Select(d => client.PostAsync($"{d.CallbackUrl}/screenshot", null));
+            await Task.WhenAll(tasks);
+
+            bulkResultMessage = $"Screenshot requested for {targetDevices.Count} online device(s).";
+            bulkResultIsSuccess = true;
         }
         catch (Exception ex)
         {
@@ -471,21 +469,23 @@ else
         isBulkMovingGroup = true;
         try
         {
-            BatchGroupRequest request = new(selectedDeviceIds.ToList(), bulkGroupSelection);
-            HttpResponseMessage response = await httpClient!.PostAsJsonAsync("/api/device/batch/group", request);
-            if (response.IsSuccessStatusCode)
+            using var context = await DbFactory.CreateDbContextAsync();
+            var targetDevices = await context.Devices
+                .Where(d => selectedDeviceIds.Contains(d.DeviceId))
+                .ToListAsync();
+
+            foreach (var d in targetDevices)
             {
-                bulkResultMessage = $"Moved {selectedDeviceIds.Count} device(s) to group '{bulkGroupSelection}'.";
-                bulkResultIsSuccess = true;
-                bulkGroupSelection = null;
-                selectedDeviceIds.Clear();
-                await LoadDevices();
+                d.Group = bulkGroupSelection;
             }
-            else
-            {
-                bulkResultMessage = "Failed to move devices to group.";
-                bulkResultIsSuccess = false;
-            }
+
+            await context.SaveChangesAsync();
+
+            bulkResultMessage = $"Moved {targetDevices.Count} device(s) to group '{bulkGroupSelection}'.";
+            bulkResultIsSuccess = true;
+            bulkGroupSelection = null;
+            selectedDeviceIds.Clear();
+            await LoadDevices();
         }
         catch (Exception ex)
         {
@@ -508,21 +508,30 @@ else
         isBulkAssigningVersion = true;
         try
         {
-            BatchVersionRequest request = new(bulkVersionGroup, bulkVersionSelection);
-            HttpResponseMessage response = await httpClient!.PostAsJsonAsync("/api/device/batch/version", request);
-            if (response.IsSuccessStatusCode)
+            using var context = await DbFactory.CreateDbContextAsync();
+            var groupVersion = await context.DeviceGroupVersions
+                .FirstOrDefaultAsync(gv => gv.GroupName == bulkVersionGroup);
+
+            if (groupVersion == null)
             {
-                bulkResultMessage = $"Assigned version '{bulkVersionSelection}' to group '{bulkVersionGroup}'.";
-                bulkResultIsSuccess = true;
-                bulkVersionGroup = null;
-                bulkVersionSelection = null;
+                groupVersion = new DeviceGroupVersion
+                {
+                    GroupName = bulkVersionGroup,
+                    TargetVersion = bulkVersionSelection
+                };
+                context.DeviceGroupVersions.Add(groupVersion);
             }
             else
             {
-                string errorBody = await response.Content.ReadAsStringAsync();
-                bulkResultMessage = $"Failed to assign version: {errorBody}";
-                bulkResultIsSuccess = false;
+                groupVersion.TargetVersion = bulkVersionSelection;
             }
+
+            await context.SaveChangesAsync();
+
+            bulkResultMessage = $"Assigned version '{bulkVersionSelection}' to group '{bulkVersionGroup}'.";
+            bulkResultIsSuccess = true;
+            bulkVersionGroup = null;
+            bulkVersionSelection = null;
         }
         catch (Exception ex)
         {

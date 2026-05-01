@@ -1,10 +1,13 @@
 @page "/versions"
 @rendermode InteractiveServer
 @attribute [Authorize]
-@inject IHttpClientFactory HttpClientFactory
+@inject IDbContextFactory<PlainSightDbContext> DbFactory
+@inject IConfiguration Configuration
 @inject NavigationManager Navigation
 @inject ILogger<Versions> Logger
+@using Microsoft.EntityFrameworkCore
 @using PlainSight.Shared.Models
+@using PlainSight.Server.Data
 @implements IDisposable
 
 <PageTitle>Versions — PlainSight</PageTitle>
@@ -207,7 +210,6 @@
 @code {
     private List<PlayerVersion>? versions;
     private List<DeviceGroupVersion>? groups;
-    private HttpClient? httpClient;
 
     private string uploadVersion = string.Empty;
     private string? uploadNotes;
@@ -222,8 +224,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        httpClient = HttpClientFactory.CreateClient();
-        httpClient.BaseAddress = new Uri(Navigation.BaseUri);
         await LoadAll();
     }
 
@@ -231,8 +231,15 @@
     {
         try
         {
-            versions = await httpClient!.GetFromJsonAsync<List<PlayerVersion>>("/api/versions");
-            groups = await httpClient!.GetFromJsonAsync<List<DeviceGroupVersion>>("/api/versions/groups");
+            using var context = await DbFactory.CreateDbContextAsync();
+            versions = await context.PlayerVersions
+                .OrderByDescending(v => v.UploadedAt)
+                .ToListAsync();
+            
+            groups = await context.DeviceGroupVersions
+                .OrderBy(g => g.GroupName)
+                .ToListAsync();
+                
             loadError = null;
         }
         catch (Exception ex)
@@ -253,34 +260,60 @@
 
         uploading = true;
         uploadError = null;
+        string? destPath = null;
         try
         {
-            using MultipartFormDataContent form = new();
-            form.Add(new StringContent(uploadVersion.Trim()), "versionNumber");
-            if (!string.IsNullOrWhiteSpace(uploadNotes))
-                form.Add(new StringContent(uploadNotes), "notes");
-
-            Stream stream = selectedFile.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024);
-            form.Add(new StreamContent(stream), "file", selectedFile.Name);
-
-            HttpResponseMessage response = await httpClient!.PostAsync("/api/versions", form);
-            if (response.IsSuccessStatusCode)
+            string versionNumber = uploadVersion.Trim();
+            
+            using var context = await DbFactory.CreateDbContextAsync();
+            bool exists = await context.PlayerVersions.AnyAsync(v => v.VersionNumber == versionNumber);
+            if (exists)
             {
-                uploadVersion = string.Empty;
-                uploadNotes = null;
-                selectedFile = null;
-                await LoadAll();
+                uploadError = $"Version {versionNumber} already exists";
+                return;
             }
-            else
+
+            string updatesPath = Configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
+            Directory.CreateDirectory(updatesPath);
+
+            string safeFileName = $"plainsight-player-{versionNumber}";
+            destPath = Path.Combine(updatesPath, safeFileName);
+
+            if (File.Exists(destPath))
             {
-                string body = await response.Content.ReadAsStringAsync();
-                uploadError = $"Upload failed ({(int)response.StatusCode}): {body}";
+                uploadError = "Binary file already exists on disk";
+                return;
             }
+
+            using (var stream = selectedFile.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024))
+            using (var fs = new FileStream(destPath, FileMode.CreateNew))
+            {
+                await stream.CopyToAsync(fs);
+            }
+
+            PlayerVersion version = new()
+            {
+                VersionNumber = versionNumber,
+                FileName = safeFileName,
+                FileSizeBytes = selectedFile.Size,
+                UploadedAt = DateTime.UtcNow,
+                Notes = uploadNotes
+            };
+            
+            context.PlayerVersions.Add(version);
+            await context.SaveChangesAsync();
+
+            uploadVersion = string.Empty;
+            uploadNotes = null;
+            selectedFile = null;
+            await LoadAll();
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error uploading version");
             uploadError = "Upload failed — check logs for details.";
+            if (destPath != null && File.Exists(destPath))
+                File.Delete(destPath);
         }
         finally
         {
@@ -294,14 +327,26 @@
         loadError = null;
         try
         {
-            HttpResponseMessage response = await httpClient!.DeleteAsync($"/api/versions/{id}");
-            if (response.IsSuccessStatusCode)
-                await LoadAll();
-            else
+            using var context = await DbFactory.CreateDbContextAsync();
+            PlayerVersion? version = await context.PlayerVersions.FindAsync(id);
+            if (version == null) return;
+
+            // Check if any group is still using this version
+            bool inUse = await context.DeviceGroupVersions.AnyAsync(g => g.TargetVersion == version.VersionNumber);
+            if (inUse)
             {
-                string body = await response.Content.ReadAsStringAsync();
-                loadError = $"Delete failed ({(int)response.StatusCode}): {body}";
+                loadError = $"Version {version.VersionNumber} is still assigned to one or more groups";
+                return;
             }
+
+            string updatesPath = Configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
+            string filePath = Path.Combine(updatesPath, version.FileName);
+            if (File.Exists(filePath))
+                File.Delete(filePath);
+
+            context.PlayerVersions.Remove(version);
+            await context.SaveChangesAsync();
+            await LoadAll();
         }
         catch (Exception ex)
         {
@@ -318,18 +363,35 @@
     {
         try
         {
-            HttpResponseMessage response = await httpClient!.PutAsJsonAsync(
-                $"/api/versions/groups/{Uri.EscapeDataString(groupName)}",
-                new { TargetVersion = targetVersion });
-
-            if (!response.IsSuccessStatusCode)
+            using var context = await DbFactory.CreateDbContextAsync();
+            
+            bool anyBinariesExist = await context.PlayerVersions.AnyAsync();
+            if (anyBinariesExist)
             {
-                string body = await response.Content.ReadAsStringAsync();
-                groupError = $"Save failed ({(int)response.StatusCode}): {body}";
+                bool versionExists = await context.PlayerVersions.AnyAsync(v => v.VersionNumber == targetVersion);
+                if (!versionExists)
+                {
+                    groupError = $"Version {targetVersion} does not exist";
+                    return;
+                }
             }
-            else
-                groupError = null;
 
+            DeviceGroupVersion? existing = await context.DeviceGroupVersions
+                .FirstOrDefaultAsync(g => g.GroupName == groupName);
+
+            if (existing == null)
+            {
+                existing = new DeviceGroupVersion { GroupName = groupName };
+                context.DeviceGroupVersions.Add(existing);
+
+                bool deviceGroupExists = await context.DeviceGroups.AnyAsync(g => g.Name == groupName);
+                if (!deviceGroupExists)
+                    context.DeviceGroups.Add(new DeviceGroup { Name = groupName });
+            }
+
+            existing.TargetVersion = targetVersion;
+            await context.SaveChangesAsync();
+            groupError = null;
             await LoadAll();
         }
         catch (Exception ex)
@@ -343,49 +405,35 @@
     {
         if (string.IsNullOrWhiteSpace(newGroupName) || groups == null) return;
 
-        // Inherit Default's current assignment, fall back to first uploaded version, then "1.0.0"
         string defaultVersion = groups.FirstOrDefault(g => g.GroupName == "Default")?.TargetVersion
                                ?? versions?.FirstOrDefault()?.VersionNumber
                                ?? "1.0.0";
-        groupError = null;
-
-        try
-        {
-            HttpResponseMessage response = await httpClient!.PutAsJsonAsync(
-                $"/api/versions/groups/{Uri.EscapeDataString(newGroupName.Trim())}",
-                new { TargetVersion = defaultVersion });
-
-            if (response.IsSuccessStatusCode)
-            {
-                newGroupName = null;
-                await LoadAll();
-            }
-            else
-            {
-                string body = await response.Content.ReadAsStringAsync();
-                groupError = $"Failed to add group ({(int)response.StatusCode}): {body}";
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error adding group {Group}", newGroupName);
-            groupError = "Failed to add group.";
-        }
+        
+        await SaveGroupVersion(newGroupName.Trim(), defaultVersion);
+        newGroupName = null;
     }
 
     private async Task DeleteGroup(string groupName)
     {
+        if (groupName == "Default") return;
+        
         try
         {
-            HttpResponseMessage response = await httpClient!.DeleteAsync(
-                $"/api/versions/groups/{Uri.EscapeDataString(groupName)}");
+            using var context = await DbFactory.CreateDbContextAsync();
+            DeviceGroupVersion? existing = await context.DeviceGroupVersions
+                .FirstOrDefaultAsync(g => g.GroupName == groupName);
 
-            if (response.IsSuccessStatusCode)
-                await LoadAll();
-            else
+            if (existing != null)
             {
-                string body = await response.Content.ReadAsStringAsync();
-                groupError = $"Delete failed ({(int)response.StatusCode}): {body}";
+                context.DeviceGroupVersions.Remove(existing);
+                
+                DeviceGroup? deviceGroup = await context.DeviceGroups
+                    .FirstOrDefaultAsync(g => g.Name == groupName);
+                if (deviceGroup != null)
+                    context.DeviceGroups.Remove(deviceGroup);
+
+                await context.SaveChangesAsync();
+                await LoadAll();
             }
         }
         catch (Exception ex)
@@ -406,6 +454,5 @@
 
     public void Dispose()
     {
-        httpClient?.Dispose();
     }
 }

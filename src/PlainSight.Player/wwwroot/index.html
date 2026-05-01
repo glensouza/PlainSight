@@ -57,6 +57,41 @@
             color: #fff;
             font-size: 24px;
         }
+
+        #idle-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            display: none;
+        }
+
+        .logo-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            color: #3b82f6;
+        }
+
+        .idle-text {
+            font-size: 24px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            opacity: 0.8;
+        }
+
+        .idle-subtext {
+            font-size: 14px;
+            margin-top: 10px;
+            opacity: 0.5;
+        }
     </style>
 </head>
 <body>
@@ -64,12 +99,19 @@
     <div id="status"></div>
     <div id="error-message"></div>
     <div id="loading">Loading content...</div>
+    
+    <div id="idle-screen">
+        <div class="logo-icon">👁️</div>
+        <div class="idle-text">PlainSight</div>
+        <div class="idle-subtext">Waiting for scheduled content...</div>
+    </div>
 
     <script>
         const video = document.getElementById('video-player');
         const statusEl = document.getElementById('status');
         const errorEl = document.getElementById('error-message');
         const loadingEl = document.getElementById('loading');
+        const idleEl = document.getElementById('idle-screen');
 
         let currentPlaylist = [];
         let currentIndex = 0;
@@ -92,11 +134,25 @@
             errorEl.textContent = message;
             errorEl.style.display = 'block';
             loadingEl.style.display = 'none';
+            idleEl.style.display = 'none';
             updateStatus('ERROR: ' + message);
         }
 
         function hideError() {
             errorEl.style.display = 'none';
+        }
+
+        function showIdle() {
+            video.src = '';
+            idleEl.style.display = 'flex';
+            loadingEl.style.display = 'none';
+            hideError();
+            updateStatus('IDLE: Waiting for content');
+            reportNowPlaying(null);
+        }
+
+        function hideIdle() {
+            idleEl.style.display = 'none';
         }
 
         function isValidFilename(name) {
@@ -120,7 +176,7 @@
 
         function playVideo(index) {
             if (currentPlaylist.length === 0) {
-                showError('No content available — check content path on server');
+                showIdle();
                 return;
             }
 
@@ -135,6 +191,7 @@
             const src = `/content/${encodeURIComponent(filename)}`;
             updateStatus(`Playing: ${filename} (${currentIndex + 1}/${currentPlaylist.length})`);
 
+            hideIdle();
             video.src = src;
             video.load();
             video.play()
@@ -174,14 +231,14 @@
                 currentPlaylist = incoming;
 
                 if (currentPlaylist.length === 0) {
-                    showError('Playlist is empty — add content to the content path');
+                    showIdle();
                     return;
                 }
 
                 updateStatus(`Playlist updated: ${currentPlaylist.length} item(s)`);
 
                 // Only restart from the beginning if the player is idle
-                if (video.paused || video.ended || video.error) {
+                if (video.paused || video.ended || video.error || idleEl.style.display === 'flex') {
                     playVideo(0);
                 }
             } catch (err) {

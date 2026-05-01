@@ -13,6 +13,7 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
     public DbSet<DeviceGroupVersion> DeviceGroupVersions => this.Set<DeviceGroupVersion>();
     public DbSet<DeviceGroup> DeviceGroups => this.Set<DeviceGroup>();
     public DbSet<AdminUser> AdminUsers => this.Set<AdminUser>();
+    public DbSet<Schedule> Schedules => this.Set<Schedule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -37,6 +38,16 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
                 .WithOne(e => e.Playlist)
                 .HasForeignKey(e => e.PlaylistId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Schedule>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.Playlist)
+                .WithMany()
+                .HasForeignKey(e => e.PlaylistId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => e.GroupName);
         });
 
         modelBuilder.Entity<PlaylistItem>(entity =>
