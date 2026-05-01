@@ -55,6 +55,7 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =
 });
 
 // Add custom services
+builder.Services.AddSingleton<MediaMetadataService>();
 builder.Services.AddSingleton<WebsiteRecorder>();
 builder.Services.AddSingleton<RenderQueue>();
 builder.Services.AddHostedService<RenderWorkerService>();

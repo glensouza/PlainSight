@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject ContentSyncService ContentSyncService
+@inject MediaMetadataService MediaMetadataService
 @inject RenderQueue RenderQueue
 @inject IConfiguration Configuration
 @inject NavigationManager Navigation
@@ -711,6 +712,12 @@ else
                 ? ContentType.Video
                 : ContentType.Image;
 
+            int duration = 10;
+            if (contentType == ContentType.Video)
+            {
+                duration = await MediaMetadataService.GetVideoDurationAsync(filePath);
+            }
+
             using var context = await DbFactory.CreateDbContextAsync();
             ContentItem? contentItem = await context.ContentItems.FirstOrDefaultAsync(i => i.FileName == fileName);
 
@@ -722,7 +729,7 @@ else
                     FileName = fileName,
                     Type = contentType,
                     FileSizeBytes = selectedFile.Size,
-                    DurationSeconds = 10,
+                    DurationSeconds = duration,
                     UploadedAt = DateTime.UtcNow
                 };
                 context.ContentItems.Add(contentItem);
@@ -732,7 +739,7 @@ else
                 contentItem.Name = Path.GetFileNameWithoutExtension(safeOriginalName);
                 contentItem.Type = contentType;
                 contentItem.FileSizeBytes = selectedFile.Size;
-                contentItem.DurationSeconds = 10;
+                contentItem.DurationSeconds = duration;
             }
 
             await context.SaveChangesAsync();

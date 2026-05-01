@@ -7,6 +7,7 @@ namespace PlainSight.Server.Services;
 public class ContentSyncService(
     PlainSightDbContext context,
     IConfiguration configuration,
+    MediaMetadataService metadataService,
     ILogger<ContentSyncService> logger)
 {
     private static readonly string[] SupportedExtensions =
@@ -63,17 +64,23 @@ public class ContentSyncService(
             string filePath = Path.Combine(ContentPath, fileName);
             FileInfo fileInfo = new(filePath);
 
+            int duration = 10;
+            if (isVideo)
+            {
+                duration = await metadataService.GetVideoDurationAsync(filePath);
+            }
+
             context.ContentItems.Add(new ContentItem
             {
                 Name = Path.GetFileNameWithoutExtension(fileName),
                 FileName = fileName,
                 Type = contentType,
                 FileSizeBytes = fileInfo.Length,
-                DurationSeconds = isVideo ? 10 : 5,
+                DurationSeconds = duration,
                 UploadedAt = fileInfo.CreationTimeUtc
             });
             added++;
-            logger.LogInformation("Sync added new content from disk: {FileName}", fileName);
+            logger.LogInformation("Sync added new content from disk: {FileName} ({Duration}s)", fileName, duration);
         }
 
         if (added > 0 || removed > 0)
