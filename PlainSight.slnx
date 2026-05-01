@@ -5,14 +5,15 @@
     <File Path="aspire.config.json" />
     <File Path="CLAUDE.md" />
     <File Path="docker-compose.yml" />
+    <File Path="docs/gmail-setup.md" />
     <File Path="GEMINI.md" />
     <File Path="Name.md" />
     <File Path="README.md" />
     <File Path="ROADMAP.md" />
   </Folder>
   <Project Path="src/PlainSight.AppHost/PlainSight.AppHost.csproj" />
-  <Project Path="src/PlainSight.ServiceDefaults/PlainSight.ServiceDefaults.csproj" />
   <Project Path="src/PlainSight.Player/PlainSight.Player.csproj" />
   <Project Path="src/PlainSight.Server/PlainSight.Server.csproj" />
+  <Project Path="src/PlainSight.ServiceDefaults/PlainSight.ServiceDefaults.csproj" />
   <Project Path="src/PlainSight.Shared/PlainSight.Shared.csproj" />
 </Solution>

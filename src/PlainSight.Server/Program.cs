@@ -63,6 +63,7 @@ builder.Services.AddHostedService<ContentSyncWorkerService>();
 builder.Services.AddScoped<VersionService>();
 builder.Services.AddScoped<ScheduleService>();
 builder.Services.AddHostedService<AutoScreenshotService>();
+builder.Services.AddHostedService<DeviceMonitorService>();
 
 // Add HttpClient for calling our own API and the players
 builder.Services.AddHttpClient();

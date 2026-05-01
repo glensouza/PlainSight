@@ -20,4 +20,5 @@ public class Device
     public DateTime? LatestScreenshotAt { get; set; }
     [JsonIgnore]
     public string? ApiKey { get; set; }
+    public bool IsAlertSent { get; set; }
 }

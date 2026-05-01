@@ -33,9 +33,16 @@ dotnet publish src/PlainSight.Player/PlainSight.Player.csproj -r linux-arm64 --s
 
 ## 📏 Development Conventions
 
-### Code Style
-- **Explicit Types**: Always use explicit types instead of `var` in C# code (e.g., `string name = "..."` instead of `var name = "..."`).
-- **Modern .NET**: Utilize .NET 10 features and C# 13 syntax where applicable.
+### C# Coding Rules — hard requirements
+
+- **NEVER use `var`** — always use explicit types. `string name = "..."` not `var name = "..."`. This applies everywhere without exception.
+- **C# 14 idioms**: file-scoped namespaces, `ArgumentNullException.ThrowIfNull`, `Async` suffix on all async methods.
+- **Least visibility**: prefer `private`/`internal` before `public`. Do not add public interfaces unless required for DI or testing.
+- **CancellationToken**: async methods must accept and thread `CancellationToken` where appropriate.
+- **No silent catches**: log and rethrow, or return errors explicitly. Never swallow exceptions silently.
+- **Minimal diffs**: avoid unrelated formatting changes. Do not reformat code that is not part of the task.
+- **EF migrations**: when adding EF Core schema changes, always run `dotnet ef migrations add <Name>` and include the generated migration files. Never modify existing migration files.
+- **No comments by default**: only add a comment when the WHY is non-obvious (a hidden constraint, a subtle invariant, a workaround). Never describe what the code does — well-named identifiers do that.
 
 ### UI & Styling (Blazor)
 - **CSS Isolation**: Always use Blazor CSS isolation (`.razor.css` files). Never use inline `style` attributes or `<style>` tags in `.razor` files.

@@ -13,11 +13,34 @@
             font-family: Arial, sans-serif;
         }
 
-        #video-player {
+        .video-container {
+            position: relative;
             width: 100vw;
             height: 100vh;
+            background-color: #000;
+        }
+
+        .player {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             object-fit: contain;
             background-color: #000;
+            opacity: 0;
+            z-index: 10;
+        }
+
+        .player.active {
+            opacity: 1;
+            z-index: 20;
+        }
+
+        /* The 'entering' class ensures the new video is on top during cross-fade */
+        .player.entering {
+            opacity: 1;
+            z-index: 30;
         }
 
         #status {
@@ -30,6 +53,7 @@
             border-radius: 5px;
             font-size: 12px;
             font-family: 'Courier New', monospace;
+            z-index: 100;
             display: none;
             white-space: pre;
         }
@@ -95,7 +119,11 @@
     </style>
 </head>
 <body>
-    <video id="video-player" autoplay muted></video>
+    <div class="video-container">
+        <video id="player-1" class="player active" autoplay muted playsinline></video>
+        <video id="player-2" class="player" autoplay muted playsinline></video>
+    </div>
+    
     <div id="status"></div>
     <div id="error-message"></div>
     <div id="loading">Loading content...</div>
@@ -107,7 +135,12 @@
     </div>
 
     <script>
-        const video = document.getElementById('video-player');
+        const players = [
+            document.getElementById('player-1'),
+            document.getElementById('player-2')
+        ];
+        
+        let activePlayerIndex = 0;
         const statusEl = document.getElementById('status');
         const errorEl = document.getElementById('error-message');
         const loadingEl = document.getElementById('loading');
@@ -115,9 +148,8 @@
 
         let currentPlaylist = [];
         let currentIndex = 0;
+        let isSwapping = false;
 
-        // Debug overlay: opt-in via ?debugOverlay=1, toggle with Ctrl+Alt+D.
-        // Ctrl+D is reserved by Chromium (bookmarks) and would surface UI in kiosk mode.
         const debugOverlayEnabled = new URLSearchParams(window.location.search).get('debugOverlay') === '1';
         document.addEventListener('keydown', e => {
             if (debugOverlayEnabled && e.ctrlKey && e.altKey && e.key.toLowerCase() === 'd') {
@@ -143,7 +175,11 @@
         }
 
         function showIdle() {
-            video.src = '';
+            players.forEach(p => { 
+                p.src = ''; 
+                p.classList.remove('active', 'entering'); 
+                p.load();
+            });
             idleEl.style.display = 'flex';
             loadingEl.style.display = 'none';
             hideError();
@@ -174,50 +210,116 @@
             } catch (_) { /* non-critical */ }
         }
 
-        function playVideo(index) {
+        function prepareNextVideo() {
+            if (currentPlaylist.length === 0) return;
+            
+            const nextIndex = (currentIndex + 1) % currentPlaylist.length;
+            const nextFilename = currentPlaylist[nextIndex];
+            const nextSrc = new URL(`/content/${encodeURIComponent(nextFilename)}`, window.location.origin).href;
+            const inactivePlayer = players[(activePlayerIndex + 1) % 2];
+
+            if (inactivePlayer.src !== nextSrc) {
+                inactivePlayer.src = nextSrc;
+                inactivePlayer.load();
+            }
+        }
+
+        async function playVideo(index) {
             if (currentPlaylist.length === 0) {
                 showIdle();
                 return;
             }
+
+            if (isSwapping) return;
+            isSwapping = true;
 
             currentIndex = index % currentPlaylist.length;
             const filename = currentPlaylist[currentIndex];
 
             if (!isValidFilename(filename)) {
                 showError('Invalid video filename: ' + filename);
+                isSwapping = false;
                 return;
             }
 
-            const src = `/content/${encodeURIComponent(filename)}`;
-            updateStatus(`Playing: ${filename} (${currentIndex + 1}/${currentPlaylist.length})`);
+            const src = new URL(`/content/${encodeURIComponent(filename)}`, window.location.origin).href;
+            const activePlayer = players[activePlayerIndex];
+            const nextPlayerIndex = (activePlayerIndex + 1) % 2;
+            const nextPlayer = players[nextPlayerIndex];
 
+            // If we are already playing this file and it's NOT ended, we just stay on it.
+            // But if it's a single video loop, we ALWAYS swap to ensure no native loop flicker.
+            if (activePlayer.src === src && !activePlayer.paused && !activePlayer.ended && !activePlayer.error && currentPlaylist.length > 1) {
+                isSwapping = false;
+                prepareNextVideo();
+                return;
+            }
+
+            updateStatus(`Playing: ${filename} (${currentIndex + 1}/${currentPlaylist.length})`);
             hideIdle();
-            video.src = src;
-            video.load();
-            video.play()
-                .then(() => {
-                    hideError();
-                    loadingEl.style.display = 'none';
-                    reportNowPlaying(filename);
-                })
-                .catch(err => {
-                    console.error('Playback error:', err);
-                    showError(`Failed to play: ${filename}`);
-                });
+
+            // Set up next player
+            if (nextPlayer.src !== src) {
+                nextPlayer.src = src;
+            }
+            
+            // Native loop is disabled to force the element swap for perfect continuity
+            nextPlayer.loop = false;
+            
+            try {
+                // Pre-warm the next player
+                nextPlayer.classList.add('entering');
+                await nextPlayer.play();
+                
+                // Perform the swap
+                nextPlayer.classList.add('active');
+                nextPlayer.classList.remove('entering');
+                activePlayer.classList.remove('active');
+                
+                activePlayerIndex = nextPlayerIndex;
+                hideError();
+                loadingEl.style.display = 'none';
+                reportNowPlaying(filename);
+
+                // Prepare the other player for the NEXT transition
+                setTimeout(() => {
+                    prepareNextVideo();
+                }, 100);
+            } catch (err) {
+                console.error('Playback error:', err);
+                showError(`Failed to play: ${filename}`);
+            } finally {
+                isSwapping = false;
+            }
         }
 
-        video.addEventListener('ended', () => {
-            currentIndex = (currentIndex + 1) % Math.max(currentPlaylist.length, 1);
-            playVideo(currentIndex);
-        });
-
-        video.addEventListener('error', () => {
-            console.error('Video error — trying next in 3s');
-            showError('Video error. Trying next...');
-            setTimeout(() => {
-                currentIndex = (currentIndex + 1) % Math.max(currentPlaylist.length, 1);
+        players.forEach((p, idx) => {
+            p.addEventListener('ended', () => {
+                if (idx !== activePlayerIndex) return;
+                currentIndex = (currentIndex + 1) % currentPlaylist.length;
                 playVideo(currentIndex);
-            }, 3000);
+            });
+
+            // If the video is near the end, we can pre-trigger the swap for even tighter loops.
+            // On Raspberry Pi, the 'ended' event can sometimes have a 100ms lag.
+            p.addEventListener('timeupdate', () => {
+                if (idx !== activePlayerIndex || isSwapping) return;
+                // If within 0.15s of the end, trigger the next one.
+                if (p.duration > 0 && p.currentTime > p.duration - 0.15) {
+                    currentIndex = (currentIndex + 1) % currentPlaylist.length;
+                    playVideo(currentIndex);
+                }
+            });
+
+            p.addEventListener('error', () => {
+                if (idx !== activePlayerIndex) return;
+                console.error('Video error — trying next in 3s');
+                showError('Video error. Trying next...');
+                setTimeout(() => {
+                    currentIndex = (currentIndex + 1) % Math.max(currentPlaylist.length, 1);
+                    playVideo(currentIndex);
+                }, 3000);
+            });
         });
 
         async function loadPlaylistFromServer() {
@@ -228,6 +330,7 @@
 
                 if (JSON.stringify(incoming) === JSON.stringify(currentPlaylist)) return;
 
+                const wasIdle = currentPlaylist.length === 0;
                 currentPlaylist = incoming;
 
                 if (currentPlaylist.length === 0) {
@@ -236,20 +339,18 @@
                 }
 
                 updateStatus(`Playlist updated: ${currentPlaylist.length} item(s)`);
-
-                // Only restart from the beginning if the player is idle
-                if (video.paused || video.ended || video.error || idleEl.style.display === 'flex') {
+                if (wasIdle) {
                     playVideo(0);
+                } else {
+                    prepareNextVideo();
                 }
             } catch (err) {
                 updateStatus('Waiting for playlist...');
             }
         }
 
-        // Initial load then poll every 30 seconds
         loadPlaylistFromServer();
         setInterval(loadPlaylistFromServer, 30000);
-
         updateStatus('Waiting for content...');
     </script>
 </body>
