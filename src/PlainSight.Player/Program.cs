@@ -97,7 +97,7 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
     }
 
     string ext = Path.GetExtension(filename).ToLowerInvariant();
-    if (string.IsNullOrEmpty(ext) || !VideoFormats.SupportedExtensions.Contains(ext))
+    if (string.IsNullOrEmpty(ext) || !VideoFormats.SupportedMediaExtensions.Contains(ext))
     {
         logger.LogWarning("Unsupported content type blocked for filename: {Filename}", filename);
         return Results.BadRequest("Unsupported file type");

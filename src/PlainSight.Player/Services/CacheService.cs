@@ -30,7 +30,7 @@ public class CacheService(string sourcePath, string cachePath, ILogger logger)
 
                 // Sync playlist.json (if main content) and all supported video/image files
                 if (!fileName.Equals("playlist.json", StringComparison.OrdinalIgnoreCase) &&
-                    !VideoFormats.SupportedExtensions.Contains(ext))
+                    !VideoFormats.SupportedMediaExtensions.Contains(ext))
                 {
                     continue;
                 }
