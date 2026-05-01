@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PlainSight.Shared.Models;
 
 namespace PlainSight.Player.Services;
 
@@ -8,8 +9,8 @@ public class PlaylistService
     private readonly string _idlePath;
     private readonly ILogger<PlaylistService> _logger;
     private readonly Lock _lock = new();
-    private List<string> _playlist = [];
-    private List<string> _idlePlaylist = [];
+    private List<PlaylistItemDto> _playlist = [];
+    private List<PlaylistItemDto> _idlePlaylist = [];
     private string? _currentFile;
 
     public PlaylistService(string contentPath, string idlePath, ILogger<PlaylistService> logger)
@@ -24,7 +25,7 @@ public class PlaylistService
         try
         {
             // 1. Refresh Main Playlist
-            List<string> newPlaylist = [];
+            List<PlaylistItemDto> newPlaylist = [];
             string playlistFile = Path.Combine(_contentPath, "playlist.json");
             if (File.Exists(playlistFile))
             {
@@ -32,23 +33,26 @@ public class PlaylistService
                 PlaylistData? data = JsonSerializer.Deserialize<PlaylistData>(json);
                 if (data?.Items != null)
                 {
-                    foreach (string item in data.Items)
-                    {
-                        if (IsValidFilename(item)) newPlaylist.Add(item);
-                    }
+                    newPlaylist = data.Items
+                        .Where(i => IsValidFilename(i.FileName))
+                        .ToList();
                 }
             }
 
             // 2. Refresh Idle Playlist (Alphabetical from idle folder)
-            List<string> newIdlePlaylist = [];
+            List<PlaylistItemDto> newIdlePlaylist = [];
             if (Directory.Exists(_idlePath))
             {
                 newIdlePlaylist = Directory.GetFiles(_idlePath)
                     .Where(f => VideoFormats.SupportedMediaExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
-                    .Select(Path.GetFileName)
-                    .Where(f => !string.IsNullOrEmpty(f))
-                    .OrderBy(f => f)
-                    .ToList()!;
+                    .Select(f => new PlaylistItemDto 
+                    { 
+                        FileName = Path.GetFileName(f)!, 
+                        DurationSeconds = 10 // Idle images default to 10s
+                    })
+                    .Where(i => !string.IsNullOrEmpty(i.FileName))
+                    .OrderBy(i => i.FileName)
+                    .ToList();
             }
 
             lock (_lock)
@@ -66,17 +70,20 @@ public class PlaylistService
         }
     }
 
-    public void UpdatePlaylist(List<string> filenames)
+    public void UpdatePlaylist(List<PlaylistItemDto> items)
     {
-        List<string> validFiles = filenames
-            .Where(f => IsValidFilename(f))
-            .Where(f => VideoFormats.SupportedMediaExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+        List<PlaylistItemDto> validFiles = items
+            .Where(i => IsValidFilename(i.FileName))
+            .Where(i => VideoFormats.SupportedMediaExtensions.Contains(Path.GetExtension(i.FileName).ToLowerInvariant()))
             .ToList();
 
         lock (_lock)
         {
-            // Only update if the playlist has actually changed
-            if (!_playlist.SequenceEqual(validFiles))
+            // Simple sequence check for change
+            bool hasChanged = _playlist.Count != validFiles.Count || 
+                             _playlist.Zip(validFiles).Any(pair => pair.First.FileName != pair.Second.FileName || pair.First.DurationSeconds != pair.Second.DurationSeconds);
+
+            if (hasChanged)
             {
                 _playlist = validFiles;
                 _logger.LogInformation("Playlist updated via heartbeat: {Count} item(s)", _playlist.Count);
@@ -96,7 +103,7 @@ public class PlaylistService
         }
     }
 
-    public IReadOnlyList<string> GetCurrentPlaylist()
+    public IReadOnlyList<PlaylistItemDto> GetCurrentPlaylist()
     {
         lock (_lock)
         {
@@ -131,6 +138,6 @@ public class PlaylistService
 
     private sealed class PlaylistData
     {
-        public List<string> Items { get; set; } = [];
+        public List<PlaylistItemDto> Items { get; set; } = [];
     }
 }

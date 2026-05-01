@@ -164,8 +164,6 @@
         let isSwapping = false;
         let imageTimer = null;
 
-        const DEFAULT_IMAGE_DURATION = 10000; // 10 seconds
-
         const debugOverlayEnabled = new URLSearchParams(window.location.search).get('debugOverlay') === '1';
         document.addEventListener('keydown', e => {
             if (debugOverlayEnabled && e.ctrlKey && e.altKey && e.key.toLowerCase() === 'd') {
@@ -249,11 +247,10 @@
             if (currentPlaylist.length === 0) return;
             
             const nextIndex = (currentIndex + 1) % currentPlaylist.length;
-            const nextFilename = currentPlaylist[nextIndex];
+            const nextItem = currentPlaylist[nextIndex];
+            const nextFilename = nextItem.fileName;
             const nextSrc = new URL(`/content/${encodeURIComponent(nextFilename)}`, window.location.origin).href;
             
-            // We don't pre-load here to avoid complex state tracking for both types,
-            // but for videos we could pre-load in the background video element.
             if (isVideo(nextFilename)) {
                 const inactiveVPlayer = vPlayers.find(p => p !== activePlayer);
                 if (inactiveVPlayer && inactiveVPlayer.src !== nextSrc) {
@@ -274,7 +271,9 @@
             clearTimeout(imageTimer);
 
             currentIndex = index % currentPlaylist.length;
-            const filename = currentPlaylist[currentIndex];
+            const item = currentPlaylist[currentIndex];
+            const filename = item.fileName;
+            const duration = item.durationSeconds || 10;
 
             if (!isValidFilename(filename)) {
                 showError('Invalid media filename: ' + filename);
@@ -294,7 +293,7 @@
                 return;
             }
 
-            updateStatus(`Playing: ${filename} (${currentIndex + 1}/${currentPlaylist.length})`);
+            updateStatus(`Playing: ${filename} (${currentIndex + 1}/${currentPlaylist.length}) [${duration}s]`);
             hideIdle();
 
             // Prepare next element
@@ -318,10 +317,10 @@
                         }
                     });
                     
-                    // Start timer for next transition
+                    // Start timer for next transition based on server-provided duration
                     imageTimer = setTimeout(() => {
                         playNext();
-                    }, DEFAULT_IMAGE_DURATION);
+                    }, duration * 1000);
                 }
                 
                 // Perform the swap

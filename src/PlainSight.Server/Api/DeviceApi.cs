@@ -111,7 +111,11 @@ public static class DeviceApi
                     AssignedApiKey = assignedApiKey,
                     PlaylistItems = activePlaylist?.Items
                         .OrderBy(i => i.Order)
-                        .Select(i => i.ContentItem.FileName)
+                        .Select(i => new PlaylistItemDto
+                        {
+                            FileName = i.ContentItem.FileName,
+                            DurationSeconds = i.OverrideDurationSeconds ?? i.ContentItem.DurationSeconds
+                        })
                         .ToList()
                 };
 
