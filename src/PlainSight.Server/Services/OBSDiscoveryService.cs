@@ -94,14 +94,14 @@ public class OBSDiscoveryService(
             SystemSetting? streamSetting = await context.SystemSettings.FirstOrDefaultAsync(s => s.Key == "OBS:SyncWithStreaming", stoppingToken);
             SystemSetting? recordSetting = await context.SystemSettings.FirstOrDefaultAsync(s => s.Key == "OBS:SyncWithRecording", stoppingToken);
             
-            SyncWithStreaming = streamSetting != null ? bool.Parse(streamSetting.Value) : configuration.GetValue("OBS:SyncWithStreaming", false);
-            SyncWithRecording = recordSetting != null ? bool.Parse(recordSetting.Value) : configuration.GetValue("OBS:SyncWithRecording", false);
+            SyncWithStreaming = streamSetting != null ? bool.Parse(streamSetting.Value) : configuration.GetValue("OBS:SyncWithStreaming", true);
+            SyncWithRecording = recordSetting != null ? bool.Parse(recordSetting.Value) : configuration.GetValue("OBS:SyncWithRecording", true);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to load OBS sync settings from database. Using configuration defaults.");
-            SyncWithStreaming = configuration.GetValue("OBS:SyncWithStreaming", false);
-            SyncWithRecording = configuration.GetValue("OBS:SyncWithRecording", false);
+            SyncWithStreaming = configuration.GetValue("OBS:SyncWithStreaming", true);
+            SyncWithRecording = configuration.GetValue("OBS:SyncWithRecording", true);
         }
 
         string? configuredOutputName = configuration["OBS:NdiOutputName"];

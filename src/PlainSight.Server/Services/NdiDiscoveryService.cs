@@ -15,44 +15,50 @@ public class NdiDiscoveryService(
     IConfiguration configuration,
     ILogger<NdiDiscoveryService> logger) : BackgroundService
 {
-    private const string NdiServiceProtocol = "_ndi._tcp.local";
+    private static readonly string[] DiscoveryProtocols = 
+    [
+        "_ndi._tcp.local",
+        "_ndi._tcp",
+        "_ndi-streaming._tcp.local",
+        "NDI.local"
+    ];
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         TimeSpan scanInterval = TimeSpan.FromSeconds(configuration.GetValue("Ndi:ScanIntervalSeconds", 15));
-        TimeSpan scanTimeout = TimeSpan.FromSeconds(configuration.GetValue("Ndi:ScanTimeoutSeconds", 4));
+        TimeSpan scanTimeout = TimeSpan.FromSeconds(configuration.GetValue("Ndi:ScanTimeoutSeconds", 5));
         TimeSpan stalenessWindow = TimeSpan.FromSeconds(configuration.GetValue("Ndi:StalenessSeconds", 60));
 
         logger.LogInformation(
-            "NDI discovery starting (scanInterval={ScanInterval}s, scanTimeout={ScanTimeout}s, staleness={Staleness}s)",
+            "NDI discovery starting. Intervals: scan={ScanInterval}s, timeout={ScanTimeout}s, staleness={Staleness}s",
             scanInterval.TotalSeconds, scanTimeout.TotalSeconds, stalenessWindow.TotalSeconds);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                logger.LogDebug("Starting NDI mDNS scan for {Protocol}...", NdiServiceProtocol);
-                IReadOnlyList<IZeroconfHost> hosts = await ZeroconfResolver.ResolveAsync(
-                    NdiServiceProtocol,
-                    scanTime: scanTimeout,
-                    cancellationToken: stoppingToken);
-
-                logger.LogDebug("NDI scan (standard) found {Count} hosts", hosts.Count);
-
-                // Fallback for some environments: try without .local
-                if (hosts.Count == 0)
+                foreach (string protocol in DiscoveryProtocols)
                 {
-                    logger.LogDebug("Standard scan empty, trying fallback without .local...");
-                    hosts = await ZeroconfResolver.ResolveAsync(
-                        "_ndi._tcp",
-                        scanTime: scanTimeout,
-                        cancellationToken: stoppingToken);
-                    logger.LogDebug("NDI scan (fallback) found {Count} hosts", hosts.Count);
-                }
+                    logger.LogDebug("Probing NDI via mDNS: {Protocol}...", protocol);
+                    
+                    try
+                    {
+                        IReadOnlyList<IZeroconfHost> hosts = await ZeroconfResolver.ResolveAsync(
+                            protocol,
+                            scanTime: scanTimeout,
+                            cancellationToken: stoppingToken);
 
-                if (hosts.Count > 0)
-                {
-                    await UpsertAsync(hosts, stoppingToken);
+                        if (hosts.Count > 0)
+                        {
+                            logger.LogInformation("NDI Discovery: Found {Count} hosts using {Protocol}", hosts.Count, protocol);
+                            await UpsertAsync(hosts, stoppingToken);
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // SocketException 10043 is common on Windows if IPv6 is disabled or network stack is restricted
+                        logger.LogDebug("Probe failed for {Protocol}: {Message}", protocol, ex.Message);
+                    }
                 }
                 
                 await PruneStaleAsync(stalenessWindow, stoppingToken);
@@ -63,26 +69,21 @@ public class NdiDiscoveryService(
             }
             catch (System.Net.NetworkInformation.NetworkInformationException ex)
             {
-                logger.LogWarning("NDI discovery disabled: Network configuration does not support mDNS scanning ({Message}).", ex.Message);
-                // Back off significantly if the network stack doesn't support it to prevent log spam
-                try { await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken); }
+                logger.LogWarning("NDI discovery network error (Interface issue): {Message}. Retrying in 30s...", ex.Message);
+                try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
                 catch (OperationCanceledException) { break; }
-                continue; // Skip the standard delay
-            }
-            catch (System.Net.Sockets.SocketException ex)
-            {
-                logger.LogWarning("NDI discovery socket error: {Message}. Retrying...", ex.Message);
+                continue;
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "NDI discovery scan failed");
+                logger.LogError(ex, "Unexpected error in NDI discovery loop");
             }
 
             try
             {
                 await Task.Delay(scanInterval, stoppingToken);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
                 break;
             }
