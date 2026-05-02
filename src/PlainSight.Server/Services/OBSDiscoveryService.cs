@@ -44,11 +44,38 @@ public class OBSDiscoveryService(
     public string ConnectionStatus { get; private set; } = "Not configured";
     public string? ConfiguredNdiSourceName => configuration["OBS:NdiSourceName"];
 
-    public bool SyncWithStreaming => configuration.GetValue("OBS:SyncWithStreaming", false);
-    public bool SyncWithRecording => configuration.GetValue("OBS:SyncWithRecording", false);
+    public bool SyncWithStreaming { get; private set; }
+    public bool SyncWithRecording { get; private set; }
 
     // Resolved during each session from GetOutputList; shared across HandleMessageAsync calls
     private string? _resolvedNdiOutputName;
+
+    public async Task UpdateSyncSettingsAsync(bool syncStreaming, bool syncRecording)
+    {
+        SyncWithStreaming = syncStreaming;
+        SyncWithRecording = syncRecording;
+
+        await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync();
+        
+        SystemSetting? streamSetting = await context.SystemSettings.FirstOrDefaultAsync(s => s.Key == "OBS:SyncWithStreaming");
+        if (streamSetting == null)
+            context.SystemSettings.Add(new SystemSetting { Key = "OBS:SyncWithStreaming", Value = syncStreaming.ToString() });
+        else
+            streamSetting.Value = syncStreaming.ToString();
+
+        SystemSetting? recordSetting = await context.SystemSettings.FirstOrDefaultAsync(s => s.Key == "OBS:SyncWithRecording");
+        if (recordSetting == null)
+            context.SystemSettings.Add(new SystemSetting { Key = "OBS:SyncWithRecording", Value = syncRecording.ToString() });
+        else
+            recordSetting.Value = syncRecording.ToString();
+
+        await context.SaveChangesAsync();
+        
+        // Settings updated, but we may need to re-identify with the WebSocket to change event subscriptions.
+        // The easiest way is to let the socket drop and reconnect naturally, but for now we'll just apply the new flags
+        // to future live detections. To force a full sub update, we could drop the connection:
+        // IsConnected = false; 
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -58,6 +85,23 @@ public class OBSDiscoveryService(
             ConnectionStatus = "Not configured (set OBS:WebSocketUrl)";
             logger.LogInformation("OBS discovery disabled — set OBS:WebSocketUrl to enable.");
             return;
+        }
+
+        // Initialize sync settings from DB, fallback to configuration
+        try
+        {
+            await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(stoppingToken);
+            SystemSetting? streamSetting = await context.SystemSettings.FirstOrDefaultAsync(s => s.Key == "OBS:SyncWithStreaming", stoppingToken);
+            SystemSetting? recordSetting = await context.SystemSettings.FirstOrDefaultAsync(s => s.Key == "OBS:SyncWithRecording", stoppingToken);
+            
+            SyncWithStreaming = streamSetting != null ? bool.Parse(streamSetting.Value) : configuration.GetValue("OBS:SyncWithStreaming", false);
+            SyncWithRecording = recordSetting != null ? bool.Parse(recordSetting.Value) : configuration.GetValue("OBS:SyncWithRecording", false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to load OBS sync settings from database. Using configuration defaults.");
+            SyncWithStreaming = configuration.GetValue("OBS:SyncWithStreaming", false);
+            SyncWithRecording = configuration.GetValue("OBS:SyncWithRecording", false);
         }
 
         string? configuredOutputName = configuration["OBS:NdiOutputName"];

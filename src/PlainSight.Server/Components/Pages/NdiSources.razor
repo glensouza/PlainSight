@@ -75,14 +75,15 @@ else
         <div class="d-flex align-items-center justify-content-between">
             <div class="d-flex align-items-center gap-4 small text-muted">
                 <div class="form-check form-switch mb-0">
-                    <input class="form-check-input" type="checkbox" role="switch" id="syncStreaming" checked="@OBS.SyncWithStreaming" disabled>
+                    <input class="form-check-input" type="checkbox" role="switch" id="syncStreaming" 
+                           checked="@OBS.SyncWithStreaming" @onchange="(e) => UpdateSyncSettings((bool)(e.Value ?? false), OBS.SyncWithRecording)">
                     <label class="form-check-label" for="syncStreaming">Sync with Streaming</label>
                 </div>
                 <div class="form-check form-switch mb-0">
-                    <input class="form-check-input" type="checkbox" role="switch" id="syncRecording" checked="@OBS.SyncWithRecording" disabled>
+                    <input class="form-check-input" type="checkbox" role="switch" id="syncRecording" 
+                           checked="@OBS.SyncWithRecording" @onchange="(e) => UpdateSyncSettings(OBS.SyncWithStreaming, (bool)(e.Value ?? false))">
                     <label class="form-check-label" for="syncRecording">Sync with Recording</label>
                 </div>
-                <span>(Configure sync modes in <code>appsettings.json</code>)</span>
             </div>
             <div class="d-flex align-items-center gap-2">
                 <label class="small text-muted mb-0">Target Group:</label>
@@ -551,6 +552,20 @@ else
         finally
         {
             isGoingLive = false;
+        }
+    }
+
+    private async Task UpdateSyncSettings(bool streaming, bool recording)
+    {
+        try
+        {
+            await OBS.UpdateSyncSettingsAsync(streaming, recording);
+            errorMessage = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error updating OBS sync settings");
+            errorMessage = "Failed to update OBS sync settings.";
         }
     }
 

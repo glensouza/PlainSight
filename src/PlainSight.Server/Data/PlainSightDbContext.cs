@@ -17,10 +17,16 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
     public DbSet<Schedule> Schedules => this.Set<Schedule>();
     public DbSet<ScheduleTargetGroup> ScheduleTargetGroups => this.Set<ScheduleTargetGroup>();
     public DbSet<NdiSource> NdiSources => this.Set<NdiSource>();
+    public DbSet<SystemSetting> SystemSettings => this.Set<SystemSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<SystemSetting>(entity =>
+        {
+            entity.HasKey(e => e.Key);
+        });
 
         modelBuilder.Entity<Device>(entity =>
         {
