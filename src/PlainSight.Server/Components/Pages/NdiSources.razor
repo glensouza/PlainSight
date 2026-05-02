@@ -75,11 +75,11 @@ else
         <div class="d-flex align-items-center justify-content-between">
             <div class="d-flex align-items-center gap-4 small text-muted">
                 <div class="form-check form-switch mb-0">
-                    <input class="form-check-input" type="checkbox" role="switch" id="syncStreaming" checked disabled>
+                    <input class="form-check-input" type="checkbox" role="switch" id="syncStreaming" checked="@OBS.SyncWithStreaming" disabled>
                     <label class="form-check-label" for="syncStreaming">Sync with Streaming</label>
                 </div>
                 <div class="form-check form-switch mb-0">
-                    <input class="form-check-input" type="checkbox" role="switch" id="syncRecording" checked disabled>
+                    <input class="form-check-input" type="checkbox" role="switch" id="syncRecording" checked="@OBS.SyncWithRecording" disabled>
                     <label class="form-check-label" for="syncRecording">Sync with Recording</label>
                 </div>
                 <span>(Configure sync modes in <code>appsettings.json</code>)</span>

@@ -44,8 +44,8 @@ public class OBSDiscoveryService(
     public string ConnectionStatus { get; private set; } = "Not configured";
     public string? ConfiguredNdiSourceName => configuration["OBS:NdiSourceName"];
 
-    private bool SyncWithStreaming => configuration.GetValue("OBS:SyncWithStreaming", false);
-    private bool SyncWithRecording => configuration.GetValue("OBS:SyncWithRecording", false);
+    public bool SyncWithStreaming => configuration.GetValue("OBS:SyncWithStreaming", false);
+    public bool SyncWithRecording => configuration.GetValue("OBS:SyncWithRecording", false);
 
     // Resolved during each session from GetOutputList; shared across HandleMessageAsync calls
     private string? _resolvedNdiOutputName;
