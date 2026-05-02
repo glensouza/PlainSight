@@ -12,8 +12,12 @@ public class PlayerWorker(
     ScreenshotUploadService screenshotUpload,
     PlaylistService playlist,
     CacheManager cache,
+    NdiPlayerService ndi,
     ILogger<PlayerWorker> logger) : BackgroundService
 {
+    private const int FailsafeThreshold = 3;
+    private int consecutiveHeartbeatFailures;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("PlainSight Player started");
@@ -30,6 +34,8 @@ public class PlayerWorker(
 
                 if (response != null)
                 {
+                    consecutiveHeartbeatFailures = 0;
+
                     if (!string.IsNullOrEmpty(response.UpdateUrl))
                     {
                         logger.LogInformation("Update available at {UpdateUrl}", response.UpdateUrl);
@@ -55,9 +61,12 @@ public class PlayerWorker(
                         // No scheduled playlist from server, refresh from the local playlist.json (synced from SMB)
                         await playlist.RefreshAsync(stoppingToken);
                     }
+
+                    ApplyLiveMode(response);
                 }
                 else
                 {
+                    HandleHeartbeatFailure();
                     // Fallback to disk if heartbeat fails
                     await playlist.RefreshAsync(stoppingToken);
                 }
@@ -73,6 +82,36 @@ public class PlayerWorker(
                 logger.LogError(ex, "Error in player loop");
                 await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
             }
+        }
+
+        ndi.Stop("player shutting down");
+    }
+
+    private void ApplyLiveMode(HeartbeatResponse response)
+    {
+        if (response.LiveMode && !string.IsNullOrEmpty(response.NdiSourceName))
+        {
+            ndi.Start(response.NdiSourceName);
+        }
+        else
+        {
+            if (ndi.IsRunning)
+                ndi.Stop("server cleared live mode");
+        }
+    }
+
+    private void HandleHeartbeatFailure()
+    {
+        consecutiveHeartbeatFailures++;
+        logger.LogWarning("Heartbeat failed ({Count}/{Threshold} consecutive failures)",
+            consecutiveHeartbeatFailures, FailsafeThreshold);
+
+        if (consecutiveHeartbeatFailures >= FailsafeThreshold && ndi.IsRunning)
+        {
+            logger.LogWarning(
+                "Fail-safe triggered: {Count} consecutive heartbeat failures — killing NDI viewer and reverting to cached playlist.",
+                consecutiveHeartbeatFailures);
+            ndi.Stop("failsafe: server unreachable");
         }
     }
 }

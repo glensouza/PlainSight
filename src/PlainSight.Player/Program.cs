@@ -39,6 +39,7 @@ builder.Services.AddHttpClient<ScreenshotUploadService>(client =>
 #pragma warning restore EXTEXP0001
 
 builder.Services.AddSingleton<ScreenCaptureService>();
+builder.Services.AddSingleton<NdiPlayerService>();
 
 // Register cache manager for both content and idle folders
 builder.Services.AddSingleton(sp => new CacheManager(
