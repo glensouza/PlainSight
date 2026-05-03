@@ -200,15 +200,19 @@ public static class DeviceApi
             if (device == null)
                 return Results.NotFound();
 
-            // Validate API key
-            if (device.ApiKey != null)
+            // Validate API key — reject if the device has no key yet (not yet registered via heartbeat)
+            // or if the provided key does not match.
+            if (device.ApiKey == null)
             {
-                string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
-                if (string.IsNullOrEmpty(incomingKey) || !VerifyApiKey(incomingKey, device.ApiKey))
-                {
-                    logger.LogWarning("Screenshot upload rejected for device {DeviceId}: invalid or missing API key", SanitizeForLog(deviceId));
-                    return Results.Unauthorized();
-                }
+                logger.LogWarning("Screenshot upload rejected for device {DeviceId}: device has no API key (heartbeat required first)", SanitizeForLog(deviceId));
+                return Results.Unauthorized();
+            }
+
+            string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
+            if (string.IsNullOrEmpty(incomingKey) || !VerifyApiKey(incomingKey, device.ApiKey))
+            {
+                logger.LogWarning("Screenshot upload rejected for device {DeviceId}: invalid or missing API key", SanitizeForLog(deviceId));
+                return Results.Unauthorized();
             }
 
             if (!request.HasFormContentType)

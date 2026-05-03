@@ -44,7 +44,8 @@ public class UpdateService(HttpClient http, ILogger<UpdateService> logger)
             }
             else
             {
-                logger.LogWarning("No expected SHA256 hash provided. Skipping integrity verification.");
+                logger.LogError("Update aborted: server did not provide an expected SHA256 hash. Refusing to apply an unverified binary.");
+                return;
             }
 
             await File.WriteAllBytesAsync(tempPath, data, cancellationToken);
