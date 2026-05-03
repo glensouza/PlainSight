@@ -37,58 +37,106 @@ else if (!devices.Any())
 }
 else
 {
-    <div class="table-responsive">
-        <table class="table table-striped table-hover">
-            <thead>
-                <tr>
-                    <th>
+    <div class="ps-toolbar">
+        <div class="ps-toolbar__filters">
+            <button class="ps-filter @(statusFilter == "all" ? "is-active" : "")" @onclick='() => SetFilter("all")'>
+                All <span class="ps-filter__count">@devices.Count</span>
+            </button>
+            <button class="ps-filter ps-filter--online @(statusFilter == "online" ? "is-active" : "")" @onclick='() => SetFilter("online")'>
+                <span class="ps-led"></span> Online <span class="ps-filter__count">@onlineCount</span>
+            </button>
+            <button class="ps-filter ps-filter--warn @(statusFilter == "warn" ? "is-active" : "")" @onclick='() => SetFilter("warn")'>
+                <span class="ps-led"></span> Degraded <span class="ps-filter__count">@warnCount</span>
+            </button>
+            <button class="ps-filter ps-filter--offline @(statusFilter == "offline" ? "is-active" : "")" @onclick='() => SetFilter("offline")'>
+                <span class="ps-led"></span> Offline <span class="ps-filter__count">@offlineCount</span>
+            </button>
+        </div>
+        <div class="ps-toolbar__actions">
+            <button class="btn btn-sm btn-outline-secondary" @onclick="ToggleSelectAllVisible" title="Select all visible">
+                <i class="bi bi-check2-square"></i>
+                @(allVisibleSelected ? "Deselect all" : "Select all")
+            </button>
+            <button class="btn btn-sm btn-primary" @onclick="LoadDevices">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+        </div>
+    </div>
+
+    <div class="ps-grid @(selectedDeviceIds.Count > 0 ? "ps-grid--bulk-active" : "")">
+        @foreach (Device device in FilteredDevices())
+        {
+            bool isOnline = IsDeviceOnline(device.LastSeen);
+            string statusKey = GetStatusKey(device.LastSeen);
+            bool isSelected = selectedDeviceIds.Contains(device.DeviceId);
+            <div class="ps-tile ps-tile--@statusKey @(isSelected ? "is-selected" : "")">
+                <div class="ps-tile__rail"></div>
+
+                <header class="ps-tile__head">
+                    <label class="ps-tile__check" @onclick:stopPropagation>
                         <input type="checkbox"
-                               class="form-check-input"
-                               checked="@(devices.Count > 0 && selectedDeviceIds.Count == devices.Count)"
-                               @onchange="e => ToggleSelectAll((bool)(e.Value ?? false))"
-                               title="Select all" />
-                    </th>
-                    <th>Status</th>
-                    <th>Device ID</th>
-                    <th>Name</th>
-                    <th>Group</th>
-                    <th>Last Seen</th>
-                    <th>Version</th>
-                    <th>Currently Playing</th>
-                    <th>Live Mode</th>
-                    <th>Screenshot</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (Device device in devices)
-                {
-                    bool isOnline = IsDeviceOnline(device.LastSeen);
-                    <tr class="@(isOnline ? "" : "table-secondary")">
-                        <td>
-                            <input type="checkbox"
-                                   class="form-check-input"
-                                   checked="@selectedDeviceIds.Contains(device.DeviceId)"
-                                   @onchange="e => ToggleDevice(device.DeviceId, (bool)(e.Value ?? false))" />
-                        </td>
-                        <td>
-                            @if (isOnline)
-                            {
-                                <span class="badge bg-success" title="Online">
-                                    <i class="bi bi-circle-fill"></i> Online
-                                </span>
-                            }
-                            else
-                            {
-                                <span class="badge bg-danger" title="Offline">
-                                    <i class="bi bi-circle-fill"></i> Offline
-                                </span>
-                            }
-                        </td>
-                        <td><code>@device.DeviceId</code></td>
-                        <td>@device.Name</td>
-                        <td>
-                            <select class="form-select form-select-sm"
+                               checked="@isSelected"
+                               @onchange="e => ToggleDevice(device.DeviceId, (bool)(e.Value ?? false))" />
+                    </label>
+                    <div class="ps-tile__ident">
+                        <div class="ps-tile__name" title="@device.Name">@device.Name</div>
+                        <div class="ps-tile__id"><code>@device.DeviceId</code></div>
+                    </div>
+                    <span class="pill pill--@statusKey">
+                        <span class="led @(isOnline ? "led-pulse" : "")"></span>
+                        @GetStatusLabel(statusKey)
+                    </span>
+                </header>
+
+                <div class="ps-tile__screen">
+                    @if (device.LatestScreenshotAt.HasValue)
+                    {
+                        <button class="ps-tile__screen-btn"
+                                @onclick="() => ShowScreenshotHistory(device)"
+                                title="View screenshot history">
+                            <img src="/api/device/@device.DeviceId/screenshots/latest?t=@previewCacheBust"
+                                 alt="" />
+                        </button>
+                    }
+                    else
+                    {
+                        <div class="ps-tile__screen-empty">
+                            <i class="bi bi-image-alt"></i>
+                            <span>NO SCREENSHOT</span>
+                        </div>
+                    }
+                    @if (!isOnline)
+                    {
+                        <div class="ps-tile__nosignal">
+                            <span>NO SIGNAL</span>
+                        </div>
+                    }
+                    @if (IsLiveModeActive(device) && isOnline)
+                    {
+                        <div class="ps-tile__live">
+                            <span class="led led-pulse"></span> LIVE · NDI
+                        </div>
+                    }
+                    <div class="ps-tile__playing" title="@(device.CurrentlyPlaying ?? "")">
+                        @(device.CurrentlyPlaying ?? "—")
+                    </div>
+                </div>
+
+                <div class="ps-tile__telemetry">
+                    <div class="ps-cell">
+                        <div class="ps-cell__label">LAST SEEN</div>
+                        <div class="ps-cell__value" title="@device.LastSeen.ToString("yyyy-MM-dd HH:mm:ss") UTC">
+                            @GetTimeSince(device.LastSeen)
+                        </div>
+                    </div>
+                    <div class="ps-cell">
+                        <div class="ps-cell__label">VERSION</div>
+                        <div class="ps-cell__value mono">@device.CurrentVersion</div>
+                    </div>
+                    <div class="ps-cell">
+                        <div class="ps-cell__label">GROUP</div>
+                        <div class="ps-cell__value">
+                            <select class="ps-cell__select"
                                     value="@device.Group"
                                     @onchange="e => ChangeGroup(device.DeviceId, e.Value?.ToString() ?? device.Group)">
                                 @if (deviceGroups != null)
@@ -103,78 +151,65 @@ else
                                     <option value="@device.Group">@device.Group</option>
                                 }
                             </select>
-                        </td>
-                        <td>
-                            <span title="@device.LastSeen.ToString("yyyy-MM-dd HH:mm:ss")">
-                                @GetTimeSince(device.LastSeen)
-                            </span>
-                        </td>
-                        <td><code>@device.CurrentVersion</code></td>
-                        <td>@(device.CurrentlyPlaying ?? "-")</td>
-                        <td>
-                            <button class="btn btn-sm @(GetLiveModeBadgeClass(device))"
-                                    @onclick="() => OpenLiveModeEditor(device)"
-                                    title="Configure live (NDI) mode">
-                                <i class="bi bi-broadcast"></i> @GetLiveModeLabel(device)
-                            </button>
-                        </td>
-                        <td>
+                        </div>
+                    </div>
+                    <div class="ps-cell">
+                        <div class="ps-cell__label">SCREENSHOT</div>
+                        <div class="ps-cell__value">
                             @if (device.LatestScreenshotAt.HasValue)
                             {
-                                <button class="btn btn-sm btn-outline-secondary"
-                                        @onclick="() => ShowScreenshotHistory(device)"
-                                        title="@device.LatestScreenshotAt.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC">
-                                    <i class="bi bi-image"></i>
-                                    <span>@GetTimeSince(device.LatestScreenshotAt.Value)</span>
-                                </button>
+                                @GetTimeSince(device.LatestScreenshotAt.Value)
                             }
                             else
                             {
                                 <span class="text-muted">—</span>
                             }
-                        </td>
-                        <td>
-                            <button class="btn btn-sm btn-outline-primary"
-                                    @onclick="() => RequestScreenshot(device.DeviceId)"
-                                    disabled="@(!isOnline || requestingScreenshot.Contains(device.DeviceId))">
-                                @if (requestingScreenshot.Contains(device.DeviceId))
-                                {
-                                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                                    <span>Requesting...</span>
-                                }
-                                else
-                                {
-                                    <i class="bi bi-camera"></i>
-                                    <span>Screenshot</span>
-                                }
-                            </button>
-                            <button class="btn btn-sm btn-outline-warning ms-1"
-                                    @onclick="() => ResetApiKey(device.DeviceId)"
-                                    disabled="@resettingApiKey.Contains(device.DeviceId)"
-                                    title="Clear stored API key; device will re-register on next heartbeat">
-                                @if (resettingApiKey.Contains(device.DeviceId))
-                                {
-                                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                                    <span>Resetting...</span>
-                                }
-                                else
-                                {
-                                    <i class="bi bi-key"></i>
-                                    <span>Reset Key</span>
-                                }
-                            </button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+                        </div>
+                    </div>
+                </div>
+
+                <footer class="ps-tile__actions">
+                    <button class="ps-action"
+                            @onclick="() => RequestScreenshot(device.DeviceId)"
+                            disabled="@(!isOnline || requestingScreenshot.Contains(device.DeviceId))"
+                            title="Capture screenshot">
+                        @if (requestingScreenshot.Contains(device.DeviceId))
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-camera"></i>
+                        }
+                        <span>Capture</span>
+                    </button>
+                    <button class="ps-action"
+                            @onclick="() => OpenLiveModeEditor(device)"
+                            title="Configure live (NDI) mode">
+                        <i class="bi bi-broadcast"></i>
+                        <span>@GetLiveModeLabel(device)</span>
+                    </button>
+                    <button class="ps-action ps-action--warn"
+                            @onclick="() => ResetApiKey(device.DeviceId)"
+                            disabled="@resettingApiKey.Contains(device.DeviceId)"
+                            title="Reset API key">
+                        @if (resettingApiKey.Contains(device.DeviceId))
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-key"></i>
+                        }
+                        <span>Reset Key</span>
+                    </button>
+                </footer>
+            </div>
+        }
     </div>
 
-    <div class="mt-3 @(selectedDeviceIds.Count > 0 ? "mb-5 pb-4" : "")">
-        <button class="btn btn-primary" @onclick="LoadDevices">
-            <i class="bi bi-arrow-clockwise"></i> Refresh
-        </button>
-        <span class="ms-2 text-muted">Auto-refreshing every 5 seconds</span>
+    <div class="ps-grid-foot">
+        <span class="text-muted"><i class="bi bi-arrow-clockwise"></i> Auto-refreshing every 5 seconds</span>
     </div>
 }
 
@@ -185,7 +220,7 @@ else
          role="dialog"
          aria-modal="true"
          aria-labelledby="history-modal-title"
-         style="background:rgba(0,0,0,0.5);"
+         style="background:rgba(4,8,14,0.7);"
          @onclick="CloseHistory"
          @onkeydown="HandleModalKeyDown">
         <div class="modal-dialog modal-xl modal-dialog-centered" @onclick:stopPropagation="true">
@@ -222,8 +257,8 @@ else
                         <div class="d-flex flex-wrap gap-2">
                             @foreach (DeviceScreenshotDto shot in screenshotHistory)
                             {
-                                bool isSelected = selectedScreenshot?.Id == shot.Id;
-                                <button class="btn p-1 @(isSelected ? "border border-primary border-2" : "border")"
+                                bool isSelectedShot = selectedScreenshot?.Id == shot.Id;
+                                <button class="btn p-1 @(isSelectedShot ? "border border-info border-2" : "border")"
                                         @onclick="() => SelectScreenshot(shot)"
                                         title="@shot.CapturedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC">
                                     <img src="@shot.Url?t=@previewCacheBust"
@@ -249,7 +284,7 @@ else
          role="dialog"
          aria-modal="true"
          aria-labelledby="live-mode-modal-title"
-         style="background:rgba(0,0,0,0.5);"
+         style="background:rgba(4,8,14,0.7);"
          @onclick="CloseLiveModeEditor">
         <div class="modal-dialog modal-dialog-centered" @onclick:stopPropagation="true">
             <div class="modal-content">
@@ -414,6 +449,56 @@ else
     private bool isBulkAssigningVersion;
     private string? bulkResultMessage;
     private bool bulkResultIsSuccess;
+    private string statusFilter = "all";
+
+    private int onlineCount => devices?.Count(d => GetStatusKey(d.LastSeen) == "online") ?? 0;
+    private int warnCount => devices?.Count(d => GetStatusKey(d.LastSeen) == "warn") ?? 0;
+    private int offlineCount => devices?.Count(d => GetStatusKey(d.LastSeen) == "offline") ?? 0;
+
+    private bool allVisibleSelected
+    {
+        get
+        {
+            List<Device> visible = FilteredDevices().ToList();
+            return visible.Count > 0 && visible.All(d => selectedDeviceIds.Contains(d.DeviceId));
+        }
+    }
+
+    private IEnumerable<Device> FilteredDevices()
+    {
+        if (devices == null) return Enumerable.Empty<Device>();
+        return statusFilter switch
+        {
+            "online"  => devices.Where(d => GetStatusKey(d.LastSeen) == "online"),
+            "warn"    => devices.Where(d => GetStatusKey(d.LastSeen) == "warn"),
+            "offline" => devices.Where(d => GetStatusKey(d.LastSeen) == "offline"),
+            _         => devices
+        };
+    }
+
+    private void SetFilter(string key) => statusFilter = key;
+
+    private string GetStatusKey(DateTime lastSeen)
+    {
+        double secs = (DateTime.UtcNow - lastSeen).TotalSeconds;
+        if (secs < 60) return "online";
+        if (secs < 300) return "warn";
+        return "offline";
+    }
+
+    private string GetStatusLabel(string key) => key switch
+    {
+        "online"  => "ONLINE",
+        "warn"    => "DEGRADED",
+        _         => "OFFLINE"
+    };
+
+    private bool IsLiveModeActive(Device device)
+    {
+        if (device.LiveModeOverride == true) return true;
+        if (device.LiveModeOverride == false) return false;
+        return device.NdiAutoSwitch && device.AssignedNdiSourceId.HasValue;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -466,14 +551,6 @@ else
         }
     }
 
-    private string GetLiveModeBadgeClass(Device device)
-    {
-        if (device.LiveModeOverride == true) return "btn-danger";
-        if (device.LiveModeOverride == false) return "btn-outline-secondary";
-        if (device.NdiAutoSwitch && device.AssignedNdiSourceId.HasValue) return "btn-warning";
-        return "btn-outline-secondary";
-    }
-
     private string GetLiveModeLabel(Device device)
     {
         if (device.LiveModeOverride == true) return "Forced ON";
@@ -497,28 +574,20 @@ else
         StateHasChanged();
     }
 
-    private void CloseLiveModeEditor()
-    {
-        liveModeDevice = null;
-    }
+    private void CloseLiveModeEditor() => liveModeDevice = null;
 
     private async Task SaveLiveMode()
     {
-        if (liveModeDevice == null)
-            return;
-
+        if (liveModeDevice == null) return;
         isSavingLiveMode = true;
         try
         {
             using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == liveModeDevice.DeviceId);
-            if (device == null)
-                return;
+            if (device == null) return;
 
             device.NdiAutoSwitch = liveModeAutoSwitch;
-            device.AssignedNdiSourceId = int.TryParse(liveModeSourceId, out int parsedSourceId)
-                ? parsedSourceId
-                : null;
+            device.AssignedNdiSourceId = int.TryParse(liveModeSourceId, out int parsedSourceId) ? parsedSourceId : null;
             device.LiveModeOverride = liveModeOverrideValue switch
             {
                 "on" => true,
@@ -546,9 +615,7 @@ else
         try
         {
             using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-            deviceGroups = await context.DeviceGroups
-                .OrderBy(g => g.Name)
-                .ToListAsync();
+            deviceGroups = await context.DeviceGroups.OrderBy(g => g.Name).ToListAsync();
         }
         catch (Exception ex)
         {
@@ -562,9 +629,7 @@ else
         try
         {
             using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-            playerVersions = await context.PlayerVersions
-                .OrderByDescending(v => v.VersionNumber)
-                .ToListAsync();
+            playerVersions = await context.PlayerVersions.OrderByDescending(v => v.VersionNumber).ToListAsync();
         }
         catch (Exception ex)
         {
@@ -608,8 +673,7 @@ else
                     Logger.LogInformation("Screenshot requested for device {DeviceId} via {CallbackUrl}", deviceId, device.CallbackUrl);
                     await LoadDevices();
                     Device? updated = devices?.FirstOrDefault(d => d.DeviceId == deviceId);
-                    if (updated != null)
-                        await ShowScreenshotHistory(updated);
+                    if (updated != null) await ShowScreenshotHistory(updated);
                 }
             }
         }
@@ -657,34 +721,31 @@ else
         }
     }
 
-    private void ToggleSelectAll(bool value)
+    private void ToggleSelectAllVisible()
     {
-        selectedDeviceIds.Clear();
-        if (value && devices != null)
+        List<Device> visible = FilteredDevices().ToList();
+        if (visible.Count == 0) return;
+        if (visible.All(d => selectedDeviceIds.Contains(d.DeviceId)))
         {
-            foreach (Device device in devices)
-                selectedDeviceIds.Add(device.DeviceId);
+            foreach (Device d in visible) selectedDeviceIds.Remove(d.DeviceId);
+        }
+        else
+        {
+            foreach (Device d in visible) selectedDeviceIds.Add(d.DeviceId);
         }
     }
 
     private void ToggleDevice(string deviceId, bool value)
     {
-        if (value)
-            selectedDeviceIds.Add(deviceId);
-        else
-            selectedDeviceIds.Remove(deviceId);
+        if (value) selectedDeviceIds.Add(deviceId);
+        else       selectedDeviceIds.Remove(deviceId);
     }
 
-    private void ClearSelection()
-    {
-        selectedDeviceIds.Clear();
-    }
+    private void ClearSelection() => selectedDeviceIds.Clear();
 
     private async Task BulkScreenshot()
     {
-        if (selectedDeviceIds.Count == 0)
-            return;
-
+        if (selectedDeviceIds.Count == 0) return;
         isBulkScreenshotting = true;
         try
         {
@@ -717,9 +778,7 @@ else
 
     private async Task BulkMoveGroup()
     {
-        if (selectedDeviceIds.Count == 0 || string.IsNullOrEmpty(bulkGroupSelection))
-            return;
-
+        if (selectedDeviceIds.Count == 0 || string.IsNullOrEmpty(bulkGroupSelection)) return;
         isBulkMovingGroup = true;
         try
         {
@@ -728,11 +787,7 @@ else
                 .Where(d => selectedDeviceIds.Contains(d.DeviceId))
                 .ToListAsync();
 
-            foreach (Device d in targetDevices)
-            {
-                d.Group = bulkGroupSelection;
-            }
-
+            foreach (Device d in targetDevices) d.Group = bulkGroupSelection;
             await context.SaveChangesAsync();
 
             bulkResultMessage = $"Moved {targetDevices.Count} device(s) to group '{bulkGroupSelection}'.";
@@ -756,9 +811,7 @@ else
 
     private async Task BulkAssignVersion()
     {
-        if (string.IsNullOrEmpty(bulkVersionGroup) || string.IsNullOrEmpty(bulkVersionSelection))
-            return;
-
+        if (string.IsNullOrEmpty(bulkVersionGroup) || string.IsNullOrEmpty(bulkVersionSelection)) return;
         isBulkAssigningVersion = true;
         try
         {
@@ -800,10 +853,7 @@ else
         }
     }
 
-    private void DismissBulkResult()
-    {
-        bulkResultMessage = null;
-    }
+    private void DismissBulkResult() => bulkResultMessage = null;
 
     private async Task ShowScreenshotHistory(Device device)
     {
@@ -826,8 +876,7 @@ else
                     Url = $"/api/device/{device.DeviceId}/screenshots/{s.Id}"
                 })
                 .ToListAsync();
-            if (screenshotHistory.Count > 0)
-                selectedScreenshot = screenshotHistory[0];
+            if (screenshotHistory.Count > 0) selectedScreenshot = screenshotHistory[0];
         }
         catch (Exception ex)
         {
@@ -853,31 +902,19 @@ else
 
     private void HandleModalKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Escape")
-            CloseHistory();
+        if (e.Key == "Escape") CloseHistory();
     }
 
-    private bool IsDeviceOnline(DateTime lastSeen)
-    {
-        return (DateTime.UtcNow - lastSeen).TotalSeconds < 60;
-    }
+    private bool IsDeviceOnline(DateTime lastSeen) => (DateTime.UtcNow - lastSeen).TotalSeconds < 60;
 
     private string GetTimeSince(DateTime dateTime)
     {
         TimeSpan timeSpan = DateTime.UtcNow - dateTime;
-
-        if (timeSpan.TotalSeconds < 60)
-            return $"{(int)timeSpan.TotalSeconds}s ago";
-        if (timeSpan.TotalMinutes < 60)
-            return $"{(int)timeSpan.TotalMinutes}m ago";
-        if (timeSpan.TotalHours < 24)
-            return $"{(int)timeSpan.TotalHours}h ago";
-
+        if (timeSpan.TotalSeconds < 60) return $"{(int)timeSpan.TotalSeconds}s ago";
+        if (timeSpan.TotalMinutes < 60) return $"{(int)timeSpan.TotalMinutes}m ago";
+        if (timeSpan.TotalHours < 24)   return $"{(int)timeSpan.TotalHours}h ago";
         return $"{(int)timeSpan.TotalDays}d ago";
     }
 
-    public void Dispose()
-    {
-        refreshTimer?.Dispose();
-    }
+    public void Dispose() => refreshTimer?.Dispose();
 }
