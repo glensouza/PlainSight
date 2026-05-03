@@ -110,39 +110,37 @@ public static class DeviceApi
                 bool liveMode = false;
                 string? liveSourceName = null;
 
+                bool needsSource = (device.LiveModeOverride == true) || (device.LiveModeOverride == null && device.NdiAutoSwitch);
+                NdiSource? source = null;
+
+                if (needsSource)
+                {
+                    source = device.AssignedNdiSource ?? await context.NdiSources.FirstOrDefaultAsync(s => s.IsDefault, ct);
+                }
+
                 if (device.LiveModeOverride.HasValue)
                 {
                     liveMode = device.LiveModeOverride.Value;
                     if (liveMode)
                     {
-                        // Use assigned source, or fallback to default if forcing live
-                        NdiSource? source = device.AssignedNdiSource ?? 
-                            await context.NdiSources.FirstOrDefaultAsync(s => s.IsDefault, ct);
                         liveSourceName = source?.ServiceName;
                     }
                 }
-                else if (device.NdiAutoSwitch)
+                else if (device.NdiAutoSwitch && source != null)
                 {
-                    // Find the source to check: specifically assigned, or the global default
-                    NdiSource? source = device.AssignedNdiSource ?? 
-                        await context.NdiSources.FirstOrDefaultAsync(s => s.IsDefault, ct);
+                    bool sourceFresh = (DateTime.UtcNow - source.LastSeenUtc).TotalSeconds <= sourceStaleness;
 
-                    if (source != null)
+                    // Force live if OBS is active and this is the default source or the configured OBS source
+                    bool obsActive = obsService.IsConnected && obsService.IsLiveActive();
+                    if (obsActive && (source.IsDefault || source.ServiceName == obsService.ConfiguredNdiSourceName))
                     {
-                        bool sourceFresh = (DateTime.UtcNow - source.LastSeenUtc).TotalSeconds <= sourceStaleness;
+                        sourceFresh = true;
+                    }
 
-                        // Force live if OBS is active and this is the default source or the configured OBS source
-                        bool obsActive = obsService.IsConnected && obsService.IsLiveActive();
-                        if (obsActive && (source.IsDefault || source.ServiceName == obsService.ConfiguredNdiSourceName))
-                        {
-                            sourceFresh = true;
-                        }
-
-                        liveMode = sourceFresh;
-                        if (liveMode)
-                        {
-                            liveSourceName = source.ServiceName;
-                        }
+                    liveMode = sourceFresh;
+                    if (liveMode)
+                    {
+                        liveSourceName = source.ServiceName;
                     }
                 }
 
