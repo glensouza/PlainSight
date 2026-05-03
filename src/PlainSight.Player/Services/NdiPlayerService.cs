@@ -122,7 +122,8 @@ public class NdiPlayerService(IConfiguration configuration, ILogger<NdiPlayerSer
         }
         finally
         {
-            try { viewerProcess.Dispose(); } catch { /* best-effort */ }
+            try { viewerProcess.Dispose(); }
+            catch (Exception ex) { logger.LogDebug(ex, "Error disposing NDI viewer process"); }
             viewerProcess = null;
             activeSource = null;
         }
