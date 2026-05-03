@@ -79,18 +79,31 @@ public class NdiPlayerService(IConfiguration configuration, ILogger<NdiPlayerSer
             return;
         }
 
-        string args = string.Format(System.Globalization.CultureInfo.InvariantCulture, viewerArgsTemplate, sourceName);
-        ProcessStartInfo startInfo = new(viewerExecutable, args)
+        // Use ArgumentList for robust escaping.
+        // We parse the template to extract static flags and then add the source.
+        ProcessStartInfo startInfo = new(viewerExecutable)
         {
             UseShellExecute = false
         };
+
+        // If the template contains "{0}", we remove that part and treat the rest as a list of static flags.
+        // Otherwise, we just add the sourceName as the final argument.
+        string cleanTemplate = viewerArgsTemplate.Replace("\"{0}\"", "").Replace("{0}", "").Trim();
+        string[] staticArgs = cleanTemplate.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (string arg in staticArgs)
+        {
+            startInfo.ArgumentList.Add(arg);
+        }
+
+        startInfo.ArgumentList.Add(sourceName);
 
         try
         {
             viewerProcess = Process.Start(startInfo);
             activeSource = sourceName;
-            logger.LogInformation("Started NDI viewer for {SourceName} (PID {Pid})",
-                sourceName, viewerProcess?.Id);
+            logger.LogInformation("Started NDI viewer for {SourceName} (PID {Pid}) with arguments: {Args}",
+                sourceName, viewerProcess?.Id, string.Join(" ", startInfo.ArgumentList));
         }
         catch (Exception ex)
         {
