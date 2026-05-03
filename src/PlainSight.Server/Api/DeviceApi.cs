@@ -41,12 +41,14 @@ public static class DeviceApi
     {
         RouteGroupBuilder group = routes.MapGroup("/api/device");
 
-        group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ScheduleService scheduleService, ILoggerFactory loggerFactory, CancellationToken ct) =>
+        group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ScheduleService scheduleService, OBSDiscoveryService obsService, IConfiguration configuration, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             ILogger logger = loggerFactory.CreateLogger("DeviceApi");
             try
             {
-                Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == data.DeviceId, ct);
+                Device? device = await context.Devices
+                    .Include(d => d.AssignedNdiSource)
+                    .FirstOrDefaultAsync(d => d.DeviceId == data.DeviceId, ct);
 
                 string? assignedApiKey = null;
 
@@ -97,16 +99,62 @@ public static class DeviceApi
 
                 // Check for "Canary" Update assignment
                 string targetVersion = await versionService.GetTargetVersionAsync(device.Group, ct);
+                PlayerVersion? versionRecord = await context.PlayerVersions
+                    .FirstOrDefaultAsync(v => v.VersionNumber == targetVersion, ct);
 
                 // Get scheduled playlist
                 Playlist? activePlaylist = await scheduleService.GetActivePlaylistAsync(device.Group, ct);
+
+                // Resolve live mode: explicit override wins, otherwise auto-switch.
+                int sourceStaleness = configuration.GetValue("Ndi:StalenessSeconds", 60);
+                bool liveMode = false;
+                string? liveSourceName = null;
+
+                if (device.LiveModeOverride.HasValue)
+                {
+                    liveMode = device.LiveModeOverride.Value;
+                    if (liveMode)
+                    {
+                        // Use assigned source, or fallback to default if forcing live
+                        NdiSource? source = device.AssignedNdiSource ?? 
+                            await context.NdiSources.FirstOrDefaultAsync(s => s.IsDefault, ct);
+                        liveSourceName = source?.ServiceName;
+                    }
+                }
+                else if (device.NdiAutoSwitch)
+                {
+                    // Find the source to check: specifically assigned, or the global default
+                    NdiSource? source = device.AssignedNdiSource ?? 
+                        await context.NdiSources.FirstOrDefaultAsync(s => s.IsDefault, ct);
+
+                    if (source != null)
+                    {
+                        bool sourceFresh = (DateTime.UtcNow - source.LastSeenUtc).TotalSeconds <= sourceStaleness;
+
+                        // Force live if OBS is active and this is the default source or the configured OBS source
+                        bool obsActive = obsService.IsConnected && obsService.IsLiveActive();
+                        if (obsActive && (source.IsDefault || source.ServiceName == obsService.ConfiguredNdiSourceName))
+                        {
+                            sourceFresh = true;
+                        }
+
+                        liveMode = sourceFresh;
+                        if (liveMode)
+                        {
+                            liveSourceName = source.ServiceName;
+                        }
+                    }
+                }
 
                 HeartbeatResponse response = new()
                 {
                     // Command Flags
                     RequestScreenshot = device.ScreenshotRequested,
-                    UpdateUrl = device.CurrentVersion != targetVersion
+                    UpdateUrl = device.CurrentVersion != targetVersion && versionRecord != null
                         ? $"/api/updates/{targetVersion}/binary"
+                        : null,
+                    ExpectedSha256 = device.CurrentVersion != targetVersion && versionRecord != null
+                        ? versionRecord.Sha256Hash
                         : null,
                     AssignedApiKey = assignedApiKey,
                     PlaylistItems = activePlaylist?.Items
@@ -116,7 +164,9 @@ public static class DeviceApi
                             FileName = i.ContentItem.FileName,
                             DurationSeconds = i.OverrideDurationSeconds ?? i.ContentItem.DurationSeconds
                         })
-                        .ToList()
+                        .ToList(),
+                    LiveMode = liveMode,
+                    NdiSourceName = liveSourceName
                 };
 
                 // Reset screenshot request
@@ -140,6 +190,7 @@ public static class DeviceApi
         group.MapPost("/{deviceId}/screenshot/upload", async (
             string deviceId,
             HttpRequest request,
+            HttpContext httpContext,
             PlainSightDbContext context,
             IConfiguration configuration,
             ILoggerFactory loggerFactory,
@@ -150,6 +201,17 @@ public static class DeviceApi
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
             if (device == null)
                 return Results.NotFound();
+
+            // Validate API key
+            if (device.ApiKey != null)
+            {
+                string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
+                if (string.IsNullOrEmpty(incomingKey) || !VerifyApiKey(incomingKey, device.ApiKey))
+                {
+                    logger.LogWarning("Screenshot upload rejected for device {DeviceId}: invalid or missing API key", SanitizeForLog(deviceId));
+                    return Results.Unauthorized();
+                }
+            }
 
             if (!request.HasFormContentType)
                 return Results.BadRequest("Expected multipart/form-data");

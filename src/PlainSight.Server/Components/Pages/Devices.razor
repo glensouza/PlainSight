@@ -55,6 +55,7 @@ else
                     <th>Last Seen</th>
                     <th>Version</th>
                     <th>Currently Playing</th>
+                    <th>Live Mode</th>
                     <th>Screenshot</th>
                     <th>Actions</th>
                 </tr>
@@ -110,6 +111,13 @@ else
                         </td>
                         <td><code>@device.CurrentVersion</code></td>
                         <td>@(device.CurrentlyPlaying ?? "-")</td>
+                        <td>
+                            <button class="btn btn-sm @(GetLiveModeBadgeClass(device))"
+                                    @onclick="() => OpenLiveModeEditor(device)"
+                                    title="Configure live (NDI) mode">
+                                <i class="bi bi-broadcast"></i> @GetLiveModeLabel(device)
+                            </button>
+                        </td>
                         <td>
                             @if (device.LatestScreenshotAt.HasValue)
                             {
@@ -234,6 +242,73 @@ else
     </div>
 }
 
+@if (liveModeDevice != null)
+{
+    <div class="modal fade show d-block"
+         tabindex="-1"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="live-mode-modal-title"
+         style="background:rgba(0,0,0,0.5);"
+         @onclick="CloseLiveModeEditor">
+        <div class="modal-dialog modal-dialog-centered" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 id="live-mode-modal-title" class="modal-title">
+                        Live Mode — <code>@liveModeDevice.DeviceId</code>
+                    </h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseLiveModeEditor"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Manual override</label>
+                        <select class="form-select" @bind="liveModeOverrideValue">
+                            <option value="auto">Auto (follow NDI source presence)</option>
+                            <option value="on">Force ON (always live)</option>
+                            <option value="off">Force OFF (always signage)</option>
+                        </select>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="auto-switch-check" @bind="liveModeAutoSwitch" />
+                        <label class="form-check-label" for="auto-switch-check">
+                            Auto-switch when assigned NDI source appears on the network
+                        </label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Assigned NDI source</label>
+                        <select class="form-select" @bind="liveModeSourceId">
+                            <option value="">— None —</option>
+                            @if (ndiSources != null)
+                            {
+                                @foreach (NdiSource source in ndiSources)
+                                {
+                                    bool isFresh = (DateTime.UtcNow - source.LastSeenUtc).TotalSeconds < 60;
+                                    <option value="@source.Id">
+                                        @source.ServiceName @(isFresh ? "(online)" : "(offline)")
+                                    </option>
+                                }
+                            }
+                        </select>
+                        <div class="form-text">
+                            Only sources currently or recently broadcasting on the network appear here.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseLiveModeEditor">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SaveLiveMode" disabled="@isSavingLiveMode">
+                        @if (isSavingLiveMode)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        }
+                        Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @if (selectedDeviceIds.Count > 0)
 {
     <div class="bulk-action-bar">
@@ -320,6 +395,12 @@ else
     private HashSet<string> selectedDeviceIds = new();
     private List<DeviceGroup>? deviceGroups;
     private List<PlayerVersion>? playerVersions;
+    private List<NdiSource>? ndiSources;
+    private Device? liveModeDevice;
+    private string liveModeOverrideValue = "auto";
+    private bool liveModeAutoSwitch;
+    private string liveModeSourceId = string.Empty;
+    private bool isSavingLiveMode;
     private Timer? refreshTimer;
     private Device? historyDevice;
     private List<DeviceScreenshotDto>? screenshotHistory;
@@ -358,6 +439,7 @@ else
         {
             using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             devices = await context.Devices
+                .Include(d => d.AssignedNdiSource)
                 .OrderByDescending(d => d.LastSeen)
                 .ToListAsync();
         }
@@ -365,6 +447,97 @@ else
         {
             Logger.LogError(ex, "Error loading devices");
             devices = new List<Device>();
+        }
+    }
+
+    private async Task LoadNdiSourcesAsync()
+    {
+        try
+        {
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            ndiSources = await context.NdiSources
+                .OrderBy(s => s.ServiceName)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading NDI sources");
+            ndiSources = new List<NdiSource>();
+        }
+    }
+
+    private string GetLiveModeBadgeClass(Device device)
+    {
+        if (device.LiveModeOverride == true) return "btn-danger";
+        if (device.LiveModeOverride == false) return "btn-outline-secondary";
+        if (device.NdiAutoSwitch && device.AssignedNdiSourceId.HasValue) return "btn-warning";
+        return "btn-outline-secondary";
+    }
+
+    private string GetLiveModeLabel(Device device)
+    {
+        if (device.LiveModeOverride == true) return "Forced ON";
+        if (device.LiveModeOverride == false) return "Forced OFF";
+        if (device.NdiAutoSwitch && device.AssignedNdiSourceId.HasValue) return "Auto";
+        return "Off";
+    }
+
+    private async Task OpenLiveModeEditor(Device device)
+    {
+        liveModeDevice = device;
+        liveModeAutoSwitch = device.NdiAutoSwitch;
+        liveModeSourceId = device.AssignedNdiSourceId?.ToString() ?? string.Empty;
+        liveModeOverrideValue = device.LiveModeOverride switch
+        {
+            true => "on",
+            false => "off",
+            null => "auto"
+        };
+        await LoadNdiSourcesAsync();
+        StateHasChanged();
+    }
+
+    private void CloseLiveModeEditor()
+    {
+        liveModeDevice = null;
+    }
+
+    private async Task SaveLiveMode()
+    {
+        if (liveModeDevice == null)
+            return;
+
+        isSavingLiveMode = true;
+        try
+        {
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == liveModeDevice.DeviceId);
+            if (device == null)
+                return;
+
+            device.NdiAutoSwitch = liveModeAutoSwitch;
+            device.AssignedNdiSourceId = string.IsNullOrEmpty(liveModeSourceId)
+                ? null
+                : int.Parse(liveModeSourceId);
+            device.LiveModeOverride = liveModeOverrideValue switch
+            {
+                "on" => true,
+                "off" => false,
+                _ => null
+            };
+
+            await context.SaveChangesAsync();
+            await LoadDevices();
+            CloseLiveModeEditor();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving live mode for device {DeviceId}", liveModeDevice.DeviceId);
+        }
+        finally
+        {
+            isSavingLiveMode = false;
+            StateHasChanged();
         }
     }
 

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PlainSight.Server.Data;
@@ -11,9 +12,11 @@ using PlainSight.Server.Data;
 namespace PlainSight.Server.Migrations
 {
     [DbContext(typeof(PlainSightDbContext))]
-    partial class PlainSightDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260501195720_AddPlayerVersionSha256")]
+    partial class AddPlayerVersionSha256
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -114,9 +117,6 @@ namespace PlainSight.Server.Migrations
                     b.Property<string>("ApiKey")
                         .HasColumnType("text");
 
-                    b.Property<int?>("AssignedNdiSourceId")
-                        .HasColumnType("integer");
-
                     b.Property<string>("CallbackUrl")
                         .HasColumnType("text");
 
@@ -147,22 +147,14 @@ namespace PlainSight.Server.Migrations
                     b.Property<string>("LatestScreenshotPath")
                         .HasColumnType("text");
 
-                    b.Property<bool?>("LiveModeOverride")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<bool>("NdiAutoSwitch")
-                        .HasColumnType("boolean");
 
                     b.Property<bool>("ScreenshotRequested")
                         .HasColumnType("boolean");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("AssignedNdiSourceId");
 
                     b.HasIndex("DeviceId")
                         .IsUnique();
@@ -252,47 +244,6 @@ namespace PlainSight.Server.Migrations
                     b.HasIndex("DeviceId", "CapturedAt");
 
                     b.ToTable("DeviceScreenshots");
-                });
-
-            modelBuilder.Entity("PlainSight.Shared.Models.NdiSource", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("FirstSeenUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("HostName")
-                        .HasColumnType("text");
-
-                    b.Property<string>("IpAddress")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsDefault")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsManual")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime>("LastSeenUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Port")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ServiceName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ServiceName")
-                        .IsUnique();
-
-                    b.ToTable("NdiSources");
                 });
 
             modelBuilder.Entity("PlainSight.Shared.Models.PlayerVersion", b =>
@@ -455,30 +406,6 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("ScheduleTargetGroups");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.SystemSetting", b =>
-                {
-                    b.Property<string>("Key")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Value")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Key");
-
-                    b.ToTable("SystemSettings");
-                });
-
-            modelBuilder.Entity("PlainSight.Shared.Models.Device", b =>
-                {
-                    b.HasOne("PlainSight.Shared.Models.NdiSource", "AssignedNdiSource")
-                        .WithMany("AssignedDevices")
-                        .HasForeignKey("AssignedNdiSourceId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("AssignedNdiSource");
-                });
-
             modelBuilder.Entity("PlainSight.Shared.Models.DeviceGroupVersion", b =>
                 {
                     b.HasOne("PlainSight.Shared.Models.Playlist", "DefaultPlaylist")
@@ -538,11 +465,6 @@ namespace PlainSight.Server.Migrations
                         .IsRequired();
 
                     b.Navigation("Schedule");
-                });
-
-            modelBuilder.Entity("PlainSight.Shared.Models.NdiSource", b =>
-                {
-                    b.Navigation("AssignedDevices");
                 });
 
             modelBuilder.Entity("PlainSight.Shared.Models.Playlist", b =>

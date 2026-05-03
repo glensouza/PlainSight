@@ -21,4 +21,13 @@ public class Device
     [JsonIgnore]
     public string? ApiKey { get; set; }
     public bool IsAlertSent { get; set; }
+
+    public bool NdiAutoSwitch { get; set; }
+    public int? AssignedNdiSourceId { get; set; }
+    public NdiSource? AssignedNdiSource { get; set; }
+
+    /// <summary>
+    /// Manual override for live mode. null = auto (follow auto-switch logic), true = force live, false = force signage.
+    /// </summary>
+    public bool? LiveModeOverride { get; set; }
 }

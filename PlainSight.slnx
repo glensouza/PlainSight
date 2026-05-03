@@ -5,11 +5,20 @@
     <File Path="aspire.config.json" />
     <File Path="CLAUDE.md" />
     <File Path="docker-compose.yml" />
+    <File Path="docs/api.md" />
+    <File Path="docs/architecture.md" />
+    <File Path="docs/deployment.md" />
+    <File Path="docs/development.md" />
+    <File Path="docs/github-actions.md" />
     <File Path="docs/gmail-setup.md" />
+    <File Path="docs/IMPLEMENTATION.md" />
+    <File Path="docs/NDI-OBS-Setup.md" />
+    <File Path="docs/NETWORK-MANAGEMENT.md" />
+    <File Path="docs/raspberry-pi-setup.md" />
+    <File Path="docs/README.md" />
+    <File Path="docs/SECURITY.md" />
     <File Path="GEMINI.md" />
-    <File Path="Name.md" />
     <File Path="README.md" />
-    <File Path="ROADMAP.md" />
   </Folder>
   <Project Path="src/PlainSight.AppHost/PlainSight.AppHost.csproj" />
   <Project Path="src/PlainSight.Player/PlainSight.Player.csproj" />

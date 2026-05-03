@@ -16,15 +16,32 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
     public DbSet<AdminUser> AdminUsers => this.Set<AdminUser>();
     public DbSet<Schedule> Schedules => this.Set<Schedule>();
     public DbSet<ScheduleTargetGroup> ScheduleTargetGroups => this.Set<ScheduleTargetGroup>();
+    public DbSet<NdiSource> NdiSources => this.Set<NdiSource>();
+    public DbSet<SystemSetting> SystemSettings => this.Set<SystemSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
+        modelBuilder.Entity<SystemSetting>(entity =>
+        {
+            entity.HasKey(e => e.Key);
+        });
+
         modelBuilder.Entity<Device>(entity =>
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.DeviceId).IsUnique();
+            entity.HasOne(e => e.AssignedNdiSource)
+                .WithMany(s => s.AssignedDevices)
+                .HasForeignKey(e => e.AssignedNdiSourceId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<NdiSource>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.ServiceName).IsUnique();
         });
 
         modelBuilder.Entity<ContentItem>(entity =>

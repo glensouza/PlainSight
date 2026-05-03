@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PlainSight.Server.Data;
@@ -11,9 +12,11 @@ using PlainSight.Server.Data;
 namespace PlainSight.Server.Migrations
 {
     [DbContext(typeof(PlainSightDbContext))]
-    partial class PlainSightDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260502002336_AddNdiSourceDefaultFlag")]
+    partial class AddNdiSourceDefaultFlag
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -453,20 +456,6 @@ namespace PlainSight.Server.Migrations
                     b.HasIndex("ScheduleId");
 
                     b.ToTable("ScheduleTargetGroups");
-                });
-
-            modelBuilder.Entity("PlainSight.Shared.Models.SystemSetting", b =>
-                {
-                    b.Property<string>("Key")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Value")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Key");
-
-                    b.ToTable("SystemSettings");
                 });
 
             modelBuilder.Entity("PlainSight.Shared.Models.Device", b =>

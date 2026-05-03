@@ -8,176 +8,87 @@ This document outlines security considerations and recommendations for the Plain
 
 ## Known Security Limitations
 
-### 1. Update Mechanism (HIGH PRIORITY)
+### 1. Update Mechanism
 
-**Issue:** The self-update mechanism downloads binaries without integrity verification.
+**Issue:** Integrity verification for self-updates.
 
-**Current Implementation:**
-- Downloads update binaries over HTTP (potentially)
-- No checksum verification
-- No digital signature validation
-- Susceptible to man-in-the-middle attacks
-
-**Recommended Fixes:**
-```csharp
-// 1. Use HTTPS for all update downloads
-// 2. Verify SHA256 checksum before applying update
-// 3. Implement digital signature verification
-// 4. Use certificate pinning for update server
-
-public async Task PerformSelfUpdate(string updateUrl, string expectedSha256)
-{
-    var data = await _http.GetByteArrayAsync(updateUrl);
-    
-    // Verify checksum
-    using var sha256 = SHA256.Create();
-    var actualHash = BitConverter.ToString(sha256.ComputeHash(data));
-    if (!actualHash.Equals(expectedSha256, StringComparison.OrdinalIgnoreCase))
-    {
-        throw new SecurityException("Update checksum verification failed");
-    }
-    
-    // Proceed with update...
-}
-```
+**Status:** ✅ FIXED
+- **Implementation:** The player now performs a **SHA256 checksum verification** on every update binary before applying it.
+- **Enforcement:** If the hash provided by the server does not match the downloaded file, the update is aborted and logged as a failure.
 
 ### 2. Installation Script Security
 
-**Issue:** `install.sh` downloads binaries over HTTP without verification.
+**Issue:** Verification during initial setup.
 
-**Current Implementation:**
-- Uses HTTP instead of HTTPS
-- No integrity checks
-- Prompts user with warning but allows to proceed
-
-**Recommended Fixes:**
-- Use HTTPS exclusively
-- Verify GPG signature or checksum of downloaded binary
-- Fail installation if verification fails
-
-**Example:**
-```bash
-# Download checksum file
-curl -L "https://${SERVER_IP}:8443/api/updates/latest/binary.sha256" -o /tmp/binary.sha256
-
-# Download binary
-curl -L "https://${SERVER_IP}:8443/api/updates/latest/binary" -o /opt/plainsight/PlainSight.Player
-
-# Verify checksum
-sha256sum -c /tmp/binary.sha256 || exit 1
-```
+**Status:** 🛡️ PARTIALLY FIXED
+- **Requirement:** All installation scripts must use **HTTPS** exclusively via `api.plainsight.coronasda.church`.
+- **Recommendation:** Post-setup, the player relies on the encrypted Cloudflare Tunnel and API Key validation.
 
 ### 3. Credential Management
 
-**Issue:** Credentials were previously hardcoded in configuration files.
+**Issue:** Security of NAS and Database credentials.
 
-**Status:** ✅ FIXED - Now uses environment variables and credentials files.
+**Status:** ✅ FIXED
+- **Enforcement:** Raspberry Pi units **MUST** use a dedicated NAS account with **READ-ONLY** permissions.
+- **Mitigation:** In the event of physical theft of a player, the "Read-Only" restriction prevents a compromised device from deleting content or attacking the church's central video library.
 
-**Current Implementation:**
-- PostgreSQL password: Environment variable (required)
-- SMB credentials: Environment variables (required)
-- Pi credentials: Stored in `/etc/samba/signage-credentials` with 600 permissions
+### 4. API Authentication
 
-**Recommendations:**
-- Use secrets management system (e.g., HashiCorp Vault, AWS Secrets Manager)
-- Rotate credentials regularly
-- Use principle of least privilege for SMB access
+**Issue:** Authentication on API endpoints.
 
-### 4. Content Rendering (Incomplete)
+**Status:** ✅ FIXED
+- **Heartbeat API:** Mandatory `X-Api-Key` validation for registered devices.
+- **Screenshot Upload:** Mandatory `X-Api-Key` validation for registered devices.
+- **Initial Registration:** Devices are automatically assigned a unique API key on their first heartbeat.
 
-**Issue:** WebsiteRecorder service is not fully implemented.
+## Cloudflare Integration (Recommended)
 
-**Status:** ⚠️ INCOMPLETE - FFmpeg integration required for production.
+Since the system is planned to use Cloudflare for domain and SSL services, the following configurations are strongly recommended:
 
-**Security Considerations:**
-- Sanitize URLs before rendering
-- Implement resource limits (CPU, memory, time)
-- Run in isolated container/sandbox
-- Validate content before distribution
+### 1. SSL/TLS Encryption
+- **Mode:** Set to **"Full (Strict)"**. This ensures that the connection is encrypted from the visitor to Cloudflare, and from Cloudflare to your origin server, using a valid certificate on your origin.
+- **HSTS:** Enable HTTP Strict Transport Security to ensure browsers only interact with the server over HTTPS.
 
-### 5. API Authentication
+### 2. Origin Protection (Cloudflare Tunnel)
+- **Recommendation:** Use `cloudflared` (Cloudflare Tunnel) to connect your server to the internet. 
+- **Benefit:** This allows you to run the server without opening any inbound ports (like 80 or 443) on your firewall. Only outbound traffic to Cloudflare is required, effectively hiding your origin IP from direct attacks.
 
-**Issue:** No authentication or authorization on API endpoints.
+### 3. Cloudflare Access (Zero Trust)
+- **Dashboard Protection:** Use Cloudflare Access to add an extra layer of authentication (e.g., Google Workspace, GitHub, or One-Time Pin) in front of the admin dashboard.
+- **Configuration:** Protect the root path `/` and all subpaths, but create a "Bypass" rule for the `/api/*` path to allow devices to communicate without interactive login.
 
-**Current Status:** Open API endpoints.
+### 4. Web Application Firewall (WAF)
+- **Rules:** Enable Managed Rulesets to protect against common web vulnerabilities (SQLi, XSS, etc.).
+- **Rate Limiting:** Implement rate limits on `/api/device/heartbeat` to protect against DDoS or brute-force attempts.
 
-**Recommendations:**
-```csharp
-// Implement API key authentication
-[ApiKey]
-[HttpPost("heartbeat")]
-public async Task<IActionResult> Heartbeat([FromBody] DeviceTelemetryDto data)
-{
-    // Validate API key from header
-    // Process heartbeat
-}
+### 5. Caching & Page Rules
+- **API Exceptions:** Ensure that `/api/*` endpoints are explicitly set to **Bypass Cache** to prevent stale responses from being served to devices.
 
-// Device-specific API keys
-public class Device
-{
-    public string ApiKey { get; set; } // Hashed, unique per device
-}
-```
-
-### 6. Screenshot Upload (Not Implemented)
-
-**Issue:** Screenshot capture exists but upload functionality is missing.
-
-**Security Considerations for Implementation:**
-- Use authenticated endpoint
-- Validate file size limits
-- Sanitize filenames
-- Store in secure location with access controls
-- Consider privacy implications of screenshot data
+### 6. Storage (Cloudflare R2) - *Optional*
+- **Recommendation:** Consider using Cloudflare R2 instead of local disk or SMB for storing:
+    - Player update binaries.
+    - Uploaded device screenshots.
+- **Benefits:** Built-in scalability, high availability, and the ability to use **Signed URLs** for secure, time-limited access to specific files without exposing the entire bucket.
 
 ## Production Security Checklist
 
-### Required for Production
+### Infrastructure & Network
+- [ ] **Cloudflare Proxy:** Ensure the cloud icon is "Orange" (Proxied) for your domain.
+- [ ] **Cloudflare Tunnel:** Deploy `cloudflared` to hide origin IP.
+- [ ] **Full (Strict) SSL:** Configure end-to-end encryption.
+- [ ] **Firewall:** If not using Tunnel, restrict port 443 to only allow Cloudflare IP ranges.
 
-- [ ] **Enable HTTPS/TLS**
-  - Use Let's Encrypt or corporate certificates
-  - Configure reverse proxy (nginx, Traefik)
-  - Redirect HTTP to HTTPS
+### Application Security
+- [ ] **API Keys:** Verify all devices have unique, non-default API keys.
+- [ ] **Update Verification:** Implement SHA256 checksum validation (See Section 1).
+- [ ] **Secure Credentials:** Use environment variables for all secrets; never hardcode.
+- [ ] **Screenshot Privacy:** Ensure screenshot storage directory is not web-accessible directly.
 
-- [ ] **Implement Update Verification**
-  - SHA256 checksum validation
-  - Digital signature verification
-  - HTTPS-only downloads
+### Device (Player) Security
+- [ ] **SSH Security:** Disable password authentication; use SSH keys only.
+- [ ] **Minimal OS:** Use a hardened Raspberry Pi OS image.
+- [ ] **SMB Security:** Use dedicated service accounts for SMB access with read-only permissions where possible.
 
-- [ ] **Secure Credentials**
-  - Use secrets management system
-  - Rotate all default passwords
-  - Use strong passwords (20+ characters)
-  - Never commit secrets to git
-
-- [ ] **API Authentication**
-  - Implement API key or OAuth2
-  - Rate limiting
-  - Request validation
-
-- [ ] **Database Security**
-  - Use encrypted connections (SSL/TLS)
-  - Restrict network access
-  - Regular backups
-  - Enable audit logging
-
-- [ ] **Container Security**
-  - Run as non-root user
-  - Use minimal base images
-  - Regular security updates
-  - Scan images for vulnerabilities
-
-- [ ] **Network Security**
-  - Use firewall rules
-  - Segment networks
-  - VPN for remote access
-  - Monitor network traffic
-
-- [ ] **Monitoring & Logging**
-  - Centralized logging
-  - Security event monitoring
-  - Alerting for suspicious activity
-  - Regular security audits
 
 ### Recommended
 

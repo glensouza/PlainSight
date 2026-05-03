@@ -1,0 +1,669 @@
+@page "/ndi"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IDbContextFactory<PlainSightDbContext> DbFactory
+@inject OBSDiscoveryService OBS
+@inject ILogger<NdiSources> Logger
+@using Microsoft.EntityFrameworkCore
+@using PlainSight.Server.Data
+@using PlainSight.Server.Services
+@using PlainSight.Shared.Models
+@implements IDisposable
+
+<PageTitle>NDI Sources — PlainSight</PageTitle>
+
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h1>NDI Sources</h1>
+        <p class="text-muted mb-0">Discovered NDI feeds (e.g. OBS Main Output) on the local network</p>
+    </div>
+    <button class="btn btn-primary" @onclick="OpenAddModal">
+        <i class="bi bi-plus-circle"></i> Add Source
+    </button>
+</div>
+
+@* Live now banner *@
+@if (liveSourceName != null)
+{
+    <div class="alert alert-danger mt-3 d-flex align-items-center justify-content-between">
+        <span>
+            <i class="bi bi-broadcast me-2"></i>
+            <strong>LIVE NOW</strong> — <code>@liveSourceName</code>
+            <span class="ms-2 text-danger-emphasis small">(@liveDeviceCount device@(liveDeviceCount == 1 ? "" : "s"))</span>
+        </span>
+        <button class="btn btn-outline-danger btn-sm" @onclick="EndLive" disabled="@isGoingLive">
+            <i class="bi bi-stop-circle"></i> End Live
+        </button>
+    </div>
+}
+
+@* OBS WebSocket status card *@
+@if (OBS.IsConfigured)
+{
+    <div class="alert @(OBS.IsConnected ? "alert-success" : "alert-warning") mt-3 d-flex align-items-center gap-2">
+        <i class="bi @(OBS.IsConnected ? "bi-broadcast" : "bi-broadcast-pin")"></i>
+        <span>
+            <strong>OBS WebSocket:</strong> @OBS.ConnectionStatus
+            @if (OBS.IsConnected)
+            {
+                <span class="ms-2 badge @(OBS.IsNdiOutputActive ? "bg-success" : "bg-secondary")">
+                    NDI Output @(OBS.IsNdiOutputActive ? "active" : "inactive")
+                </span>
+                @if (OBS.IsStreaming)
+                {
+                    <span class="ms-1 badge bg-danger">Streaming</span>
+                }
+                @if (OBS.IsRecording)
+                {
+                    <span class="ms-1 badge bg-danger">Recording</span>
+                }
+            }
+        </span>
+    </div>
+}
+else
+{
+    <div class="alert alert-secondary mt-3">
+        <i class="bi bi-info-circle"></i>
+        OBS WebSocket not configured. Set <code>OBS__WebSocketUrl</code> (e.g. <code>ws://192.168.1.50:4455</code>)
+        in environment or <code>appsettings.json</code> to enable automatic live detection from OBS.
+    </div>
+}
+
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <div class="d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center gap-4 small text-muted">
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" role="switch" id="syncStreaming" 
+                           checked="@OBS.SyncWithStreaming" @onchange="(e) => UpdateSyncSettings((bool)(e.Value ?? false), OBS.SyncWithRecording)">
+                    <label class="form-check-label" for="syncStreaming">Sync with Streaming</label>
+                </div>
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" role="switch" id="syncRecording" 
+                           checked="@OBS.SyncWithRecording" @onchange="(e) => UpdateSyncSettings(OBS.SyncWithStreaming, (bool)(e.Value ?? false))">
+                    <label class="form-check-label" for="syncRecording">Sync with Recording</label>
+                </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <label class="small text-muted mb-0">Target Group:</label>
+                <select class="form-select form-select-sm" style="width:auto" @bind="targetGroup" @bind:after="LoadGroups">
+                    <option value="">— All Devices —</option>
+                    @if (deviceGroups != null)
+                    {
+                        @foreach (var g in deviceGroups)
+                        {
+                            <option value="@g.Name">@g.Name</option>
+                        }
+                    }
+                </select>
+                
+                <div class="btn-group">
+                    <button class="btn btn-sm @(GroupAutoSwitchCount > 0 ? "btn-primary" : "btn-outline-primary")" 
+                            @onclick="EnableAutoSwitchForGroup" 
+                            disabled="@isGoingLive"
+                            title="Set all devices in this group to automatically follow OBS state">
+                        <i class="bi bi-magic"></i> 
+                        @(GroupAutoSwitchCount > 0 ? $"Auto: {GroupAutoSwitchCount}/{GroupTotalCount}" : "Enable Auto")
+                    </button>
+                    @if (GroupAutoSwitchCount > 0)
+                    {
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="DisableAutoSwitchForGroup" disabled="@isGoingLive">
+                            <i class="bi bi-x-circle"></i>
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger mt-2">@errorMessage</div>
+}
+
+@if (sources == null)
+{
+    <p><em>Loading sources...</em></p>
+}
+else if (!sources.Any())
+{
+    <div class="alert alert-info mt-3">
+        <i class="bi bi-info-circle"></i>
+        No NDI sources configured yet. Click <strong>Add Source</strong> to enter your OBS NDI output name manually,
+        or enable <strong>Tools → NDI Output → Main Output</strong> in OBS and wait up to 30 seconds for mDNS discovery.
+    </div>
+}
+else
+{
+    <div class="table-responsive mt-3">
+        <table class="table table-striped table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Default</th>
+                    <th>Service Name</th>
+                    <th>Host</th>
+                    <th>Address</th>
+                    <th>First Seen</th>
+                    <th>Last Seen</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (NdiSource source in sources)
+                {
+                    bool live = IsLive(source);
+                    bool isCurrentlyLiveSource = source.ServiceName == liveSourceName;
+                    <tr class="@(isCurrentlyLiveSource ? "table-danger" : live ? "" : "table-secondary")">
+                        <td>
+                            <span class="badge @(live ? "bg-success" : "bg-secondary")">
+                                <i class="bi @(live ? "bi-broadcast" : "bi-broadcast-pin")"></i>
+                                @(live ? "Live" : "Offline")
+                            </span>
+                            @if (source.IsManual)
+                            {
+                                <span class="badge bg-info ms-1" title="Manually configured">Manual</span>
+                            }
+                        </td>
+                        <td>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" role="switch" 
+                                       checked="@source.IsDefault" 
+                                       @onchange="() => SetDefault(source)" />
+                            </div>
+                        </td>
+                        <td><code>@source.ServiceName</code></td>
+                        <td>@(source.HostName ?? "-")</td>
+                        <td>@(source.IpAddress != null ? $"{source.IpAddress}:{source.Port}" : "-")</td>
+                        <td>
+                            <span title="@source.FirstSeenUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC">
+                                @GetTimeSince(source.FirstSeenUtc)
+                            </span>
+                        </td>
+                        <td>
+                            <span title="@source.LastSeenUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC">
+                                @GetTimeSince(source.LastSeenUtc)
+                            </span>
+                        </td>
+                        <td class="text-end" style="white-space:nowrap">
+                            @if (isCurrentlyLiveSource)
+                            {
+                                <button class="btn btn-sm btn-danger" @onclick="EndLive" disabled="@isGoingLive">
+                                    <i class="bi bi-stop-circle"></i> End Live
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-success" @onclick="() => GoLive(source)"
+                                        disabled="@(isGoingLive || liveSourceName != null)"
+                                        title="@(liveSourceName != null ? $"End Live on '{liveSourceName}' before switching" : "Force devices to show this NDI feed")">
+                                    <i class="bi bi-broadcast"></i> Go Live
+                                </button>
+                            }
+                            @if (source.IsManual)
+                            {
+                                <button class="btn btn-sm btn-outline-danger ms-1"
+                                        @onclick="() => DeleteSource(source.Id, source.ServiceName)"
+                                        disabled="@isCurrentlyLiveSource"
+                                        title="@(isCurrentlyLiveSource ? "End Live before deleting" : "Delete source")">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="mt-2">
+        <button class="btn btn-outline-secondary btn-sm" @onclick="LoadAll">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+        <span class="ms-2 text-muted small">Auto-refreshing every 5 seconds</span>
+    </div>
+}
+
+@if (showAddModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background:rgba(0,0,0,.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add NDI Source</h5>
+                    <button type="button" class="btn-close" @onclick="CloseAddModal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">
+                        Enter the exact NDI source name from OBS
+                        (<strong>Tools → NDI Output Settings → Output Name</strong>).
+                        It is usually formatted as <code>COMPUTER-NAME (Output Name)</code>.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label">Source Name <span class="text-danger">*</span></label>
+                        <input class="form-control" @bind="newSourceName"
+                               placeholder="e.g. CHURCH-PC (Sanctuary-Livestream)" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Host / IP Address <span class="text-muted">(optional)</span></label>
+                        <input class="form-control" @bind="newSourceIp" placeholder="e.g. 192.168.1.50" />
+                    </div>
+                    @if (!string.IsNullOrEmpty(addError))
+                    {
+                        <div class="alert alert-danger py-2">@addError</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseAddModal">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SaveNewSource" disabled="@isSaving">
+                        @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Add Source
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<NdiSource>? sources;
+    private string? liveSourceName;
+    private int liveDeviceCount;
+    
+    private record GroupStatus(string Name, int Total, int AutoCount);
+    private List<GroupStatus>? deviceGroups;
+    private string targetGroup = string.Empty;
+    
+    private int GroupTotalCount => string.IsNullOrEmpty(targetGroup) 
+        ? deviceGroups?.Sum(g => g.Total) ?? 0 
+        : deviceGroups?.FirstOrDefault(g => g.Name == targetGroup)?.Total ?? 0;
+        
+    private int GroupAutoSwitchCount => string.IsNullOrEmpty(targetGroup)
+        ? deviceGroups?.Sum(g => g.AutoCount) ?? 0
+        : deviceGroups?.FirstOrDefault(g => g.Name == targetGroup)?.AutoCount ?? 0;
+
+    private Timer? refreshTimer;
+    private string errorMessage = string.Empty;
+
+    private bool showAddModal;
+    private string newSourceName = string.Empty;
+    private string newSourceIp = string.Empty;
+    private string addError = string.Empty;
+    private bool isSaving;
+    private bool isGoingLive;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAll();
+
+        refreshTimer = new Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                await LoadAll();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private async Task LoadAll()
+    {
+        await Task.WhenAll(LoadSources(), LoadLiveStatus(), LoadGroups());
+    }
+
+    private async Task LoadGroups()
+    {
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            
+            // EF Core cannot translate complex group-by-select into SQL directly in this scenario.
+            // Fetch the minimal required data first, then evaluate locally.
+            var devices = await context.Devices
+                .Select(d => new { d.Group, d.NdiAutoSwitch })
+                .ToListAsync();
+
+            deviceGroups = devices
+                .GroupBy(d => d.Group)
+                .Select(g => new GroupStatus(
+                    g.Key, 
+                    g.Count(), 
+                    g.Count(d => d.NdiAutoSwitch)
+                ))
+                .OrderBy(g => g.Name)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading device groups");
+        }
+    }
+
+    private async Task LoadSources()
+    {
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            sources = await context.NdiSources
+                .OrderBy(s => s.ServiceName)
+                .ToListAsync();
+            errorMessage = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading NDI sources");
+            sources = new List<NdiSource>();
+            errorMessage = "Failed to load NDI sources.";
+        }
+    }
+
+    private async Task LoadLiveStatus()
+    {
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+
+            // A device is "forced live" when LiveModeOverride = true
+            List<Device> forcedLive = await context.Devices
+                .Include(d => d.AssignedNdiSource)
+                .Where(d => d.LiveModeOverride == true && d.AssignedNdiSource != null)
+                .ToListAsync();
+
+            liveDeviceCount = forcedLive.Count;
+            liveSourceName = forcedLive
+                .Select(d => d.AssignedNdiSource!.ServiceName)
+                .Distinct()
+                .FirstOrDefault();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading live status");
+        }
+    }
+
+    private async Task GoLive(NdiSource source)
+    {
+        isGoingLive = true;
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+
+            var query = context.Devices.AsQueryable();
+            if (!string.IsNullOrEmpty(targetGroup))
+            {
+                query = query.Where(d => d.Group == targetGroup);
+            }
+
+            await query.ExecuteUpdateAsync(d => d
+                .SetProperty(x => x.AssignedNdiSourceId, source.Id)
+                .SetProperty(x => x.LiveModeOverride, (bool?)true));
+
+            Logger.LogInformation("Go Live: targeted group '{Group}' set to NDI source '{Source}'", 
+                string.IsNullOrEmpty(targetGroup) ? "All" : targetGroup, source.ServiceName);
+            await LoadLiveStatus();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error executing Go Live for source {Id}", source.Id);
+            errorMessage = "Failed to go live.";
+        }
+        finally
+        {
+            isGoingLive = false;
+        }
+    }
+
+    private async Task EndLive()
+    {
+        isGoingLive = true;
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+
+            var query = context.Devices.AsQueryable();
+            if (!string.IsNullOrEmpty(targetGroup))
+            {
+                query = query.Where(d => d.Group == targetGroup);
+            }
+
+            await query.ExecuteUpdateAsync(d => d
+                .SetProperty(x => x.LiveModeOverride, (bool?)null));
+
+            Logger.LogInformation("End Live: cleared live mode override for group '{Group}'", 
+                string.IsNullOrEmpty(targetGroup) ? "All" : targetGroup);
+            await LoadLiveStatus();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error ending live mode");
+            errorMessage = "Failed to end live.";
+        }
+        finally
+        {
+            isGoingLive = false;
+        }
+    }
+
+    private bool IsLive(NdiSource source)
+    {
+        // A source is live if OBS is active AND (it's the configured name OR it's the default source)
+        if (OBS.IsConnected && OBS.IsLiveActive())
+        {
+            bool isObsSource = !string.IsNullOrEmpty(OBS.ConfiguredNdiSourceName) && 
+                               string.Equals(source.ServiceName, OBS.ConfiguredNdiSourceName, StringComparison.Ordinal);
+            
+            if (isObsSource || source.IsDefault)
+            {
+                return true;
+            }
+        }
+
+        // Fallback to mDNS heartbeats
+        return (DateTime.UtcNow - source.LastSeenUtc).TotalSeconds < 60;
+    }
+
+    private async Task SetDefault(NdiSource source)
+    {
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            
+            // Unset current default
+            await context.NdiSources
+                .Where(s => s.IsDefault)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.IsDefault, false));
+
+            // Set new default
+            await context.NdiSources
+                .Where(s => s.Id == source.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.IsDefault, true));
+
+            await LoadSources();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error setting default NDI source {Id}", source.Id);
+            errorMessage = "Failed to update default source.";
+        }
+    }
+
+    private async Task EnableAutoSwitchForGroup()
+    {
+        isGoingLive = true;
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+
+            var query = context.Devices.AsQueryable();
+            if (!string.IsNullOrEmpty(targetGroup))
+            {
+                query = query.Where(d => d.Group == targetGroup);
+            }
+
+            await query.ExecuteUpdateAsync(d => d
+                .SetProperty(x => x.NdiAutoSwitch, true));
+
+            Logger.LogInformation("Enable Auto-Switch: targeted group '{Group}' set to follow NDI automation", 
+                string.IsNullOrEmpty(targetGroup) ? "All" : targetGroup);
+            
+            await LoadGroups();
+            errorMessage = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error enabling auto-switch for group {Group}", targetGroup);
+            errorMessage = "Failed to enable auto-switch.";
+        }
+        finally
+        {
+            isGoingLive = false;
+        }
+    }
+
+    private async Task DisableAutoSwitchForGroup()
+    {
+        isGoingLive = true;
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+
+            var query = context.Devices.AsQueryable();
+            if (!string.IsNullOrEmpty(targetGroup))
+            {
+                query = query.Where(d => d.Group == targetGroup);
+            }
+
+            await query.ExecuteUpdateAsync(d => d
+                .SetProperty(x => x.NdiAutoSwitch, false));
+
+            Logger.LogInformation("Disable Auto-Switch: targeted group '{Group}' unset from NDI automation", 
+                string.IsNullOrEmpty(targetGroup) ? "All" : targetGroup);
+            
+            await LoadGroups();
+            errorMessage = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error disabling auto-switch for group {Group}", targetGroup);
+            errorMessage = "Failed to disable auto-switch.";
+        }
+        finally
+        {
+            isGoingLive = false;
+        }
+    }
+
+    private async Task UpdateSyncSettings(bool streaming, bool recording)
+    {
+        try
+        {
+            await OBS.UpdateSyncSettingsAsync(streaming, recording);
+            errorMessage = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error updating OBS sync settings");
+            errorMessage = "Failed to update OBS sync settings.";
+        }
+    }
+
+    private void OpenAddModal()
+    {
+        newSourceName = string.Empty;
+        newSourceIp = string.Empty;
+        addError = string.Empty;
+        showAddModal = true;
+    }
+
+    private void CloseAddModal()
+    {
+        showAddModal = false;
+    }
+
+    private async Task SaveNewSource()
+    {
+        addError = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(newSourceName))
+        {
+            addError = "Source name is required.";
+            return;
+        }
+
+        isSaving = true;
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+
+            bool exists = await context.NdiSources
+                .AnyAsync(s => s.ServiceName == newSourceName.Trim());
+
+            if (exists)
+            {
+                addError = "A source with that name already exists.";
+                return;
+            }
+
+            DateTime now = DateTime.UtcNow;
+            context.NdiSources.Add(new NdiSource
+            {
+                ServiceName = newSourceName.Trim(),
+                IpAddress = string.IsNullOrWhiteSpace(newSourceIp) ? null : newSourceIp.Trim(),
+                Port = 5960,
+                FirstSeenUtc = now,
+                LastSeenUtc = now,
+                IsManual = true
+            });
+
+            await context.SaveChangesAsync();
+            showAddModal = false;
+            await LoadSources();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error adding NDI source");
+            addError = "Failed to add source.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task DeleteSource(int id, string name)
+    {
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            NdiSource? source = await context.NdiSources.FindAsync(id);
+            if (source != null)
+            {
+                context.NdiSources.Remove(source);
+                await context.SaveChangesAsync();
+            }
+
+            await LoadSources();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error deleting NDI source {Id}", id);
+            errorMessage = $"Failed to delete source '{name}'.";
+        }
+    }
+
+    private string GetTimeSince(DateTime dateTime)
+    {
+        TimeSpan timeSpan = DateTime.UtcNow - dateTime;
+        if (timeSpan.TotalSeconds < 60) return $"{(int)timeSpan.TotalSeconds}s ago";
+        if (timeSpan.TotalMinutes < 60) return $"{(int)timeSpan.TotalMinutes}m ago";
+        if (timeSpan.TotalHours < 24) return $"{(int)timeSpan.TotalHours}h ago";
+        return $"{(int)timeSpan.TotalDays}d ago";
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+    }
+}

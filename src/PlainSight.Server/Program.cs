@@ -65,6 +65,9 @@ builder.Services.AddScoped<VersionService>();
 builder.Services.AddScoped<ScheduleService>();
 builder.Services.AddHostedService<AutoScreenshotService>();
 builder.Services.AddHostedService<DeviceMonitorService>();
+builder.Services.AddHostedService<NdiDiscoveryService>();
+builder.Services.AddSingleton<OBSDiscoveryService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<OBSDiscoveryService>());
 
 // Add HttpClient for calling our own API and the players
 builder.Services.AddHttpClient();
@@ -153,6 +156,7 @@ app.MapDeviceApi();
 app.MapPlaylistApi();
 app.MapUpdateApi();
 app.MapVersionApi();
+app.MapNdiApi();
 
 // Ensure storage directories exist
 using (IServiceScope scope = app.Services.CreateScope())

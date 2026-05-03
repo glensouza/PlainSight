@@ -18,6 +18,8 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
     private static string FormatVersion(Version? v) =>
         v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "0.0.0";
 
+    public string? GetApiKey() => LoadApiKey();
+
     private string? LoadApiKey()
     {
         // Prefer the in-memory cache (set when key was assigned or first loaded)

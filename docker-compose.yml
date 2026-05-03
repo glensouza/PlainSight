@@ -39,6 +39,33 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Cloudflare Tunnel to expose the server securely
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: plainsight-cloudflared
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN environment variable is required}
+    command: tunnel --no-autoupdate run
+    networks:
+      - plainsight-network
+    restart: unless-stopped
+    depends_on:
+      - plainsight-server
+
+  # Database management interface
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: plainsight-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL:?PGADMIN_DEFAULT_EMAIL environment variable is required}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD:?PGADMIN_DEFAULT_PASSWORD environment variable is required}
+    networks:
+      - plainsight-network
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # Samba file share for content distribution
   samba:
     image: dperson/samba
