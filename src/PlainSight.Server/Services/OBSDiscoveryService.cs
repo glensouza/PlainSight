@@ -27,6 +27,7 @@ public class OBSDiscoveryService(
     private const int OpHello = 0;
     private const int OpIdentify = 1;
     private const int OpIdentified = 2;
+    private const int OpReidentify = 3;
     private const int OpEvent = 5;
     private const int OpRequest = 6;
     private const int OpRequestResponse = 7;
@@ -50,6 +51,9 @@ public class OBSDiscoveryService(
     // Resolved during each session from GetOutputList; shared across HandleMessageAsync calls
     private string? _resolvedNdiOutputName;
 
+    // Holds the active WebSocket so UpdateSyncSettingsAsync can send Reidentify without reconnecting
+    private volatile ClientWebSocket? _activeWebSocket;
+
     public async Task UpdateSyncSettingsAsync(bool syncStreaming, bool syncRecording)
     {
         SyncWithStreaming = syncStreaming;
@@ -70,11 +74,19 @@ public class OBSDiscoveryService(
             recordSetting.Value = syncRecording.ToString();
 
         await context.SaveChangesAsync();
-        
-        // Settings updated, but we may need to re-identify with the WebSocket to change event subscriptions.
-        // The easiest way is to let the socket drop and reconnect naturally, but for now we'll just apply the new flags
-        // to future live detections. To force a full sub update, we could drop the connection:
-        // IsConnected = false; 
+
+        // Send Reidentify (op 3) so the new subscription mask takes effect on the live session
+        // without requiring a full reconnect.
+        ClientWebSocket? ws = _activeWebSocket;
+        if (ws?.State == WebSocketState.Open)
+        {
+            int subscriptionMask = OutputsEventSubscription;
+            if (syncStreaming) subscriptionMask |= StreamingEventSubscription;
+            if (syncRecording) subscriptionMask |= RecordingEventSubscription;
+            await SendMessageAsync(ws, BuildReidentifyMessage(subscriptionMask), CancellationToken.None);
+            logger.LogInformation("OBS WebSocket reidentified with updated subscription mask (streaming={Streaming}, recording={Recording})",
+                syncStreaming, syncRecording);
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -127,6 +139,7 @@ public class OBSDiscoveryService(
             }
             catch (Exception ex)
             {
+                _activeWebSocket = null;
                 IsConnected = false;
                 IsNdiOutputActive = false;
                 IsStreaming = false;
@@ -139,6 +152,7 @@ public class OBSDiscoveryService(
             }
         }
 
+        _activeWebSocket = null;
         IsConnected = false;
         IsNdiOutputActive = false;
         IsStreaming = false;
@@ -153,8 +167,9 @@ public class OBSDiscoveryService(
         _resolvedNdiOutputName = null;
 
         using ClientWebSocket ws = new();
+        _activeWebSocket = ws;
         ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
-        
+
         logger.LogInformation("OBS WebSocket connecting to {Url}...", url);
         await ws.ConnectAsync(new Uri(url), cancellationToken);
 
@@ -222,6 +237,16 @@ public class OBSDiscoveryService(
         {
             throw new InvalidOperationException($"WebSocket closed prematurely (State: {ws.State})");
         }
+    }
+
+    // Used by UpdateSyncSettingsAsync to update the subscription mask on a live session
+    private static string BuildReidentifyMessage(int eventSubscriptions)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            op = OpReidentify,
+            d = new { eventSubscriptions }
+        });
     }
 
     public bool IsLiveActive()
