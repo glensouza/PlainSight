@@ -1,4 +1,9 @@
 @inherits LayoutComponentBase
+@using Microsoft.EntityFrameworkCore
+@using PlainSight.Shared.Models
+@using PlainSight.Server.Data
+@inject IDbContextFactory<PlainSightDbContext> DbFactory
+@implements IDisposable
 
 <div class="page">
     <div class="sidebar">
@@ -6,10 +11,40 @@
     </div>
 
     <main>
-        <div class="top-bar px-4">
-            <span class="system-status">
-                <i class="bi bi-circle-fill"></i> System Running
-            </span>
+        <div class="top-bar">
+            <div class="top-bar__left">
+                <div class="sysled">
+                    <span class="led led-pulse"></span>
+                    <div>
+                        <div class="sysled__title">SYSTEM NOMINAL</div>
+                        <div class="sysled__sub">All services healthy · @currentTime UTC</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="top-bar__kpis">
+                <div class="kpi kpi--online">
+                    <div class="kpi__head">
+                        <span class="kpi__dot"></span>
+                        <span class="kpi__label">ACTIVE</span>
+                    </div>
+                    <div class="kpi__value">@onlineCount<span class="kpi__sub">/ @totalCount</span></div>
+                </div>
+                <div class="kpi kpi--warn">
+                    <div class="kpi__head">
+                        <span class="kpi__dot"></span>
+                        <span class="kpi__label">DEGRADED</span>
+                    </div>
+                    <div class="kpi__value">@warnCount<span class="kpi__sub">players</span></div>
+                </div>
+                <div class="kpi kpi--offline">
+                    <div class="kpi__head">
+                        <span class="kpi__dot"></span>
+                        <span class="kpi__label">OFFLINE</span>
+                    </div>
+                    <div class="kpi__value">@offlineCount<span class="kpi__sub">players</span></div>
+                </div>
+            </div>
         </div>
 
         <article class="content px-4">
@@ -23,3 +58,52 @@
     <a href="." class="reload">Reload</a>
     <span class="dismiss">✕</span>
 </div>
+
+@code {
+    private int totalCount;
+    private int onlineCount;
+    private int warnCount;
+    private int offlineCount;
+    private string currentTime = DateTime.UtcNow.ToString("HH:mm:ss");
+    private Timer? refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshKpisAsync();
+        refreshTimer = new Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                await RefreshKpisAsync();
+                currentTime = DateTime.UtcNow.ToString("HH:mm:ss");
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private async Task RefreshKpisAsync()
+    {
+        try
+        {
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            DateTime now = DateTime.UtcNow;
+            DateTime onlineCutoff = now.AddSeconds(-60);
+            DateTime warnCutoff = now.AddMinutes(-5);
+
+            List<Device> devices = await context.Devices.ToListAsync();
+            totalCount = devices.Count;
+            onlineCount = devices.Count(d => d.LastSeen >= onlineCutoff);
+            warnCount = devices.Count(d => d.LastSeen < onlineCutoff && d.LastSeen >= warnCutoff);
+            offlineCount = devices.Count(d => d.LastSeen < warnCutoff);
+        }
+        catch
+        {
+            // KPIs are best-effort; never let a failure break the layout.
+        }
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+    }
+}
