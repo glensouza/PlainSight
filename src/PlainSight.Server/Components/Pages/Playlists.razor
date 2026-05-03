@@ -511,7 +511,7 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             PlaylistItem? item = await context.PlaylistItems
                 .Include(i => i.Playlist)
                 .FirstOrDefaultAsync(i => i.Id == playlistItemId);

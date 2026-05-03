@@ -94,8 +94,15 @@ public class OBSDiscoveryService(
             SystemSetting? streamSetting = await context.SystemSettings.FirstOrDefaultAsync(s => s.Key == "OBS:SyncWithStreaming", stoppingToken);
             SystemSetting? recordSetting = await context.SystemSettings.FirstOrDefaultAsync(s => s.Key == "OBS:SyncWithRecording", stoppingToken);
             
-            SyncWithStreaming = streamSetting != null ? bool.Parse(streamSetting.Value) : configuration.GetValue("OBS:SyncWithStreaming", true);
-            SyncWithRecording = recordSetting != null ? bool.Parse(recordSetting.Value) : configuration.GetValue("OBS:SyncWithRecording", true);
+            if (streamSetting != null && bool.TryParse(streamSetting.Value, out bool streamVal))
+                SyncWithStreaming = streamVal;
+            else
+                SyncWithStreaming = configuration.GetValue("OBS:SyncWithStreaming", true);
+
+            if (recordSetting != null && bool.TryParse(recordSetting.Value, out bool recordVal))
+                SyncWithRecording = recordVal;
+            else
+                SyncWithRecording = configuration.GetValue("OBS:SyncWithRecording", true);
         }
         catch (Exception ex)
         {
