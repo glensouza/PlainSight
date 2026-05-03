@@ -516,9 +516,9 @@ else
                 return;
 
             device.NdiAutoSwitch = liveModeAutoSwitch;
-            device.AssignedNdiSourceId = string.IsNullOrEmpty(liveModeSourceId)
-                ? null
-                : int.Parse(liveModeSourceId);
+            device.AssignedNdiSourceId = int.TryParse(liveModeSourceId, out int parsedSourceId)
+                ? parsedSourceId
+                : null;
             device.LiveModeOverride = liveModeOverrideValue switch
             {
                 "on" => true,

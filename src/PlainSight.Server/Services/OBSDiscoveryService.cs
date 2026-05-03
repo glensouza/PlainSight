@@ -49,7 +49,7 @@ public class OBSDiscoveryService(
     public bool SyncWithRecording { get; private set; }
 
     // Resolved during each session from GetOutputList; shared across HandleMessageAsync calls
-    private string? _resolvedNdiOutputName;
+    private string? resolvedNdiOutputName;
 
     // Holds the active WebSocket so UpdateSyncSettingsAsync can send Reidentify without reconnecting
     private volatile ClientWebSocket? _activeWebSocket;
@@ -164,7 +164,7 @@ public class OBSDiscoveryService(
         string url, string? password, string? configuredOutputName, string? ndiSourceName,
         CancellationToken cancellationToken)
     {
-        _resolvedNdiOutputName = null;
+        resolvedNdiOutputName = null;
 
         using ClientWebSocket ws = new();
         _activeWebSocket = ws;
@@ -222,9 +222,9 @@ public class OBSDiscoveryService(
                 if (IsLiveActive())
                     await TouchNdiSourceAsync(ndiSourceName, cancellationToken);
 
-                if (!string.IsNullOrWhiteSpace(_resolvedNdiOutputName))
+                if (!string.IsNullOrWhiteSpace(resolvedNdiOutputName))
                     await SendMessageAsync(ws, BuildRequest("GetOutputStatus", "poll",
-                        new { outputName = _resolvedNdiOutputName }), cancellationToken);
+                        new { outputName = resolvedNdiOutputName }), cancellationToken);
 
                 if (SyncWithStreaming)
                     await SendMessageAsync(ws, BuildRequest("GetStreamStatus", "poll-stream", new { }), cancellationToken);
@@ -347,7 +347,7 @@ public class OBSDiscoveryService(
 
         if (autoDetectedName != null)
         {
-            _resolvedNdiOutputName = autoDetectedName;
+            resolvedNdiOutputName = autoDetectedName;
             logger.LogInformation("OBS: using NDI output '{Name}'", autoDetectedName);
         }
         else
@@ -359,10 +359,10 @@ public class OBSDiscoveryService(
         }
 
         // Now that we know the name, ask for the current state
-        if (!string.IsNullOrWhiteSpace(_resolvedNdiOutputName))
+        if (!string.IsNullOrWhiteSpace(resolvedNdiOutputName))
         {
             await SendMessageAsync(ws, BuildRequest("GetOutputStatus", "init-status",
-                new { outputName = _resolvedNdiOutputName }), cancellationToken);
+                new { outputName = resolvedNdiOutputName }), cancellationToken);
         }
     }
 
@@ -377,7 +377,7 @@ public class OBSDiscoveryService(
             logger.LogWarning(
                 "OBS GetOutputStatus failed (code {Code}) for output '{Name}'. " +
                 "Check server logs for the output list printed at connection time.",
-                code, _resolvedNdiOutputName);
+                code, resolvedNdiOutputName);
             return;
         }
 
@@ -388,7 +388,7 @@ public class OBSDiscoveryService(
         bool active = activeEl.GetBoolean();
         IsNdiOutputActive = active;
         logger.LogInformation("OBS NDI output '{Name}' is {State}",
-            _resolvedNdiOutputName, active ? "ACTIVE" : "inactive");
+            resolvedNdiOutputName, active ? "ACTIVE" : "inactive");
     }
 
     private async Task HandleEventAsync(
@@ -410,15 +410,15 @@ public class OBSDiscoveryService(
             string eventOutputName = outNameEl.GetString() ?? string.Empty;
 
             // Match against the resolved name (or any output containing "ndi" if not yet resolved)
-            bool isOurOutput = !string.IsNullOrWhiteSpace(_resolvedNdiOutputName)
-                ? string.Equals(eventOutputName, _resolvedNdiOutputName, StringComparison.OrdinalIgnoreCase)
+            bool isOurOutput = !string.IsNullOrWhiteSpace(resolvedNdiOutputName)
+                ? string.Equals(eventOutputName, resolvedNdiOutputName, StringComparison.OrdinalIgnoreCase)
                 : eventOutputName.Contains("ndi", StringComparison.OrdinalIgnoreCase);
 
             if (!isOurOutput) return;
 
             // Update resolved name from the event if we didn't have it yet
-            if (string.IsNullOrWhiteSpace(_resolvedNdiOutputName))
-                _resolvedNdiOutputName = eventOutputName;
+            if (string.IsNullOrWhiteSpace(resolvedNdiOutputName))
+                resolvedNdiOutputName = eventOutputName;
 
             IsNdiOutputActive = evActiveEl.GetBoolean();
             logger.LogInformation("OBS NDI Output '{Name}' changed: {State}",
