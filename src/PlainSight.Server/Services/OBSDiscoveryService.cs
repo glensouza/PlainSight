@@ -458,30 +458,38 @@ public class OBSDiscoveryService(
         {
             source = await context.NdiSources
                 .FirstOrDefaultAsync(s => s.ServiceName == sourceName, cancellationToken);
-        }
 
-        // Fallback: if no specific source named or found, touch the default source
-        if (source == null)
+            if (source == null)
+            {
+                // Auto-create new source entry if it doesn't exist.
+                // Only set as default if no other source is currently marked default.
+                bool hasDefault = await context.NdiSources.AnyAsync(s => s.IsDefault, cancellationToken);
+
+                source = new NdiSource
+                {
+                    ServiceName = sourceName,
+                    FirstSeenUtc = now,
+                    LastSeenUtc = now,
+                    IsManual = true,
+                    IsDefault = !hasDefault
+                };
+                context.NdiSources.Add(source);
+                logger.LogInformation("OBS: auto-created NDI source entry '{SourceName}' (Default: {IsDefault})", sourceName, source.IsDefault);
+            }
+            else
+            {
+                source.LastSeenUtc = now;
+            }
+        }
+        else
         {
+            // Fallback: if no specific source named, touch the default source
             source = await context.NdiSources
                 .FirstOrDefaultAsync(s => s.IsDefault, cancellationToken);
-        }
-
-        if (source == null && !string.IsNullOrWhiteSpace(sourceName))
-        {
-            context.NdiSources.Add(new NdiSource
+            if (source != null)
             {
-                ServiceName = sourceName,
-                FirstSeenUtc = now,
-                LastSeenUtc = now,
-                IsManual = true,
-                IsDefault = true // Auto-create first OBS source as default
-            });
-            logger.LogInformation("OBS: auto-created NDI source entry '{SourceName}' as default", sourceName);
-        }
-        else if (source != null)
-        {
-            source.LastSeenUtc = now;
+                source.LastSeenUtc = now;
+            }
         }
 
         await context.SaveChangesAsync(cancellationToken);
