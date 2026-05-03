@@ -44,15 +44,19 @@ Location: `.github/workflows/build-deploy.yml`
 
 **Trigger**: Tags starting with `v` (e.g., `v1.0.0`)
 
-**Runner**: `ubuntu-latest`
+**Runner**: `self-hosted` (must have write access to the network share backing `UpdatesPath`)
 
 **Steps**:
 1. Checkout repository
 2. Setup .NET 10 SDK
 3. Restore dependencies
-4. Build Player for ARM64 (linux-arm64)
-5. Create tar.gz archive
-6. Upload as GitHub Release asset
+4. Build Player for ARM64 (linux-arm64) as single-file binary
+5. Compute SHA-256 hash of binary
+6. Create canonical-JSON manifest (sorted keys, no whitespace) with version, fileName, sizeBytes, sha256, signedAt, releaseUrl, notes
+7. Sign manifest with ECDSA P-256 using private key from `secrets.PLAINSIGHT_SIGNING_KEY`
+8. Write binary as `plainsight-player-{version}` and manifest as `plainsight-player-{version}.json` to `${{ vars.UPDATES_PATH }}` on the share (atomic write via `.tmp` rename)
+9. Create tar.gz archive for GitHub Release
+10. Upload tar.gz + manifest as GitHub Release assets (for cold-bootstrap reference)
 
 **Build Configuration**:
 ```bash
@@ -63,6 +67,21 @@ dotnet publish \
   -p:PublishSingleFile=true \
   -p:DebugType=None \
   -p:DebugSymbols=false
+```
+
+**Key Pair Setup** (one-time, for maintainers):
+```bash
+# Generate ECDSA P-256 private key
+openssl ecparam -name prime256v1 -genkey -noout -out signing.key
+
+# Convert to PKCS8 format
+openssl pkcs8 -topk8 -nocrypt -in signing.key -out signing.pkcs8
+
+# Extract public key
+openssl ec -in signing.key -pubout -out release-signing.pub
+
+# Add signing.pkcs8 content as GitHub Actions secret: secrets.PLAINSIGHT_SIGNING_KEY
+# Commit release-signing.pub under src/PlainSight.Server/Keys/release-signing.pub
 ```
 
 ### 3. `deploy-to-server` (Production Deployment)
@@ -85,12 +104,16 @@ dotnet publish \
 
 ### Required Secrets
 
-None required - uses GitHub's built-in `GITHUB_TOKEN` for Container Registry access.
+- `PLAINSIGHT_SIGNING_KEY`: ECDSA P-256 private key (PEM PKCS8 format) for signing player version manifests. Used by `build-player` job.
 
 ### Optional Secrets
 
 - `DEPLOY_SERVER_URL`: Override default deployment URL
 - `SLACK_WEBHOOK`: Send deployment notifications
+
+### Required Variables
+
+- `UPDATES_PATH`: Path to the network share directory where player binaries and manifests are written (e.g., `/mnt/plainsight-share/updates`). Used by `build-player` job.
 
 ### Environment Variables
 
@@ -144,8 +167,14 @@ git tag -a v1.0.0 -m "Release version 1.0.0"
 git push origin v1.0.0
 ```
 
-3. GitHub Actions builds ARM64 binary and creates GitHub Release
-4. Players automatically download new version on next heartbeat
+3. GitHub Actions `build-player` job runs on self-hosted runner:
+   - Builds ARM64 binary
+   - Computes SHA-256 and creates signed manifest JSON
+   - Writes binary + manifest to network share (UpdatesPath)
+   - Creates GitHub Release with tar.gz + manifest for cold-bootstrap reference
+4. Server reconciles within 60 seconds (automatic) or immediately via admin "Sync now" button
+5. Admin assigns version to device group via Versions page
+6. Players automatically download new version on next heartbeat (~30 seconds)
 
 ### Manual Workflow Trigger
 
@@ -247,12 +276,29 @@ Add to README.md:
 - .NET SDK version mismatch
 - Missing project references
 - Platform-specific dependencies
+- Self-hosted runner offline
 
 **Solution**:
 ```bash
 # Verify .NET version in workflow matches project
 # Check all project references are valid
 # Test local build: dotnet publish -r linux-arm64
+# Verify self-hosted runner is online and has network share access
+```
+
+### Manifest Signature Verification Fails
+
+**Causes**:
+- `secrets.PLAINSIGHT_SIGNING_KEY` not set or malformed
+- Public key file (`src/PlainSight.Server/Keys/release-signing.pub`) missing or corrupted
+- Manifest signed with wrong key
+
+**Solution**:
+```bash
+# Check secrets.PLAINSIGHT_SIGNING_KEY is set and valid PKCS8 format
+# Verify public key exists: cat src/PlainSight.Server/Keys/release-signing.pub
+# Regenerate keypair if needed (see Key Pair Setup section above)
+# Check server logs during reconciliation for signature errors
 ```
 
 ### Deployment Fails
@@ -286,10 +332,12 @@ Use semantic versioning:
 
 ### Canary Deployments
 
-1. Tag with pre-release version: `v1.1.0-beta`
-2. Assign to "canary" device group in admin panel
-3. Monitor for issues
-4. Promote to production: `v1.1.0`
+1. Tag with new version: `v1.1.0`
+2. Wait for server reconciliation (60s, or click "Sync now" on Versions page)
+3. Assign new version to "canary" device group in admin panel
+4. Monitor for issues (use Screenshot feature)
+5. Assign version to larger device groups or "Default" group
+6. Devices auto-update on next heartbeat cycle
 
 ### Testing Before Release
 

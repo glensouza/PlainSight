@@ -5,6 +5,7 @@
 @inject IConfiguration Configuration
 @inject NavigationManager Navigation
 @inject ILogger<Versions> Logger
+@inject PlainSight.Server.Services.Versioning.IPlayerVersionReconciler Reconciler
 @using Microsoft.EntityFrameworkCore
 @using PlainSight.Shared.Models
 @using PlainSight.Server.Data
@@ -21,12 +22,28 @@
 {
     <div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> @loadError</div>
 }
+@if (syncMessage != null)
+{
+    <div class="alert alert-success"><i class="bi bi-check-circle"></i> @syncMessage</div>
+}
 
 <div class="row">
     <div class="col-md-6">
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-box-seam"></i> Available Versions</h5>
+                <button class="btn btn-sm btn-primary" @onclick="SyncNow" disabled="@syncing">
+                    @if (syncing)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                        <span>Syncing...</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-arrow-repeat me-1"></i>
+                        <span>Sync now</span>
+                    }
+                </button>
             </div>
             <div class="card-body">
                 @if (versions == null)
@@ -51,6 +68,10 @@
                                         <small class="text-muted">
                                             @v.UploadedAt.ToString("yyyy-MM-dd HH:mm") UTC
                                             &middot; @FormatBytes(v.FileSizeBytes)
+                                            @if (!string.IsNullOrEmpty(v.Sha256Hash))
+                                            {
+                                                <span>&middot; <code title="@v.Sha256Hash">@v.Sha256Hash.Substring(0, Math.Min(12, v.Sha256Hash.Length))</code></span>
+                                            }
                                         </small>
                                         @if (!string.IsNullOrWhiteSpace(v.Notes))
                                         {
@@ -74,53 +95,6 @@
                         }
                     </div>
                 }
-            </div>
-        </div>
-
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-upload"></i> Upload New Version</h5>
-            </div>
-            <div class="card-body">
-                <div class="mb-3">
-                    <label class="form-label">Version Number</label>
-                    <input class="form-control" placeholder="e.g. 1.2.0" @bind="uploadVersion" />
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Binary (linux-arm64 self-contained)</label>
-                    <InputFile OnChange="OnFileSelected" class="form-control" accept="*" />
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Release notes <span class="text-muted">(optional)</span></label>
-                    <input class="form-control" placeholder="What changed?" @bind="uploadNotes" />
-                </div>
-                @if (uploading)
-                {
-                    <div class="progress mb-3" style="height: 10px;">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
-                    </div>
-                }
-                @if (uploadError != null)
-                {
-                    <div class="alert alert-danger py-2">@uploadError</div>
-                }
-                <button class="btn btn-primary"
-                        @onclick="UploadVersion"
-                        disabled="@(uploading || selectedFile == null || string.IsNullOrWhiteSpace(uploadVersion))">
-                    @if (uploading)
-                    {
-                        <span class="spinner-border spinner-border-sm me-1"></span>
-                        <span>Uploading...</span>
-                    }
-                    else
-                    {
-                        <i class="bi bi-cloud-upload me-1"></i>
-                        <span>Upload</span>
-                    }
-                </button>
-                <small class="text-muted ms-2">
-                    Build with: <code>dotnet publish -r linux-arm64 --self-contained -p:PublishSingleFile=true</code>
-                </small>
             </div>
         </div>
     </div>
@@ -155,7 +129,7 @@
                                     <label class="small text-muted mb-0">Target Version</label>
                                     <select class="form-select form-select-sm"
                                             value="@g.TargetVersion"
-                                            @onchange="e => SaveGroupVersion(g.GroupName, e.Value?.ToString() ?? g.TargetVersion, g.DefaultPlaylistId)"
+                                            @onchange="e => SaveGroupVersion(g.GroupName, e.Value?.ToString() ?? g.TargetVersion)"
                                             disabled="@(versions == null)">
                                         @if (versions != null)
                                         {
@@ -167,21 +141,6 @@
                                             @foreach (PlayerVersion v in versions)
                                             {
                                                 <option value="@v.VersionNumber">@v.VersionNumber</option>
-                                            }
-                                        }
-                                    </select>
-                                </div>
-                                <div class="mt-1">
-                                    <label class="small text-muted mb-0">Default Playlist</label>
-                                    <select class="form-select form-select-sm"
-                                            value="@g.DefaultPlaylistId"
-                                            @onchange="e => SaveGroupVersion(g.GroupName, g.TargetVersion, int.TryParse(e.Value?.ToString(), out int id) ? id : null)">
-                                        <option value="">(None)</option>
-                                        @if (playlists != null)
-                                        {
-                                            @foreach (Playlist p in playlists)
-                                            {
-                                                <option value="@p.Id">@p.Name</option>
                                             }
                                         }
                                     </select>
@@ -212,12 +171,12 @@
             </div>
             <div class="card-body">
                 <ol class="small mb-0">
-                    <li>Upload the new player binary above</li>
-                    <li>Assign the new version to a small test group (e.g. "Lab")</li>
-                    <li>Monitor those devices via the Device Dashboard</li>
-                    <li>Use Screenshot to verify correct operation</li>
-                    <li>Assign the version to "Default" — all unassigned groups follow</li>
-                    <li>Devices auto-update within 30–60 seconds via heartbeat</li>
+                    <li>Push a <code>v*</code> tag &rarr; CI builds, signs the manifest, drops binary + manifest on the share.</li>
+                    <li>Server reconciles within 60 s (or click <strong>Sync now</strong>).</li>
+                    <li>Assign the new version to a small test group.</li>
+                    <li>Monitor; use Screenshot to verify.</li>
+                    <li>Assign to "Default" &rarr; all unassigned groups follow.</li>
+                    <li>Devices auto-update within 30&ndash;60 s via heartbeat.</li>
                 </ol>
             </div>
         </div>
@@ -227,18 +186,13 @@
 @code {
     private List<PlayerVersion>? versions;
     private List<DeviceGroupVersion>? groups;
-    private List<Playlist>? playlists;
-
-    private string uploadVersion = string.Empty;
-    private string? uploadNotes;
-    private IBrowserFile? selectedFile;
-    private bool uploading;
-    private string? uploadError;
 
     private string? newGroupName;
     private string? groupError;
     private int? deletingId;
     private string? loadError;
+    private string? syncMessage;
+    private bool syncing;
 
     protected override async Task OnInitializedAsync()
     {
@@ -258,10 +212,6 @@
                 .OrderBy(g => g.GroupName)
                 .ToListAsync();
 
-            playlists = await context.Playlists
-                .OrderBy(p => p.Name)
-                .ToListAsync();
-                
             loadError = null;
         }
         catch (Exception ex)
@@ -271,75 +221,26 @@
         }
     }
 
-    private void OnFileSelected(InputFileChangeEventArgs e)
+    private async Task SyncNow()
     {
-        selectedFile = e.File;
-    }
-
-    private async Task UploadVersion()
-    {
-        if (selectedFile == null || string.IsNullOrWhiteSpace(uploadVersion)) return;
-
-        uploading = true;
-        uploadError = null;
-        string? destPath = null;
+        syncing = true;
+        syncMessage = null;
+        loadError = null;
+        
         try
         {
-            string versionNumber = uploadVersion.Trim();
-            
-            using var context = await DbFactory.CreateDbContextAsync();
-            bool exists = await context.PlayerVersions.AnyAsync(v => v.VersionNumber == versionNumber);
-            if (exists)
-            {
-                uploadError = $"Version {versionNumber} already exists";
-                return;
-            }
-
-            string updatesPath = Configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
-            Directory.CreateDirectory(updatesPath);
-
-            string safeFileName = $"plainsight-player-{versionNumber}";
-            destPath = Path.Combine(updatesPath, safeFileName);
-
-            if (File.Exists(destPath))
-            {
-                uploadError = "Binary file already exists on disk";
-                return;
-            }
-
-            using (var stream = selectedFile.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024))
-            using (var fs = new FileStream(destPath, FileMode.CreateNew))
-            {
-                await stream.CopyToAsync(fs);
-            }
-
-            PlayerVersion version = new()
-            {
-                VersionNumber = versionNumber,
-                FileName = safeFileName,
-                FileSizeBytes = selectedFile.Size,
-                UploadedAt = DateTime.UtcNow,
-                Notes = uploadNotes
-            };
-            
-            context.PlayerVersions.Add(version);
-            await context.SaveChangesAsync();
-
-            uploadVersion = string.Empty;
-            uploadNotes = null;
-            selectedFile = null;
+            int ingested = await Reconciler.ReconcileAsync(System.Threading.CancellationToken.None);
+            syncMessage = $"Sync complete. Ingested {ingested} new version(s).";
             await LoadAll();
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error uploading version");
-            uploadError = "Upload failed — check logs for details.";
-            if (destPath != null && File.Exists(destPath))
-                File.Delete(destPath);
+            Logger.LogError(ex, "Error syncing versions");
+            loadError = "Sync failed — check logs for details.";
         }
         finally
         {
-            uploading = false;
+            syncing = false;
         }
     }
 
@@ -347,6 +248,7 @@
     {
         deletingId = id;
         loadError = null;
+        syncMessage = null;
         try
         {
             using var context = await DbFactory.CreateDbContextAsync();
@@ -362,9 +264,15 @@
             }
 
             string updatesPath = Configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
-            string filePath = Path.Combine(updatesPath, version.FileName);
+            string safeFileName = Path.GetFileName(version.FileName);
+            
+            string filePath = Path.Combine(updatesPath, safeFileName);
             if (File.Exists(filePath))
                 File.Delete(filePath);
+                
+            string manifestPath = Path.Combine(updatesPath, safeFileName + ".json");
+            if (File.Exists(manifestPath))
+                File.Delete(manifestPath);
 
             context.PlayerVersions.Remove(version);
             await context.SaveChangesAsync();
@@ -381,12 +289,12 @@
         }
     }
 
-    private async Task SaveGroupVersion(string groupName, string targetVersion, int? defaultPlaylistId)
+    private async Task SaveGroupVersion(string groupName, string targetVersion)
     {
         try
         {
             using var context = await DbFactory.CreateDbContextAsync();
-            
+
             bool anyBinariesExist = await context.PlayerVersions.AnyAsync();
             if (anyBinariesExist)
             {
@@ -412,7 +320,6 @@
             }
 
             existing.TargetVersion = targetVersion;
-            existing.DefaultPlaylistId = defaultPlaylistId;
             await context.SaveChangesAsync();
             groupError = null;
             await LoadAll();
@@ -431,9 +338,8 @@
         string defaultVersion = groups.FirstOrDefault(g => g.GroupName == "Default")?.TargetVersion
                                ?? versions?.FirstOrDefault()?.VersionNumber
                                ?? "1.0.0";
-        int? defaultPlaylistId = groups.FirstOrDefault(g => g.GroupName == "Default")?.DefaultPlaylistId;
-        
-        await SaveGroupVersion(newGroupName.Trim(), defaultVersion, defaultPlaylistId);
+
+        await SaveGroupVersion(newGroupName.Trim(), defaultVersion);
         newGroupName = null;
     }
 

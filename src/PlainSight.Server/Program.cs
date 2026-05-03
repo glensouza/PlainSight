@@ -62,6 +62,8 @@ builder.Services.AddHostedService<RenderWorkerService>();
 builder.Services.AddScoped<ContentSyncService>();
 builder.Services.AddHostedService<ContentSyncWorkerService>();
 builder.Services.AddScoped<VersionService>();
+builder.Services.AddScoped<PlainSight.Server.Services.Versioning.IPlayerVersionReconciler, PlainSight.Server.Services.Versioning.ManifestReconciler>();
+builder.Services.AddHostedService<PlainSight.Server.Services.Versioning.ReconciliationBackgroundService>();
 builder.Services.AddScoped<ScheduleService>();
 builder.Services.AddHostedService<AutoScreenshotService>();
 builder.Services.AddHostedService<DeviceMonitorService>();

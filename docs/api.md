@@ -91,6 +91,49 @@ Request a screenshot from a specific device.
 curl -X POST http://localhost:8080/api/device/plainsight-sanctuary/screenshot
 ```
 
+### Version Management
+
+#### Refresh Version Manifest
+
+Trigger an immediate scan of the version updates directory. The server reconciles new manifest files, verifies signatures, and ingests new `PlayerVersion` rows.
+
+**Endpoint**: `POST /versions/refresh`
+
+**Authentication**: Admin only
+
+**Response**:
+```json
+{
+  "ingested": 2
+}
+```
+
+**Status Codes**:
+- `200 OK` - Reconciliation succeeded
+- `503 Service Unavailable` - Reconciliation failed (check logs)
+
+**Example**:
+```bash
+curl -X POST http://localhost:8080/api/versions/refresh \
+  -H "Authorization: Bearer <admin-token>"
+```
+
+#### Download Player Binary
+
+Download a specific player version binary.
+
+**Endpoint**: `GET /updates/{version}/binary`
+
+**Parameters**:
+- `version` (path): Version number (e.g., `1.0.0`)
+
+**Response**: Binary file (application/octet-stream)
+
+**Example**:
+```bash
+curl -O http://localhost:8080/api/updates/1.0.0/binary
+```
+
 ### Health Check
 
 #### Server Health

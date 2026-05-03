@@ -182,8 +182,10 @@ CREATE TABLE Devices (
   │   ├── video2.mp4
   │   └── playlist.json
   └── updates/
-      └── 1.0.0/
-          └── PlainSight.Player
+      ├── plainsight-player-1.0.0
+      ├── plainsight-player-1.0.0.json
+      ├── plainsight-player-1.1.0
+      └── plainsight-player-1.1.0.json
 ```
 
 ### 5. Orchestration (.NET Aspire)
@@ -255,13 +257,15 @@ Content-Type: application/json
 ### Update Flow
 
 ```
-1. New version tagged in GitHub
-2. GitHub Actions builds ARM64 binary
-3. Binary uploaded to server /api/updates/{version}
-4. Admin assigns version to device group
-5. Player heartbeat detects update available
-6. Player downloads and installs update
-7. Player restarts with new version
+1. New version tagged in GitHub (v*)
+2. GitHub Actions builds ARM64 binary on self-hosted runner
+3. Runner signs manifest JSON with ECDSA P-256, writes binary + manifest to UpdatesPath share
+4. Server reconciler scans UpdatesPath every 60 seconds (or triggered by admin)
+5. Reconciler verifies manifest signature, confirms SHA-256 match, inserts PlayerVersion row
+6. Admin assigns version to device group via Versions page
+7. Player heartbeat detects update available
+8. Player downloads binary via GET /api/updates/{version}/binary
+9. Player installs and restarts with new version
 ```
 
 ### Screenshot Flow
@@ -321,7 +325,8 @@ Raspberry Pi Fleet (Distributed)
 
 ### Update Security
 
-- **Binary Verification**: SHA256 checksums (future enhancement)
+- **Manifest Signing**: ECDSA P-256 asymmetric signing; private key held by CI runner only
+- **Binary Verification**: SHA256 checksums computed and verified at ingest
 - **Rollback**: Previous binary kept as .bak
 - **Canary**: Test on subset before fleet-wide
 
