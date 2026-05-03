@@ -1,0 +1,11 @@
+.group-select {
+    width: auto;
+}
+
+.action-cell {
+    white-space: nowrap;
+}
+
+.add-modal-backdrop {
+    background: rgba(0, 0, 0, 0.5);
+}

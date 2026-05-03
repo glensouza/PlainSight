@@ -87,11 +87,11 @@ else
             </div>
             <div class="d-flex align-items-center gap-2">
                 <label class="small text-muted mb-0">Target Group:</label>
-                <select class="form-select form-select-sm" style="width:auto" @bind="targetGroup" @bind:after="LoadGroups">
+                <select class="form-select form-select-sm group-select" @bind="targetGroup" @bind:after="LoadGroups">
                     <option value="">— All Devices —</option>
                     @if (deviceGroups != null)
                     {
-                        @foreach (var g in deviceGroups)
+                        @foreach (GroupStatus g in deviceGroups)
                         {
                             <option value="@g.Name">@g.Name</option>
                         }
@@ -187,7 +187,7 @@ else
                                 @GetTimeSince(source.LastSeenUtc)
                             </span>
                         </td>
-                        <td class="text-end" style="white-space:nowrap">
+                        <td class="text-end action-cell">
                             @if (isCurrentlyLiveSource)
                             {
                                 <button class="btn btn-sm btn-danger" @onclick="EndLive" disabled="@isGoingLive">
@@ -228,7 +228,7 @@ else
 
 @if (showAddModal)
 {
-    <div class="modal fade show d-block" tabindex="-1" style="background:rgba(0,0,0,.5)">
+    <div class="modal fade show d-block add-modal-backdrop" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
@@ -321,16 +321,16 @@ else
             
             // EF Core cannot translate complex group-by-select into SQL directly in this scenario.
             // Fetch the minimal required data first, then evaluate locally.
-            var devices = await context.Devices
+            List<dynamic> devices = await context.Devices
                 .Select(d => new { d.Group, d.NdiAutoSwitch })
-                .ToListAsync();
+                .ToListAsync<dynamic>();
 
             deviceGroups = devices
-                .GroupBy(d => d.Group)
+                .GroupBy(d => (string)d.Group)
                 .Select(g => new GroupStatus(
                     g.Key, 
                     g.Count(), 
-                    g.Count(d => d.NdiAutoSwitch)
+                    g.Count(d => (bool)d.NdiAutoSwitch)
                 ))
                 .OrderBy(g => g.Name)
                 .ToList();
@@ -390,7 +390,7 @@ else
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
 
-            var query = context.Devices.AsQueryable();
+            IQueryable<Device> query = context.Devices.AsQueryable();
             if (!string.IsNullOrEmpty(targetGroup))
             {
                 query = query.Where(d => d.Group == targetGroup);
@@ -422,7 +422,7 @@ else
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
 
-            var query = context.Devices.AsQueryable();
+            IQueryable<Device> query = context.Devices.AsQueryable();
             if (!string.IsNullOrEmpty(targetGroup))
             {
                 query = query.Where(d => d.Group == targetGroup);
@@ -496,7 +496,7 @@ else
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
 
-            var query = context.Devices.AsQueryable();
+            IQueryable<Device> query = context.Devices.AsQueryable();
             if (!string.IsNullOrEmpty(targetGroup))
             {
                 query = query.Where(d => d.Group == targetGroup);
@@ -529,7 +529,7 @@ else
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
 
-            var query = context.Devices.AsQueryable();
+            IQueryable<Device> query = context.Devices.AsQueryable();
             if (!string.IsNullOrEmpty(targetGroup))
             {
                 query = query.Where(d => d.Group == targetGroup);

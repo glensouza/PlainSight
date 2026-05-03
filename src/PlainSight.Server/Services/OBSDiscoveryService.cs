@@ -27,6 +27,7 @@ public class OBSDiscoveryService(
     private const int OpHello = 0;
     private const int OpIdentify = 1;
     private const int OpIdentified = 2;
+    private const int OpReidentify = 3;
     private const int OpEvent = 5;
     private const int OpRequest = 6;
     private const int OpRequestResponse = 7;
@@ -48,7 +49,10 @@ public class OBSDiscoveryService(
     public bool SyncWithRecording { get; private set; }
 
     // Resolved during each session from GetOutputList; shared across HandleMessageAsync calls
-    private string? _resolvedNdiOutputName;
+    private string? resolvedNdiOutputName;
+
+    // Holds the active WebSocket so UpdateSyncSettingsAsync can send Reidentify without reconnecting
+    private volatile ClientWebSocket? _activeWebSocket;
 
     public async Task UpdateSyncSettingsAsync(bool syncStreaming, bool syncRecording)
     {
@@ -70,11 +74,19 @@ public class OBSDiscoveryService(
             recordSetting.Value = syncRecording.ToString();
 
         await context.SaveChangesAsync();
-        
-        // Settings updated, but we may need to re-identify with the WebSocket to change event subscriptions.
-        // The easiest way is to let the socket drop and reconnect naturally, but for now we'll just apply the new flags
-        // to future live detections. To force a full sub update, we could drop the connection:
-        // IsConnected = false; 
+
+        // Send Reidentify (op 3) so the new subscription mask takes effect on the live session
+        // without requiring a full reconnect.
+        ClientWebSocket? ws = _activeWebSocket;
+        if (ws?.State == WebSocketState.Open)
+        {
+            int subscriptionMask = OutputsEventSubscription;
+            if (syncStreaming) subscriptionMask |= StreamingEventSubscription;
+            if (syncRecording) subscriptionMask |= RecordingEventSubscription;
+            await SendMessageAsync(ws, BuildReidentifyMessage(subscriptionMask), CancellationToken.None);
+            logger.LogInformation("OBS WebSocket reidentified with updated subscription mask (streaming={Streaming}, recording={Recording})",
+                syncStreaming, syncRecording);
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -94,8 +106,15 @@ public class OBSDiscoveryService(
             SystemSetting? streamSetting = await context.SystemSettings.FirstOrDefaultAsync(s => s.Key == "OBS:SyncWithStreaming", stoppingToken);
             SystemSetting? recordSetting = await context.SystemSettings.FirstOrDefaultAsync(s => s.Key == "OBS:SyncWithRecording", stoppingToken);
             
-            SyncWithStreaming = streamSetting != null ? bool.Parse(streamSetting.Value) : configuration.GetValue("OBS:SyncWithStreaming", true);
-            SyncWithRecording = recordSetting != null ? bool.Parse(recordSetting.Value) : configuration.GetValue("OBS:SyncWithRecording", true);
+            if (streamSetting != null && bool.TryParse(streamSetting.Value, out bool streamVal))
+                SyncWithStreaming = streamVal;
+            else
+                SyncWithStreaming = configuration.GetValue("OBS:SyncWithStreaming", true);
+
+            if (recordSetting != null && bool.TryParse(recordSetting.Value, out bool recordVal))
+                SyncWithRecording = recordVal;
+            else
+                SyncWithRecording = configuration.GetValue("OBS:SyncWithRecording", true);
         }
         catch (Exception ex)
         {
@@ -120,6 +139,7 @@ public class OBSDiscoveryService(
             }
             catch (Exception ex)
             {
+                _activeWebSocket = null;
                 IsConnected = false;
                 IsNdiOutputActive = false;
                 IsStreaming = false;
@@ -132,6 +152,7 @@ public class OBSDiscoveryService(
             }
         }
 
+        _activeWebSocket = null;
         IsConnected = false;
         IsNdiOutputActive = false;
         IsStreaming = false;
@@ -143,11 +164,12 @@ public class OBSDiscoveryService(
         string url, string? password, string? configuredOutputName, string? ndiSourceName,
         CancellationToken cancellationToken)
     {
-        _resolvedNdiOutputName = null;
+        resolvedNdiOutputName = null;
 
         using ClientWebSocket ws = new();
+        _activeWebSocket = ws;
         ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
-        
+
         logger.LogInformation("OBS WebSocket connecting to {Url}...", url);
         await ws.ConnectAsync(new Uri(url), cancellationToken);
 
@@ -200,9 +222,9 @@ public class OBSDiscoveryService(
                 if (IsLiveActive())
                     await TouchNdiSourceAsync(ndiSourceName, cancellationToken);
 
-                if (!string.IsNullOrWhiteSpace(_resolvedNdiOutputName))
+                if (!string.IsNullOrWhiteSpace(resolvedNdiOutputName))
                     await SendMessageAsync(ws, BuildRequest("GetOutputStatus", "poll",
-                        new { outputName = _resolvedNdiOutputName }), cancellationToken);
+                        new { outputName = resolvedNdiOutputName }), cancellationToken);
 
                 if (SyncWithStreaming)
                     await SendMessageAsync(ws, BuildRequest("GetStreamStatus", "poll-stream", new { }), cancellationToken);
@@ -215,6 +237,16 @@ public class OBSDiscoveryService(
         {
             throw new InvalidOperationException($"WebSocket closed prematurely (State: {ws.State})");
         }
+    }
+
+    // Used by UpdateSyncSettingsAsync to update the subscription mask on a live session
+    private static string BuildReidentifyMessage(int eventSubscriptions)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            op = OpReidentify,
+            d = new { eventSubscriptions }
+        });
     }
 
     public bool IsLiveActive()
@@ -315,7 +347,7 @@ public class OBSDiscoveryService(
 
         if (autoDetectedName != null)
         {
-            _resolvedNdiOutputName = autoDetectedName;
+            resolvedNdiOutputName = autoDetectedName;
             logger.LogInformation("OBS: using NDI output '{Name}'", autoDetectedName);
         }
         else
@@ -327,10 +359,10 @@ public class OBSDiscoveryService(
         }
 
         // Now that we know the name, ask for the current state
-        if (!string.IsNullOrWhiteSpace(_resolvedNdiOutputName))
+        if (!string.IsNullOrWhiteSpace(resolvedNdiOutputName))
         {
             await SendMessageAsync(ws, BuildRequest("GetOutputStatus", "init-status",
-                new { outputName = _resolvedNdiOutputName }), cancellationToken);
+                new { outputName = resolvedNdiOutputName }), cancellationToken);
         }
     }
 
@@ -345,7 +377,7 @@ public class OBSDiscoveryService(
             logger.LogWarning(
                 "OBS GetOutputStatus failed (code {Code}) for output '{Name}'. " +
                 "Check server logs for the output list printed at connection time.",
-                code, _resolvedNdiOutputName);
+                code, resolvedNdiOutputName);
             return;
         }
 
@@ -356,7 +388,7 @@ public class OBSDiscoveryService(
         bool active = activeEl.GetBoolean();
         IsNdiOutputActive = active;
         logger.LogInformation("OBS NDI output '{Name}' is {State}",
-            _resolvedNdiOutputName, active ? "ACTIVE" : "inactive");
+            resolvedNdiOutputName, active ? "ACTIVE" : "inactive");
     }
 
     private async Task HandleEventAsync(
@@ -378,15 +410,15 @@ public class OBSDiscoveryService(
             string eventOutputName = outNameEl.GetString() ?? string.Empty;
 
             // Match against the resolved name (or any output containing "ndi" if not yet resolved)
-            bool isOurOutput = !string.IsNullOrWhiteSpace(_resolvedNdiOutputName)
-                ? string.Equals(eventOutputName, _resolvedNdiOutputName, StringComparison.OrdinalIgnoreCase)
+            bool isOurOutput = !string.IsNullOrWhiteSpace(resolvedNdiOutputName)
+                ? string.Equals(eventOutputName, resolvedNdiOutputName, StringComparison.OrdinalIgnoreCase)
                 : eventOutputName.Contains("ndi", StringComparison.OrdinalIgnoreCase);
 
             if (!isOurOutput) return;
 
             // Update resolved name from the event if we didn't have it yet
-            if (string.IsNullOrWhiteSpace(_resolvedNdiOutputName))
-                _resolvedNdiOutputName = eventOutputName;
+            if (string.IsNullOrWhiteSpace(resolvedNdiOutputName))
+                resolvedNdiOutputName = eventOutputName;
 
             IsNdiOutputActive = evActiveEl.GetBoolean();
             logger.LogInformation("OBS NDI Output '{Name}' changed: {State}",
@@ -426,30 +458,38 @@ public class OBSDiscoveryService(
         {
             source = await context.NdiSources
                 .FirstOrDefaultAsync(s => s.ServiceName == sourceName, cancellationToken);
-        }
 
-        // Fallback: if no specific source named or found, touch the default source
-        if (source == null)
+            if (source == null)
+            {
+                // Auto-create new source entry if it doesn't exist.
+                // Only set as default if no other source is currently marked default.
+                bool hasDefault = await context.NdiSources.AnyAsync(s => s.IsDefault, cancellationToken);
+
+                source = new NdiSource
+                {
+                    ServiceName = sourceName,
+                    FirstSeenUtc = now,
+                    LastSeenUtc = now,
+                    IsManual = true,
+                    IsDefault = !hasDefault
+                };
+                context.NdiSources.Add(source);
+                logger.LogInformation("OBS: auto-created NDI source entry '{SourceName}' (Default: {IsDefault})", sourceName, source.IsDefault);
+            }
+            else
+            {
+                source.LastSeenUtc = now;
+            }
+        }
+        else
         {
+            // Fallback: if no specific source named, touch the default source
             source = await context.NdiSources
                 .FirstOrDefaultAsync(s => s.IsDefault, cancellationToken);
-        }
-
-        if (source == null && !string.IsNullOrWhiteSpace(sourceName))
-        {
-            context.NdiSources.Add(new NdiSource
+            if (source != null)
             {
-                ServiceName = sourceName,
-                FirstSeenUtc = now,
-                LastSeenUtc = now,
-                IsManual = true,
-                IsDefault = true // Auto-create first OBS source as default
-            });
-            logger.LogInformation("OBS: auto-created NDI source entry '{SourceName}' as default", sourceName);
-        }
-        else if (source != null)
-        {
-            source.LastSeenUtc = now;
+                source.LastSeenUtc = now;
+            }
         }
 
         await context.SaveChangesAsync(cancellationToken);

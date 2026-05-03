@@ -1,0 +1,184 @@
+@using PlainSight.Shared.Models
+@using System.Timers
+@implements IDisposable
+
+<div class="modal fade show d-block preview-modal-backdrop" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content bg-dark text-white border-0 shadow-lg">
+            <div class="modal-header border-secondary py-2">
+                <h5 class="modal-title d-flex align-items-center text-truncate pe-3">
+                    <i class="bi bi-play-btn me-2"></i>
+                    Playlist Preview: @Playlist.Name
+                </h5>
+                <div class="d-flex align-items-center ms-auto me-3 flex-shrink-0">
+                    <div class="btn-group btn-group-sm me-3" role="group">
+                        <input type="radio" class="btn-check" name="aspect" id="aspect169" checked="@(aspectRatio == "16:9")" @onclick='() => aspectRatio = "16:9"'>
+                        <label class="btn btn-outline-info" for="aspect169">16:9</label>
+                        <input type="radio" class="btn-check" name="aspect" id="aspect916" checked="@(aspectRatio == "9:16")" @onclick='() => aspectRatio = "9:16"'>
+                        <label class="btn btn-outline-info" for="aspect916">9:16</label>
+                    </div>
+                    <span class="badge bg-primary">Item @(currentIndex + 1) of @orderedItems.Count</span>
+                </div>
+                <button type="button" class="btn-close btn-close-white" @onclick="OnClose"></button>
+            </div>
+            <div class="modal-body p-0 d-flex flex-column align-items-center justify-content-center bg-black overflow-hidden preview-body-height">
+                @if (currentItem != null)
+                {
+                    <div class="preview-container @(aspectRatio == "9:16" ? "portrait" : "landscape")">
+                        @if (currentItem.ContentItem.Type == ContentType.Image)
+                        {
+                            <img src="/api/content/file/@currentItem.ContentItem.FileName" class="preview-media" />
+                        }
+                        else
+                        {
+                            <video autoplay muted class="preview-media" @onended="OnVideoEnded" @key="currentItem.Id">
+                                <source src="/api/content/file/@currentItem.ContentItem.FileName" type="video/mp4" />
+                            </video>
+                        }
+                        
+                        <div class="preview-overlay">
+                            <div class="progress-bar-container">
+                                <div class="progress-bar-fill" style="width: @(progress)%"></div>
+                            </div>
+                            <div class="item-info">
+                                <span class="item-name text-truncate">@currentItem.ContentItem.Name</span>
+                                <span class="item-timer ms-2">@Math.Ceiling(remainingTime)s</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="text-center opacity-50">
+                        <i class="bi bi-collection-play empty-preview-icon"></i>
+                        <p class="mt-3">No items in playlist to preview.</p>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer border-secondary py-2 d-flex justify-content-between">
+                <div class="playback-controls">
+                    <button class="btn btn-outline-light btn-sm px-3" @onclick="PreviousItem" disabled="@(orderedItems.Count <= 1)" title="Previous">
+                        <i class="bi bi-skip-start-fill"></i>
+                    </button>
+                    <button class="btn btn-outline-light btn-sm px-4 mx-2" @onclick="TogglePause" disabled="@(orderedItems.Count == 0)" title="@(isPaused ? "Play" : "Pause")">
+                        <i class="bi @(isPaused ? "bi-play-fill" : "bi-pause-fill")"></i>
+                        @(isPaused ? "Resume" : "Pause")
+                    </button>
+                    <button class="btn btn-outline-light btn-sm px-3" @onclick="NextItem" disabled="@(orderedItems.Count <= 1)" title="Next">
+                        <i class="bi bi-skip-end-fill"></i>
+                    </button>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="OnClose">Close Preview</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Playlist Playlist { get; set; } = null!;
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private List<PlaylistItem> orderedItems = new();
+    private int currentIndex = 0;
+    private string aspectRatio = "16:9";
+    private bool isPaused = false;
+    private double remainingTime = 0;
+    private double totalDuration = 0;
+    private double progress = 0;
+    private System.Timers.Timer? timer;
+    private DateTime lastTick;
+
+    private PlaylistItem? currentItem => orderedItems.Count > 0 ? orderedItems[currentIndex] : null;
+
+    protected override void OnInitialized()
+    {
+        orderedItems = Playlist.Items.OrderBy(i => i.Order).ToList();
+        if (orderedItems.Count > 0)
+        {
+            StartItem(0);
+        }
+
+        timer = new System.Timers.Timer(100);
+        timer.Elapsed += OnTimerTick;
+        timer.AutoReset = true;
+        timer.Enabled = true;
+        lastTick = DateTime.UtcNow;
+    }
+
+    private void StartItem(int index)
+    {
+        currentIndex = index;
+        if (currentItem != null)
+        {
+            totalDuration = currentItem.OverrideDurationSeconds ?? currentItem.ContentItem.DurationSeconds;
+            // Min duration for preview safety
+            if (totalDuration < 1) totalDuration = 5;
+            remainingTime = totalDuration;
+            progress = 0;
+        }
+    }
+
+    private void OnTimerTick(object? sender, ElapsedEventArgs e)
+    {
+        if (isPaused || currentItem == null) 
+        {
+            lastTick = DateTime.UtcNow;
+            return;
+        }
+
+        DateTime now = DateTime.UtcNow;
+        double elapsed = (now - lastTick).TotalSeconds;
+        lastTick = now;
+
+        remainingTime -= elapsed;
+        if (remainingTime <= 0)
+        {
+            InvokeAsync(NextItem);
+        }
+        else
+        {
+            progress = ((totalDuration - remainingTime) / totalDuration) * 100;
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void NextItem()
+    {
+        if (orderedItems.Count == 0) return;
+        int nextIndex = (currentIndex + 1) % orderedItems.Count;
+        StartItem(nextIndex);
+        lastTick = DateTime.UtcNow;
+        StateHasChanged();
+    }
+
+    private void PreviousItem()
+    {
+        if (orderedItems.Count == 0) return;
+        int prevIndex = (currentIndex - 1 + orderedItems.Count) % orderedItems.Count;
+        StartItem(prevIndex);
+        lastTick = DateTime.UtcNow;
+        StateHasChanged();
+    }
+
+    private void TogglePause()
+    {
+        isPaused = !isPaused;
+        lastTick = DateTime.UtcNow;
+    }
+
+    private void OnVideoEnded()
+    {
+        // Advance immediately if it's a video and it finished
+        // (Assuming the timer hasn't already advanced it)
+        if (currentItem?.ContentItem.Type == ContentType.Video)
+        {
+            NextItem();
+        }
+    }
+
+    public void Dispose()
+    {
+        timer?.Stop();
+        timer?.Dispose();
+    }
+}

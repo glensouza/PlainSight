@@ -105,9 +105,12 @@ else
                         <small class="text-muted">
                             Created: @playlist.CreatedAt.ToString("yyyy-MM-dd HH:mm")
                         </small>
-                        <div class="mt-2">
+                        <div class="mt-2 d-flex gap-2">
                             <button class="btn btn-sm btn-primary" @onclick="() => ManagePlaylistItems(playlist.Id)">
                                 <i class="bi bi-list"></i> Manage Content
+                            </button>
+                            <button class="btn btn-sm btn-outline-info" @onclick="() => PreviewPlaylist(playlist.Id)">
+                                <i class="bi bi-play-circle"></i> Preview
                             </button>
                         </div>
                     </div>
@@ -115,6 +118,11 @@ else
             </div>
         }
     </div>
+}
+
+@if (isPreviewing && selectedPlaylist != null)
+{
+    <PlaylistPreviewDialog Playlist="selectedPlaylist" OnClose="ClosePreview" />
 }
 
 @if (managingPlaylistId.HasValue && selectedPlaylist != null)
@@ -228,6 +236,7 @@ else
     private Playlist? selectedPlaylist;
     private bool isAddingItem;
     private bool isReordering;
+    private bool isPreviewing;
 
     protected override async Task OnInitializedAsync()
     {
@@ -382,6 +391,21 @@ else
         }
     }
 
+    private void PreviewPlaylist(int playlistId)
+    {
+        selectedPlaylist = playlists?.FirstOrDefault(p => p.Id == playlistId);
+        if (selectedPlaylist != null)
+        {
+            isPreviewing = true;
+        }
+    }
+
+    private void ClosePreview()
+    {
+        isPreviewing = false;
+        selectedPlaylist = null;
+    }
+
     private async Task AddToPlaylist(int contentItemId)
     {
         if (!managingPlaylistId.HasValue) return;
@@ -487,7 +511,7 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             PlaylistItem? item = await context.PlaylistItems
                 .Include(i => i.Playlist)
                 .FirstOrDefaultAsync(i => i.Id == playlistItemId);

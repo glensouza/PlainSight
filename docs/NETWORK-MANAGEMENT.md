@@ -99,7 +99,7 @@ password=your_local_password
 Add the following line (My Cloud Home requires `vers=3.0`):
 ```bash
 # Mount WD My Cloud Home share
-//<NAS_IP>/<LOCAL_USERNAME> /mnt/plainsight cifs credentials=/etc/plainsight/nas-credentials,iocharset=utf8,rw,file_mode=0777,dir_mode=0777,vers=3.0,nofail 0 0
+//<NAS_IP>/<LOCAL_USERNAME> /mnt/plainsight cifs credentials=/etc/plainsight/nas-credentials,iocharset=utf8,rw,file_mode=0640,dir_mode=0750,uid=plainsight,gid=plainsight,vers=3.0,nofail 0 0
 ```
 
 #### Step C: Mount and Verify
