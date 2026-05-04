@@ -30,7 +30,7 @@ public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, I
                         s.EndTime >= currentTime)
             .ToListAsync(ct);
 
-        if (eligibleSchedules.Any())
+        if (eligibleSchedules.Count != 0)
         {
             // Selection Logic:
             // 1. Specific group takes precedence over "Global"

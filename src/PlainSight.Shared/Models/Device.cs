@@ -4,7 +4,7 @@ namespace PlainSight.Shared.Models;
 
 public class Device
 {
-    public int Id { get; set; }
+    public int Id { get; init; }
     public string DeviceId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string Group { get; set; } = "Default";

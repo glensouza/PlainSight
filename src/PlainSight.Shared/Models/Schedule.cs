@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using System.Text.Json.Serialization;
 
 namespace PlainSight.Shared.Models;
 
@@ -28,7 +27,7 @@ public class Schedule
     public Playlist Playlist { get; init; } = null!;
 
     // If empty, this applies to ALL groups
-    public ICollection<ScheduleTargetGroup> TargetGroups { get; set; } = new List<ScheduleTargetGroup>();
+    public ICollection<ScheduleTargetGroup> TargetGroups { get; set; } = [];
 
     public DayOfWeekFlags DaysOfWeek { get; set; } = DayOfWeekFlags.All;
     public DateOnly? ScheduledDate { get; set; } // If set, this is a one-time event
@@ -41,15 +40,4 @@ public class Schedule
 
     public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
-}
-
-public class ScheduleTargetGroup
-{
-    public int Id { get; init; }
-    public int ScheduleId { get; init; }
-    public string GroupName { get; init; } = string.Empty;
-
-    // Navigation property
-    [JsonIgnore]
-    public Schedule Schedule { get; init; } = null!;
 }
