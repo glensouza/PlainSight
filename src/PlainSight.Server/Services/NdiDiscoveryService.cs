@@ -154,7 +154,9 @@ public class NdiDiscoveryService(
             .ToListAsync(cancellationToken);
 
         if (stale.Count == 0)
+        {
             return;
+        }
 
         // Don't delete sources that are still assigned — keep them so the dashboard can show
         // "(offline)" and operators understand why a device cannot enter auto live-mode.

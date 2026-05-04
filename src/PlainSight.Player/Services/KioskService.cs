@@ -22,7 +22,9 @@ public class KioskService(
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         if (this.chromiumProcess == null)
+        {
             return;
+        }
 
         try
         {
@@ -97,13 +99,22 @@ public class KioskService(
                     RedirectStandardOutput = true,
                     UseShellExecute = false
                 });
-                if (which == null) continue;
+                if (which == null)
+                {
+                    continue;
+                }
+
                 string output = which.StandardOutput.ReadToEnd().Trim();
                 which.WaitForExit();
                 if (!string.IsNullOrEmpty(output))
+                {
                     return candidate;
+                }
             }
-            catch { /* which not available or candidate not found */ }
+            catch
+            {
+                /* which not available or candidate not found */
+            }
         }
         return "chromium-browser";
     }

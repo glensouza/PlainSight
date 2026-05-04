@@ -116,7 +116,9 @@ public class NdiPlayerService(IConfiguration configuration, ILogger<NdiPlayerSer
     private void StopLocked(string reason)
     {
         if (this.viewerProcess == null)
+        {
             return;
+        }
 
         try
         {
@@ -133,9 +135,14 @@ public class NdiPlayerService(IConfiguration configuration, ILogger<NdiPlayerSer
         }
         finally
         {
-            try {
-                this.viewerProcess.Dispose(); }
-            catch (Exception ex) { logger.LogDebug(ex, "Error disposing NDI viewer process"); }
+            try
+            {
+                this.viewerProcess.Dispose();
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Error disposing NDI viewer process");
+            }
 
             this.viewerProcess = null;
             this.activeSource = null;

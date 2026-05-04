@@ -381,7 +381,11 @@ else
                     .Include(s => s.TargetGroups)
                     .FirstOrDefaultAsync(s => s.Id == editingId.Value);
                 
-                if (entity == null) return;
+                if (entity == null)
+                {
+                    return;
+                }
+
 
                 entity.Name = formModel.Name;
                 entity.PlaylistId = formModel.PlaylistId;
@@ -438,7 +442,11 @@ else
 
     private async Task DeleteSchedule()
     {
-        if (deleteTarget == null) return;
+        if (deleteTarget == null)
+        {
+            return;
+        }
+
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
@@ -480,8 +488,12 @@ else
     private string GetDisplayTime()
     {
         string? tzId = Configuration["SystemTimeZone"];
-        if (string.IsNullOrEmpty(tzId)) return DateTime.Now.ToString("HH:mm");
-        
+        if (string.IsNullOrEmpty(tzId))
+        {
+            return DateTime.Now.ToString("HH:mm");
+        }
+
+
         try
         {
             TimeZoneInfo tz = TimeZoneInfo.FindSystemTimeZoneById(tzId);
@@ -495,13 +507,19 @@ else
 
     private static List<string> GetSelectedDays(DayOfWeekFlags days)
     {
-        if (days == DayOfWeekFlags.All) return ["Daily"];
-        
+        if (days == DayOfWeekFlags.All)
+        {
+            return ["Daily"];
+        }
+
         List<string> list = [];
         // ReSharper disable once LoopCanBeConvertedToQuery
         foreach (DayOfWeekFlags day in Enum.GetValues<DayOfWeekFlags>().Where(d => d != DayOfWeekFlags.None && d != DayOfWeekFlags.All))
         {
-            if ((days & day) != 0) list.Add(day.ToString()[..3]);
+            if ((days & day) != 0)
+            {
+                list.Add(day.ToString()[..3]);
+            }
         }
         return list;
     }

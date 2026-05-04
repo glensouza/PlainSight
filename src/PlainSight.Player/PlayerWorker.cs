@@ -45,9 +45,13 @@ public class PlayerWorker(
                         logger.LogInformation("Screenshot requested");
                         byte[] screenshotBytes = await screenshot.CaptureScreenshot();
                         if (screenshotBytes.Length > 0)
+                        {
                             await screenshotUpload.UploadAsync(screenshotBytes, stoppingToken);
+                        }
                         else
+                        {
                             logger.LogWarning("Screenshot capture returned empty result; skipping upload");
+                        }
                     }
 
                     if (response.PlaylistItems != null)
@@ -74,7 +78,10 @@ public class PlayerWorker(
 
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                /* expected during shutdown */
+            }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error in player loop");
@@ -94,7 +101,9 @@ public class PlayerWorker(
         else
         {
             if (ndi.IsRunning)
+            {
                 ndi.Stop("server cleared live mode");
+            }
         }
     }
 

@@ -39,7 +39,9 @@ public static class PlaylistApi
                 .FirstOrDefaultAsync(p => p.Id == playlistId);
 
             if (playlist == null)
+            {
                 return Results.NotFound();
+            }
 
             return Results.Ok(new
             {

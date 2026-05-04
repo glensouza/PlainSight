@@ -195,7 +195,9 @@ public static class DeviceApi
 
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
             if (device == null)
+            {
                 return Results.NotFound();
+            }
 
             // Validate API key — reject if the device has no key yet (not yet registered via heartbeat)
             // or if the provided key does not match.

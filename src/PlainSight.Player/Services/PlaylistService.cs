@@ -53,7 +53,10 @@ public class PlaylistService(string contentPath, string idlePath, ILogger<Playli
 
             logger.LogInformation("Playlists refreshed. Main: {MainCount}, Idle: {IdleCount}", newPlaylist.Count, newIdlePlaylist.Count);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            /* expected during shutdown */
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error refreshing playlists");
@@ -119,8 +122,15 @@ public class PlaylistService(string contentPath, string idlePath, ILogger<Playli
 
     private static bool IsValidFilename(string filename)
     {
-        if (string.IsNullOrWhiteSpace(filename)) return false;
-        if (filename.Contains("..") || filename.Contains('/') || filename.Contains('\\')) return false;
+        if (string.IsNullOrWhiteSpace(filename))
+        {
+            return false;
+        }
+
+        if (filename.Contains("..") || filename.Contains('/') || filename.Contains('\\'))
+        {
+            return false;
+        }
         char[] invalid = Path.GetInvalidFileNameChars();
         return !filename.Any(c => invalid.Contains(c));
     }

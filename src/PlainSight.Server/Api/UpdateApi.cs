@@ -17,7 +17,9 @@ public static class UpdateApi
                 .FirstOrDefaultAsync(v => v.VersionNumber == version, ct);
 
             if (record == null)
+            {
                 return Results.NotFound();
+            }
 
             string updatesPath = configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
             string filePath = Path.Combine(updatesPath, record.FileName);

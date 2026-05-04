@@ -31,11 +31,15 @@ public static class NdiApi
             ILogger logger = loggerFactory.CreateLogger("NdiApi");
 
             if (string.IsNullOrWhiteSpace(dto.ServiceName))
+            {
                 return Results.BadRequest("ServiceName is required.");
+            }
 
             bool exists = await context.NdiSources.AnyAsync(s => s.ServiceName == dto.ServiceName.Trim(), ct);
             if (exists)
+            {
                 return Results.Conflict("An NDI source with that name already exists.");
+            }
 
             DateTime now = DateTime.UtcNow;
             NdiSource source = new()
@@ -66,7 +70,9 @@ public static class NdiApi
 
             NdiSource? source = await context.NdiSources.FindAsync([id], ct);
             if (source == null)
+            {
                 return Results.NotFound();
+            }
 
             context.NdiSources.Remove(source);
             await context.SaveChangesAsync(ct);
@@ -82,7 +88,9 @@ public static class NdiApi
         {
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
             if (device == null)
+            {
                 return Results.NotFound();
+            }
 
             return Results.Ok(new DeviceLiveConfigDto(
                 device.NdiAutoSwitch,
@@ -100,14 +108,18 @@ public static class NdiApi
             ILogger logger = loggerFactory.CreateLogger("NdiApi");
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
             if (device == null)
+            {
                 return Results.NotFound();
+            }
 
             if (dto.AssignedNdiSourceId.HasValue)
             {
                 bool sourceExists = await context.NdiSources
                     .AnyAsync(s => s.Id == dto.AssignedNdiSourceId.Value, ct);
                 if (!sourceExists)
+                {
                     return Results.BadRequest("Assigned NDI source not found.");
+                }
             }
 
             device.NdiAutoSwitch = dto.NdiAutoSwitch;

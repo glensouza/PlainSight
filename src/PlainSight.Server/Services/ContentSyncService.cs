@@ -85,7 +85,9 @@ public class ContentSyncService(
         }
 
         if (added > 0 || removed > 0)
+        {
             await context.SaveChangesAsync(cancellationToken);
+        }
 
         return (added, removed);
     }

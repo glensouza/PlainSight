@@ -14,11 +14,15 @@ public class VersionService(PlainSightDbContext context, ILogger<VersionService>
 
         DeviceGroupVersion? exact = assignments.FirstOrDefault(g => g.GroupName == deviceGroup);
         if (exact != null)
+        {
             return exact.TargetVersion;
+        }
 
         DeviceGroupVersion? fallback = assignments.FirstOrDefault(g => g.GroupName == "Default");
         if (fallback != null)
+        {
             return fallback.TargetVersion;
+        }
 
         logger.LogWarning("No version assignment found for group {Group} or Default — using 1.0.0", deviceGroup);
         return "1.0.0";

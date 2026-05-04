@@ -537,7 +537,10 @@ else
 
     private async Task PerformRename()
     {
-        if (renamingItem == null && renamingIdleFileName == null) return;
+        if (renamingItem == null && renamingIdleFileName == null)
+        {
+            return;
+        }
 
         if (renamingItem != null)
         {
@@ -551,12 +554,19 @@ else
 
     private async Task PerformMainRename()
     {
-        if (renamingItem == null) return;
+        if (renamingItem == null)
+        {
+            return;
+        }
+
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             ContentItem? item = await context.ContentItems.FindAsync(renamingItem.Id);
-            if (item == null) return;
+            if (item == null)
+            {
+                return;
+            }
 
             string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
             string oldFileName = item.FileName;
@@ -601,7 +611,11 @@ else
 
     private async Task PerformIdleRename()
     {
-        if (renamingIdleFileName == null) return;
+        if (renamingIdleFileName == null)
+        {
+            return;
+        }
+
         try
         {
             string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
@@ -699,7 +713,11 @@ else
 
     private async Task UploadFile()
     {
-        if (selectedFile == null) return;
+        if (selectedFile == null)
+        {
+            return;
+        }
+
 
         uploading = true;
         uploadError = null;
@@ -772,7 +790,11 @@ else
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(renderUrl)) return Task.CompletedTask;
+            if (string.IsNullOrWhiteSpace(renderUrl))
+            {
+                return Task.CompletedTask;
+            }
+
 
             renderSubmitError = null;
             try
@@ -802,7 +824,9 @@ else
                 renderUrl = "";
 
                 if (!isPolling)
+                {
                     _ = PollAllJobsAsync();
+                }
             }
             catch (Exception ex)
             {
@@ -820,7 +844,11 @@ else
 
     private async Task PollAllJobsAsync()
     {
-        if (isPolling) return;
+        if (isPolling)
+        {
+            return;
+        }
+
         isPolling = true;
         try
         {
@@ -832,12 +860,17 @@ else
                 foreach (RenderJobState jobState in renderJobs.Where(j => j.Status is "Queued" or "Processing").ToList())
                 {
                     RenderJob? job = RenderQueue.GetJob(jobState.JobId);
-                    if (job == null) continue;
+                    if (job == null)
+                    {
+                        continue;
+                    }
 
                     jobState.Status = job.Status.ToString();
                     jobState.Error = job.Error;
                     if (job.Status is RenderJobStatus.Done or RenderJobStatus.Failed)
+                    {
                         anyFinished = true;
+                    }
                 }
 
                 if (anyFinished)
@@ -847,7 +880,10 @@ else
                 StateHasChanged();
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            /* expected during shutdown */
+        }
         finally
         {
             isPolling = false;
@@ -866,7 +902,9 @@ else
                 string filePath = Path.Combine(contentPath, item.FileName);
                 
                 if (File.Exists(filePath))
+                {
                     File.Delete(filePath);
+                }
 
                 context.ContentItems.Remove(item);
                 await context.SaveChangesAsync();
@@ -920,7 +958,11 @@ else
 
     private async Task UploadIdleFile()
     {
-        if (selectedIdleFile == null) return;
+        if (selectedIdleFile == null)
+        {
+            return;
+        }
+
 
         uploadingIdle = true;
         idleUploadError = null;

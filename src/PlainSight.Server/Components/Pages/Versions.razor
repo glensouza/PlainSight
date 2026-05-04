@@ -338,7 +338,11 @@
 
     private async Task AddGroup()
     {
-        if (string.IsNullOrWhiteSpace(newGroupName) || groups == null) return;
+        if (string.IsNullOrWhiteSpace(newGroupName) || groups == null)
+        {
+            return;
+        }
+
 
         string defaultVersion = groups.FirstOrDefault(g => g.GroupName == "Default")?.TargetVersion
                                ?? versions?.FirstOrDefault()?.VersionNumber
@@ -350,8 +354,12 @@
 
     private async Task DeleteGroup(string groupName)
     {
-        if (groupName == "Default") return;
-        
+        if (groupName == "Default")
+        {
+            return;
+        }
+
+
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();

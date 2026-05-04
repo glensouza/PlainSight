@@ -461,7 +461,11 @@ else
 
     private IEnumerable<Device> FilteredDevices()
     {
-        if (devices == null) return [];
+        if (devices == null)
+        {
+            return [];
+        }
+
         return statusFilter switch
         {
             "online"  => devices.Where(d => GetStatusKey(d.LastSeen) == "online"),
@@ -588,13 +592,21 @@ else
 
     private async Task SaveLiveMode()
     {
-        if (liveModeDevice == null) return;
+        if (liveModeDevice == null)
+        {
+            return;
+        }
+
         isSavingLiveMode = true;
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == liveModeDevice.DeviceId);
-            if (device == null) return;
+            if (device == null)
+            {
+                return;
+            }
+
 
             device.NdiAutoSwitch = liveModeAutoSwitch;
             device.AssignedNdiSourceId = int.TryParse(liveModeSourceId, out int parsedSourceId) ? parsedSourceId : null;
@@ -734,28 +746,48 @@ else
     private void ToggleSelectAllVisible()
     {
         List<Device> visible = FilteredDevices().ToList();
-        if (visible.Count == 0) return;
+        if (visible.Count == 0)
+        {
+            return;
+        }
+
         if (visible.All(d => selectedDeviceIds.Contains(d.DeviceId)))
         {
-            foreach (Device d in visible) selectedDeviceIds.Remove(d.DeviceId);
+            foreach (Device d in visible)
+            {
+                selectedDeviceIds.Remove(d.DeviceId);
+            }
         }
         else
         {
-            foreach (Device d in visible) selectedDeviceIds.Add(d.DeviceId);
+            foreach (Device d in visible)
+            {
+                selectedDeviceIds.Add(d.DeviceId);
+            }
         }
     }
 
     private void ToggleDevice(string deviceId, bool value)
     {
-        if (value) selectedDeviceIds.Add(deviceId);
-        else       selectedDeviceIds.Remove(deviceId);
+        if (value)
+        {
+            selectedDeviceIds.Add(deviceId);
+        }
+        else
+        {
+            selectedDeviceIds.Remove(deviceId);
+        }
     }
 
     private void ClearSelection() => selectedDeviceIds.Clear();
 
     private async Task BulkScreenshot()
     {
-        if (selectedDeviceIds.Count == 0) return;
+        if (selectedDeviceIds.Count == 0)
+        {
+            return;
+        }
+
         isBulkScreenshotting = true;
         try
         {
@@ -788,7 +820,11 @@ else
 
     private async Task BulkMoveGroup()
     {
-        if (selectedDeviceIds.Count == 0 || string.IsNullOrEmpty(bulkGroupSelection)) return;
+        if (selectedDeviceIds.Count == 0 || string.IsNullOrEmpty(bulkGroupSelection))
+        {
+            return;
+        }
+
         isBulkMovingGroup = true;
         try
         {
@@ -797,7 +833,10 @@ else
                 .Where(d => selectedDeviceIds.Contains(d.DeviceId))
                 .ToListAsync();
 
-            foreach (Device d in targetDevices) d.Group = bulkGroupSelection;
+            foreach (Device d in targetDevices)
+            {
+                d.Group = bulkGroupSelection;
+            }
             await context.SaveChangesAsync();
 
             bulkResultMessage = $"Moved {targetDevices.Count} device(s) to group '{bulkGroupSelection}'.";
@@ -821,7 +860,11 @@ else
 
     private async Task BulkAssignVersion()
     {
-        if (string.IsNullOrEmpty(bulkVersionGroup) || string.IsNullOrEmpty(bulkVersionSelection)) return;
+        if (string.IsNullOrEmpty(bulkVersionGroup) || string.IsNullOrEmpty(bulkVersionSelection))
+        {
+            return;
+        }
+
         isBulkAssigningVersion = true;
         try
         {

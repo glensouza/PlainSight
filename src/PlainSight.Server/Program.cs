@@ -224,6 +224,8 @@ static string GenerateInitialPassword()
     System.Security.Cryptography.RandomNumberGenerator.Fill(randomBytes);
     char[] result = new char[14];
     for (int i = 0; i < 14; i++)
+    {
         result[i] = chars[randomBytes[i] % chars.Length];
+    }
     return new string(result);
 }
