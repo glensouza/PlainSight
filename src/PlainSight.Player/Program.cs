@@ -149,4 +149,5 @@ app.MapPost("/api/player/now-playing", async (HttpContext ctx, PlaylistService p
 
 await app.RunAsync();
 
-internal abstract record NowPlayingRequest(string? Filename);
+// ReSharper disable once ClassNeverInstantiated.Global
+internal record NowPlayingRequest(string? Filename);

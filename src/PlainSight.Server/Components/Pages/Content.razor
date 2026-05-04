@@ -4,6 +4,7 @@
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject ContentSyncService ContentSyncService
 @inject MediaMetadataService MediaMetadataService
+@inject VideoProcessorService VideoProcessorService
 @inject RenderQueue RenderQueue
 @inject IConfiguration Configuration
 @inject ILogger<Content> Logger
@@ -206,6 +207,12 @@ else
                                 <button class="btn btn-outline-primary" @onclick="() => PreviewContent(item)" title="Preview">
                                     <i class="bi bi-eye"></i>
                                 </button>
+                                @if (item.Type != ContentType.Image)
+                                {
+                                    <button class="btn btn-outline-info" @onclick="() => StartProcessing(item)" title="Process Video">
+                                        <i class="bi bi-gear"></i>
+                                    </button>
+                                }
                                 <button class="btn btn-outline-secondary" @onclick="() => StartRename(item)" title="Rename">
                                     <i class="bi bi-pencil"></i>
                                 </button>
@@ -221,136 +228,13 @@ else
     </div>
 }
 
-<hr class="my-5" />
-
-<div class="page-header d-flex align-items-center justify-content-between mt-4">
-    <div>
-        <h2 class="h3">Idle Content Library</h2>
-        <p class="text-muted mb-0">Manage files played when no schedules are active (fallback content)</p>
-    </div>
-    <button class="btn btn-sm btn-outline-secondary" @onclick="LoadIdleContent">
-        <i class="bi bi-arrow-repeat"></i>
-        <span> Refresh folder</span>
-    </button>
-</div>
-
-<div class="row mb-4 mt-3">
-    <div class="col-md-12">
-        <div class="card border-info">
-            <div class="card-header bg-info bg-opacity-10 text-info">
-                <h5 class="mb-0 fs-6"><i class="bi bi-cloud-upload"></i> Upload Idle Content</h5>
-            </div>
-            <div class="card-body">
-                <div class="row align-items-end">
-                    <div class="col-md-8">
-                        <label class="form-label small fw-bold">Select Video or Image</label>
-                        <InputFile class="form-control form-control-sm" accept="video/*,image/*" OnChange="HandleIdleFileSelected" />
-                        <small class="text-muted">Will be played in alphabetical order — max 500 MB</small>
-                    </div>
-                    <div class="col-md-4">
-                        @if (idleUploadError != null)
-                        {
-                            <div class="alert alert-danger py-1 px-2 mb-2 small">
-                                <i class="bi bi-exclamation-triangle"></i> @idleUploadError
-                            </div>
-                        }
-                        <button class="btn btn-info text-white w-100 btn-sm" @onclick="UploadIdleFile" disabled="@(uploadingIdle || selectedIdleFile == null)">
-                            @if (uploadingIdle)
-                            {
-                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                                <span>Uploading...</span>
-                            }
-                            else
-                            {
-                                <i class="bi bi-upload"></i>
-                                <span>Upload to Idle Folder</span>
-                            }
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-@if (idleFiles == null)
+@if (renamingItem != null)
 {
-    <p><em>Loading idle library...</em></p>
-}
-else if (!idleFiles.Any())
-{
-    <div class="alert alert-light border shadow-sm">
-        <i class="bi bi-info-circle"></i> No idle content found. Upload branded videos or images to ensure screens are never blank.
-    </div>
-}
-else
-{
-    <div class="table-responsive">
-        <table class="table table-sm table-hover border">
-            <thead class="table-light">
-                <tr>
-                    <th>File Name</th>
-                    <th>Size</th>
-                    <th>Last Modified</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (FileInfo file in idleFiles)
-                {
-                    <tr>
-                        <td><code>@file.Name</code></td>
-                        <td>@FormatFileSize(file.Length)</td>
-                        <td>@file.LastWriteTime.ToString("yyyy-MM-dd HH:mm")</td>
-                        <td>
-                            <div class="btn-group btn-group-sm">
-                                <button class="btn btn-outline-primary" @onclick="() => PreviewIdleContent(file.Name)" title="Preview">
-                                    <i class="bi bi-eye"></i>
-                                </button>
-                                <button class="btn btn-outline-secondary" @onclick="() => StartIdleRename(file.Name)" title="Rename">
-                                    <i class="bi bi-pencil"></i>
-                                </button>
-                                <button class="btn btn-outline-danger" @onclick="() => idleFileToDelete = file.Name" title="Delete">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-}
-
-@if (idleFileToDelete != null)
-{
-    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
-        <div class="modal-dialog shadow-lg">
-            <div class="modal-content border-danger">
-                <div class="modal-header bg-danger text-white py-2">
-                    <h5 class="modal-title fs-6">Confirm Delete Idle File</h5>
-                    <button type="button" class="btn-close btn-close-white" @onclick="() => idleFileToDelete = null"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="mb-0">Are you sure you want to delete <strong>@idleFileToDelete</strong> from the idle folder?</p>
-                </div>
-                <div class="modal-footer py-1">
-                    <button type="button" class="btn btn-sm btn-secondary" @onclick="() => idleFileToDelete = null">Cancel</button>
-                    <button type="button" class="btn btn-sm btn-danger" @onclick="() => DeleteIdleFile(idleFileToDelete)">Delete Permanently</button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
-
-@if (renamingItem != null || renamingIdleFileName != null)
-{
-    string modalTitle = renamingItem != null ? "Rename Content" : "Rename Idle File";
     <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">@modalTitle</h5>
+                    <h5 class="modal-title">Rename Content</h5>
                     <button type="button" class="btn-close" @onclick="CancelRename"></button>
                 </div>
                 <div class="modal-body">
@@ -366,12 +250,7 @@ else
                     <div class="mb-3">
                         <label class="form-label">Duration (seconds)</label>
                         @{
-                            bool isVideo = renamingItem?.Type == ContentType.Video || 
-                                           (renamingIdleFileName != null && (renamingIdleFileName.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) || 
-                                                                             renamingIdleFileName.EndsWith(".webm", StringComparison.OrdinalIgnoreCase) || 
-                                                                             renamingIdleFileName.EndsWith(".mov", StringComparison.OrdinalIgnoreCase) || 
-                                                                             renamingIdleFileName.EndsWith(".avi", StringComparison.OrdinalIgnoreCase) || 
-                                                                             renamingIdleFileName.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase)));
+                            bool isVideo = renamingItem.Type == ContentType.Video;
                         }
                         <input type="number" class="form-control" @bind="newDuration" min="1" max="3600" readonly="@isVideo" disabled="@isVideo" />
                         @if (isVideo)
@@ -387,6 +266,50 @@ else
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" @onclick="CancelRename">Cancel</button>
                     <button type="button" class="btn btn-primary" @onclick="PerformRename">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (processingItem != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Process Video: @processingItem.Name</h5>
+                    <button type="button" class="btn-close" @onclick="() => processingItem = null"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Choose options to modify this video file. This will replace the existing file.</p>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="procStripAudio" @bind="stripAudio" />
+                            <label class="form-check-label" for="procStripAudio">
+                                Strip Audio
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="procCompressVideo" @bind="compressVideo" />
+                            <label class="form-check-label" for="procCompressVideo">
+                                Smaller File Size (Compression)
+                            </label>
+                        </div>
+                    </div>
+                    @if (isProcessingExisting)
+                    {
+                        <div class="alert alert-info py-2">
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                            Processing video... please wait.
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="() => processingItem = null" disabled="@isProcessingExisting">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="PerformProcessing" disabled="@(isProcessingExisting || (!stripAudio && !compressVideo))">
+                        Process and Replace
+                    </button>
                 </div>
             </div>
         </div>
@@ -415,13 +338,13 @@ else
     </div>
 }
 
-@if (previewItem != null || previewIdleFileName != null)
+@if (previewItem != null)
 {
-    string previewName = previewItem?.Name ?? previewIdleFileName ?? "";
-    string previewFileName = previewItem?.FileName ?? previewIdleFileName ?? "";
-    string apiPath = previewItem != null ? $"/api/content/file/{previewFileName}" : $"/api/content/idle/{previewFileName}";
-    bool isImage = previewItem?.Type == ContentType.Image || (previewIdleFileName != null && (previewIdleFileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || previewIdleFileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || previewIdleFileName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase)));
-    long fileSize = previewItem?.FileSizeBytes ?? (previewIdleFileName != null && idleFiles != null ? idleFiles.FirstOrDefault(f => f.Name == previewIdleFileName)?.Length ?? 0 : 0);
+    string previewName = previewItem.Name;
+    string previewFileName = previewItem.FileName;
+    string apiPath = $"/api/content/file/{previewFileName}";
+    bool isImage = previewItem.Type == ContentType.Image;
+    long fileSize = previewItem.FileSizeBytes;
 
     <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.8);">
         <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -462,14 +385,12 @@ else
     }
 
     private List<ContentItem>? contentItems;
-    private List<FileInfo>? idleFiles;
     private bool uploading;
-    private bool uploadingIdle;
     private bool syncing;
     private IBrowserFile? selectedFile;
-    private IBrowserFile? selectedIdleFile;
+    private bool stripAudio;
+    private bool compressVideo;
     private string? uploadError;
-    private string? idleUploadError;
     private string renderUrl = "";
     private int renderDuration = 30;
     private string? renderSubmitError;
@@ -477,82 +398,117 @@ else
     private readonly List<RenderJobState> renderJobs = [];
     private bool isPolling;
     private ContentItem? previewItem;
-    private string? previewIdleFileName;
+    private ContentItem? processingItem;
+    private bool isProcessingExisting;
     private ContentItem? renamingItem;
-    private string? renamingIdleFileName;
     private string newName = "";
     private string newFileName = "";
     private int newDuration = 10;
     private ContentItem? itemToDelete;
-    private string? idleFileToDelete;
     private readonly CancellationTokenSource cts = new();
 
     protected override async Task OnInitializedAsync()
     {
         await RunSync();
-        await LoadIdleContent();
     }
 
     private void PreviewContent(ContentItem item)
     {
         previewItem = item;
-        previewIdleFileName = null;
-    }
-
-    private void PreviewIdleContent(string fileName)
-    {
-        previewIdleFileName = fileName;
-        previewItem = null;
     }
 
     private void ClosePreview()
     {
         previewItem = null;
-        previewIdleFileName = null;
+    }
+
+    private void StartProcessing(ContentItem item)
+    {
+        processingItem = item;
+        stripAudio = false;
+        compressVideo = false;
+    }
+
+    private async Task PerformProcessing()
+    {
+        if (processingItem == null || (!stripAudio && !compressVideo))
+        {
+            return;
+        }
+
+        isProcessingExisting = true;
+        try
+        {
+            string folderPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+            
+            string oldFileName = processingItem.FileName;
+            string filePath = Path.Combine(folderPath, oldFileName);
+            
+            // Generate a unique temporary path for processing
+            string tempFileName = $"{Guid.NewGuid():N}.tmp.mp4";
+            string tempPath = Path.Combine(folderPath, tempFileName);
+
+            if (!File.Exists(filePath))
+            {
+                Logger.LogError("Video file not found for processing: {FilePath}", filePath);
+                return;
+            }
+
+            // Process the video to the temp MP4 file
+            await VideoProcessorService.ProcessVideoAsync(filePath, tempPath, stripAudio, compressVideo, cts.Token);
+
+            // Determine the target file name (ensure it ends with .mp4 since we processed to MP4)
+            string targetFileName = Path.ChangeExtension(oldFileName, ".mp4");
+            string targetPath = Path.Combine(folderPath, targetFileName);
+
+            // Clean up: delete original if it's different from target, then replace target with temp
+            if (File.Exists(filePath)) File.Delete(filePath);
+            if (File.Exists(targetPath) && targetPath != filePath) File.Delete(targetPath);
+            
+            File.Move(tempPath, targetPath);
+
+            // Update database metadata
+            int newDuration = await MediaMetadataService.GetVideoDurationAsync(targetPath);
+            long newSize = new FileInfo(targetPath).Length;
+
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            ContentItem? dbItem = await context.ContentItems.FindAsync(processingItem.Id);
+            if (dbItem != null)
+            {
+                dbItem.FileName = targetFileName;
+                dbItem.DurationSeconds = newDuration;
+                dbItem.FileSizeBytes = newSize;
+                await context.SaveChangesAsync();
+            }
+            await LoadContent();
+
+            processingItem = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error processing existing video");
+            uploadError = "Processing failed: " + ex.Message;
+        }
+        finally
+        {
+            isProcessingExisting = false;
+        }
     }
 
     private void StartRename(ContentItem item)
     {
         renamingItem = item;
-        renamingIdleFileName = null;
         newName = item.Name;
         newFileName = Path.GetFileNameWithoutExtension(item.FileName);
         newDuration = item.DurationSeconds;
     }
 
-    private void StartIdleRename(string fileName)
-    {
-        renamingIdleFileName = fileName;
-        renamingItem = null;
-        newName = ""; // Not used for idle
-        newFileName = Path.GetFileNameWithoutExtension(fileName);
-        newDuration = 10;
-    }
-
     private void CancelRename()
     {
         renamingItem = null;
-        renamingIdleFileName = null;
     }
 
     private async Task PerformRename()
-    {
-        if (renamingItem == null && renamingIdleFileName == null)
-        {
-            return;
-        }
-
-        if (renamingItem != null)
-        {
-            await PerformMainRename();
-        }
-        else
-        {
-            await PerformIdleRename();
-        }
-    }
-
-    private async Task PerformMainRename()
     {
         if (renamingItem == null)
         {
@@ -606,51 +562,6 @@ else
         {
             Logger.LogError(ex, "Error renaming content");
             uploadError = ex.Message;
-        }
-    }
-
-    private async Task PerformIdleRename()
-    {
-        if (renamingIdleFileName == null)
-        {
-            return;
-        }
-
-        try
-        {
-            string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
-            string oldFileName = renamingIdleFileName;
-            string sanitizedInput = Path.GetFileName(newFileName);
-            string oldExt = Path.GetExtension(oldFileName);
-            string updatedFileName = sanitizedInput;
-            if (!updatedFileName.EndsWith(oldExt, StringComparison.OrdinalIgnoreCase))
-            {
-                updatedFileName += oldExt;
-            }
-
-            if (updatedFileName != oldFileName)
-            {
-                string oldPath = Path.Combine(idlePath, oldFileName);
-                string newPath = Path.Combine(idlePath, updatedFileName);
-
-                if (File.Exists(oldPath))
-                {
-                    if (File.Exists(newPath))
-                    {
-                        idleUploadError = "A file with that name already exists in the idle folder";
-                        return;
-                    }
-                    File.Move(oldPath, newPath);
-                }
-            }
-
-            renamingIdleFileName = null;
-            await LoadIdleContent();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error renaming idle content");
-            idleUploadError = ex.Message;
         }
     }
 
@@ -742,6 +653,7 @@ else
                 : ContentType.Image;
 
             int duration = 10;
+            long finalSize = selectedFile.Size;
             if (contentType == ContentType.Video)
             {
                 duration = await MediaMetadataService.GetVideoDurationAsync(filePath);
@@ -757,7 +669,7 @@ else
                     Name = Path.GetFileNameWithoutExtension(safeOriginalName),
                     FileName = fileName,
                     Type = contentType,
-                    FileSizeBytes = selectedFile.Size,
+                    FileSizeBytes = finalSize,
                     DurationSeconds = duration,
                     UploadedAt = DateTime.UtcNow
                 };
@@ -767,7 +679,7 @@ else
             {
                 contentItem.Name = Path.GetFileNameWithoutExtension(safeOriginalName);
                 contentItem.Type = contentType;
-                contentItem.FileSizeBytes = selectedFile.Size;
+                contentItem.FileSizeBytes = finalSize;
                 contentItem.DurationSeconds = duration;
             }
 
@@ -916,110 +828,6 @@ else
         {
             Logger.LogError(ex, "Error deleting content");
             uploadError = ex.Message;
-        }
-    }
-
-    private Task LoadIdleContent()
-    {
-        try
-        {
-            try
-            {
-                string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
-                if (!Directory.Exists(idlePath))
-                {
-                    Directory.CreateDirectory(idlePath);
-                }
-
-                idleFiles = new DirectoryInfo(idlePath)
-                    .GetFiles()
-                    .OrderBy(f => f.Name)
-                    .ToList();
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError(ex, "Error loading idle content");
-                idleFiles = [];
-            }
-
-            return Task.CompletedTask;
-        }
-        catch (Exception exception)
-        {
-            return Task.FromException(exception);
-        }
-    }
-
-    private void HandleIdleFileSelected(InputFileChangeEventArgs e)
-    {
-        selectedIdleFile = e.File;
-        idleUploadError = null;
-    }
-
-    private async Task UploadIdleFile()
-    {
-        if (selectedIdleFile == null)
-        {
-            return;
-        }
-
-
-        uploadingIdle = true;
-        idleUploadError = null;
-        try
-        {
-            const long maxAllowedSize = 512L * 1024 * 1024;
-            string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
-            Directory.CreateDirectory(idlePath);
-
-            string safeOriginalName = Path.GetFileName(selectedIdleFile.Name);
-            string filePath = Path.Combine(idlePath, safeOriginalName);
-
-            if (File.Exists(filePath))
-            {
-                idleUploadError = "A file with this name already exists in the idle folder.";
-                return;
-            }
-
-            await using (Stream stream = selectedIdleFile.OpenReadStream(maxAllowedSize))
-            await using (FileStream fileStream = new(filePath, FileMode.Create))
-            {
-                await stream.CopyToAsync(fileStream);
-            }
-
-            selectedIdleFile = null;
-            await LoadIdleContent();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error uploading idle file");
-            idleUploadError = ex.Message;
-        }
-        finally
-        {
-            uploadingIdle = false;
-        }
-    }
-
-    private async Task DeleteIdleFile(string fileName)
-    {
-        try
-        {
-            string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
-            string filePath = Path.Combine(idlePath, fileName);
-
-            if (File.Exists(filePath))
-            {
-                File.Delete(filePath);
-            }
-
-            idleFileToDelete = null;
-            await LoadIdleContent();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error deleting idle content");
-            idleUploadError = ex.Message;
         }
     }
 
