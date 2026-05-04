@@ -1,7 +1,10 @@
+using System;
+using System.Threading;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using PlainSight.Server.Data;
-using PlainSight.Shared.Models;
+using Microsoft.Extensions.Logging;
+using PlainSight.Server.Services.Versioning;
 
 namespace PlainSight.Server.Api;
 
@@ -9,11 +12,26 @@ public static class VersionApi
 {
     public static RouteGroupBuilder MapVersionApi(this IEndpointRouteBuilder routes)
     {
-        RouteGroupBuilder group = routes.MapGroup("/api/versions");
+        RouteGroupBuilder group = routes.MapGroup("/api/versions").RequireAuthorization();
 
-        // Note: All version management (upload, delete, assignment) is now handled 
-        // directly in Versions.razor via database and service access.
-        // There are currently no player-facing endpoints in this group.
+        // Manual refresh for external callers/scripts (curl, CI, etc.). UI uses reconciler directly via DI.
+        group.MapPost("/refresh", async (
+            [FromServices] IPlayerVersionReconciler reconciler,
+            [FromServices] ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            ILogger logger = loggerFactory.CreateLogger("VersionApi");
+            try
+            {
+                int count = await reconciler.ReconcileAsync(ct);
+                return Results.Ok(new { ingested = count });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Reconciler threw an exception during manual refresh.");
+                return Results.StatusCode(503);
+            }
+        });
 
         return group;
     }

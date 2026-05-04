@@ -48,30 +48,7 @@ public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, I
                 .FirstOrDefault();
         }
 
-        // 2. Fallback to the group's default playlist
-        DeviceGroupVersion? groupConfig = await context.DeviceGroupVersions
-            .Include(g => g.DefaultPlaylist!)
-            .ThenInclude(p => p.Items)
-            .ThenInclude(i => i.ContentItem)
-            .FirstOrDefaultAsync(g => g.GroupName == deviceGroup, ct);
-
-        if (groupConfig?.DefaultPlaylist != null)
-        {
-            return groupConfig.DefaultPlaylist;
-        }
-
-        // 3. Last resort fallback: "Default" group's playlist if current group isn't "Default"
-        if (deviceGroup != "Default")
-        {
-            DeviceGroupVersion? defaultConfig = await context.DeviceGroupVersions
-                .Include(g => g.DefaultPlaylist!)
-                .ThenInclude(p => p.Items)
-                .ThenInclude(i => i.ContentItem)
-                .FirstOrDefaultAsync(g => g.GroupName == "Default", ct);
-            
-            return defaultConfig?.DefaultPlaylist;
-        }
-
+        // No schedule matches — the Player handles null as "no playlist → idle state"
         return null;
     }
 

@@ -7,6 +7,7 @@ using PlainSight.Server.Api;
 using PlainSight.Server.Components;
 using PlainSight.Server.Data;
 using PlainSight.Server.Services;
+using PlainSight.Server.Services.Versioning;
 
 // CLI utility: print a bcrypt hash for use in initial setup
 if (args.Contains("--hash-password"))
@@ -62,6 +63,14 @@ builder.Services.AddHostedService<RenderWorkerService>();
 builder.Services.AddScoped<ContentSyncService>();
 builder.Services.AddHostedService<ContentSyncWorkerService>();
 builder.Services.AddScoped<VersionService>();
+builder.Services.AddSingleton<SignatureVerifier>(sp =>
+{
+    IConfiguration config = sp.GetRequiredService<IConfiguration>();
+    string publicKeyPath = config["PublicKeyPath"] ?? Path.Combine(AppContext.BaseDirectory, "Keys", "release-signing.pub");
+    return new SignatureVerifier(publicKeyPath);
+});
+builder.Services.AddScoped<IPlayerVersionReconciler, ManifestReconciler>();
+builder.Services.AddHostedService<ReconciliationBackgroundService>();
 builder.Services.AddScoped<ScheduleService>();
 builder.Services.AddHostedService<AutoScreenshotService>();
 builder.Services.AddHostedService<DeviceMonitorService>();
@@ -186,6 +195,16 @@ using (IServiceScope scope = app.Services.CreateScope())
                 startupLogger.LogError(ex, "Failed to create storage directory: {Path}", path);
             }
         }
+    }
+
+    // Check for release signing public key
+    string publicKeyPath = config["PublicKeyPath"] ?? Path.Combine(AppContext.BaseDirectory, "Keys", "release-signing.pub");
+    if (!File.Exists(publicKeyPath))
+    {
+        startupLogger.LogWarning(
+            "Release signing public key not found at {Path}. " +
+            "Player version ingestion will be disabled until a keypair is generated and the public key is provided.",
+            publicKeyPath);
     }
 }
 
