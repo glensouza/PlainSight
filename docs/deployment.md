@@ -55,7 +55,28 @@ openssl rand -base64 32
 - Change default credentials immediately in production
 - Store passwords securely (e.g., password manager)
 
-### 3. Start the Services
+### 3. Generate Release Signing Keys
+
+To enable automatic player version updates, PlainSight uses ECDSA P-256 signatures to verify that binaries downloaded by the player are authentic. If the public key is not provided, the server will log a warning at startup and player updates will be disabled.
+
+**Generate the keypair:**
+```bash
+# 1. Generate the private key
+openssl ecparam -name prime256v1 -genkey -noout -out signing.key
+
+# 2. Convert it to PKCS#8 format (for GitHub Actions)
+openssl pkcs8 -topk8 -nocrypt -in signing.key -out signing.pkcs8
+
+# 3. Extract the public key (for the Server)
+openssl ec -in signing.key -pubout -out release-signing.pub
+```
+
+**Configure the keys:**
+1. Copy the `release-signing.pub` file into `src/PlainSight.Server/Keys/release-signing.pub`. This file will be baked into your Docker image so the server can verify updates.
+2. In your GitHub repository, go to **Settings > Secrets and variables > Actions**, and add a new secret named `PLAINSIGHT_SIGNING_KEY`. Paste the entire contents of `signing.pkcs8` into it.
+3. Delete `signing.key` and `signing.pkcs8` from your local machine to keep the private key secure.
+
+### 4. Start the Services
 
 ```bash
 docker compose up -d

@@ -54,6 +54,10 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =
     options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
 });
 
+using PlainSight.Server.Services.Versioning;
+
+// ... (top of file)
+
 // Add custom services
 builder.Services.AddSingleton<MediaMetadataService>();
 builder.Services.AddSingleton<WebsiteRecorder>();
@@ -62,8 +66,14 @@ builder.Services.AddHostedService<RenderWorkerService>();
 builder.Services.AddScoped<ContentSyncService>();
 builder.Services.AddHostedService<ContentSyncWorkerService>();
 builder.Services.AddScoped<VersionService>();
-builder.Services.AddScoped<PlainSight.Server.Services.Versioning.IPlayerVersionReconciler, PlainSight.Server.Services.Versioning.ManifestReconciler>();
-builder.Services.AddHostedService<PlainSight.Server.Services.Versioning.ReconciliationBackgroundService>();
+builder.Services.AddSingleton<SignatureVerifier>(sp =>
+{
+    IConfiguration config = sp.GetRequiredService<IConfiguration>();
+    string publicKeyPath = config["PublicKeyPath"] ?? Path.Combine(AppContext.BaseDirectory, "Keys", "release-signing.pub");
+    return new SignatureVerifier(publicKeyPath);
+});
+builder.Services.AddScoped<IPlayerVersionReconciler, ManifestReconciler>();
+builder.Services.AddHostedService<ReconciliationBackgroundService>();
 builder.Services.AddScoped<ScheduleService>();
 builder.Services.AddHostedService<AutoScreenshotService>();
 builder.Services.AddHostedService<DeviceMonitorService>();
@@ -188,6 +198,16 @@ using (IServiceScope scope = app.Services.CreateScope())
                 startupLogger.LogError(ex, "Failed to create storage directory: {Path}", path);
             }
         }
+    }
+
+    // Check for release signing public key
+    string publicKeyPath = config["PublicKeyPath"] ?? Path.Combine(AppContext.BaseDirectory, "Keys", "release-signing.pub");
+    if (!File.Exists(publicKeyPath))
+    {
+        startupLogger.LogWarning(
+            "Release signing public key not found at {Path}. " +
+            "Player version ingestion will be disabled until a keypair is generated and the public key is provided.",
+            publicKeyPath);
     }
 }
 

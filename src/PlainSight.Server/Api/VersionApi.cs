@@ -1,7 +1,9 @@
 using System;
+using System.Threading;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using PlainSight.Server.Services.Versioning;
 
 namespace PlainSight.Server.Api;
@@ -12,11 +14,13 @@ public static class VersionApi
     {
         RouteGroupBuilder group = routes.MapGroup("/api/versions").RequireAuthorization();
 
+        // Manual refresh for external callers/scripts (curl, CI, etc.). UI uses reconciler directly via DI.
         group.MapPost("/refresh", async (
             [FromServices] IPlayerVersionReconciler reconciler,
-            [FromServices] Microsoft.Extensions.Logging.ILogger<IPlayerVersionReconciler> logger,
-            System.Threading.CancellationToken ct) =>
+            [FromServices] ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
         {
+            ILogger logger = loggerFactory.CreateLogger("VersionApi");
             try
             {
                 int count = await reconciler.ReconcileAsync(ct);

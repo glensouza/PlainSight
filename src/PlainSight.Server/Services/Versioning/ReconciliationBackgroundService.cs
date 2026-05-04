@@ -67,7 +67,12 @@ internal sealed class ReconciliationBackgroundService : BackgroundService
         {
             using IServiceScope scope = _serviceProvider.CreateScope();
             IPlayerVersionReconciler reconciler = scope.ServiceProvider.GetRequiredService<IPlayerVersionReconciler>();
-            await reconciler.ReconcileAsync(ct);
+            int ingestedCount = await reconciler.ReconcileAsync(ct);
+            
+            if (ingestedCount > 0)
+            {
+                _logger.LogDebug("Background reconciliation tick complete. Ingested {Count} new version(s).", ingestedCount);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

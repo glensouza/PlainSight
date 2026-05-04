@@ -28,4 +28,10 @@
     <ProjectReference Include="..\PlainSight.ServiceDefaults\PlainSight.ServiceDefaults.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Keys\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

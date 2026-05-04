@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -20,43 +21,44 @@ internal sealed partial class ManifestReconciler : IPlayerVersionReconciler
     private readonly PlainSightDbContext _dbContext;
     private readonly IConfiguration _configuration;
     private readonly ILogger<ManifestReconciler> _logger;
-    private readonly string _updatesPath;
-    private readonly string _publicKeyPath;
+    private readonly SignatureVerifier _verifier;
+    private readonly string _updatesDir;
+
+    private static readonly JsonSerializerOptions _canonicalOptions = new JsonSerializerOptions
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
+    private static readonly CanonicalJsonContext _canonicalContext = new CanonicalJsonContext(_canonicalOptions);
 
     public ManifestReconciler(
         PlainSightDbContext dbContext,
         IConfiguration configuration,
-        ILogger<ManifestReconciler> logger)
+        ILogger<ManifestReconciler> logger,
+        SignatureVerifier verifier)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(verifier);
 
         _dbContext = dbContext;
         _configuration = configuration;
         _logger = logger;
-        _updatesPath = _configuration["PlayerVersions:UpdatesPath"] ?? Path.Combine(AppContext.BaseDirectory, "Updates");
-        _publicKeyPath = _configuration["PlayerVersions:PublicKeyPath"] ?? Path.Combine(AppContext.BaseDirectory, "Keys", "release-signing.pub");
+        _verifier = verifier;
+        _updatesDir = _configuration["UpdatesPath"] ?? Path.Combine(AppContext.BaseDirectory, "Updates");
     }
 
     public async Task<int> ReconcileAsync(CancellationToken ct)
     {
-        if (!Directory.Exists(_updatesPath))
+        if (!Directory.Exists(_updatesDir))
         {
-            _logger.LogWarning("UpdatesPath {UpdatesPath} does not exist. Skipping reconciliation.", _updatesPath);
+            _logger.LogWarning("UpdatesPath {UpdatesPath} does not exist. Skipping reconciliation.", _updatesDir);
             return 0;
         }
 
-        if (!File.Exists(_publicKeyPath))
-        {
-            _logger.LogError("Public key {PublicKeyPath} not found. Refusing to run reconciliation.", _publicKeyPath);
-            return 0;
-        }
-
-        string[] manifestFiles = Directory.GetFiles(_updatesPath, "*.json");
+        string[] manifestFiles = Directory.GetFiles(_updatesDir, "*.json");
         int ingestedCount = 0;
-
-        using SignatureVerifier verifier = new SignatureVerifier(_publicKeyPath);
 
         foreach (string manifestPath in manifestFiles)
         {
@@ -90,18 +92,18 @@ internal sealed partial class ManifestReconciler : IPlayerVersionReconciler
                     Version = manifest.Version
                 };
 
-                string canonicalJson = JsonSerializer.Serialize(canonicalObj, CanonicalJsonContext.Default.CanonicalManifest);
+                string canonicalJson = JsonSerializer.Serialize(canonicalObj, _canonicalContext.CanonicalManifest);
                 byte[] canonicalBytes = Encoding.UTF8.GetBytes(canonicalJson);
 
                 byte[] signatureBytes = Convert.FromBase64String(manifest.Signature);
 
-                if (!verifier.VerifyDer(canonicalBytes, signatureBytes))
+                if (!_verifier.VerifyDer(canonicalBytes, signatureBytes))
                 {
                     _logger.LogWarning("Signature verification failed for manifest {Path}. Skipping.", manifestPath);
                     continue;
                 }
 
-                string binaryPath = Path.Combine(_updatesPath, manifest.FileName);
+                string binaryPath = Path.Combine(_updatesDir, manifest.FileName);
                 if (!File.Exists(binaryPath))
                 {
                     _logger.LogWarning("Binary {BinaryPath} referenced in manifest {Path} does not exist. Skipping.", binaryPath, manifestPath);
@@ -115,14 +117,16 @@ internal sealed partial class ManifestReconciler : IPlayerVersionReconciler
                     continue;
                 }
 
+                DateTime uploadedAt = DateTime.TryParse(manifest.SignedAt, out DateTime dt) ? dt.ToUniversalTime() : DateTime.UtcNow;
+
                 PlayerVersion newVersion = new PlayerVersion
                 {
                     VersionNumber = manifest.Version,
                     FileName = manifest.FileName,
                     Sha256Hash = manifest.Sha256,
                     FileSizeBytes = manifest.SizeBytes,
-                    UploadedAt = manifest.SignedAt,
-                    Notes = manifest.Notes
+                    UploadedAt = uploadedAt,
+                    Notes = manifest.Notes.Length > 1000 ? manifest.Notes.Substring(0, 1000) : manifest.Notes
                 };
 
                 _dbContext.PlayerVersions.Add(newVersion);
@@ -171,7 +175,7 @@ internal sealed partial class ManifestReconciler : IPlayerVersionReconciler
         public string Sha256 { get; set; } = string.Empty;
 
         [JsonPropertyName("signedAt")]
-        public DateTime SignedAt { get; set; }
+        public string SignedAt { get; set; } = string.Empty;
 
         [JsonPropertyName("releaseUrl")]
         public string ReleaseUrl { get; set; } = string.Empty;
@@ -204,7 +208,7 @@ internal sealed partial class ManifestReconciler : IPlayerVersionReconciler
 
         [JsonPropertyName("signedAt")]
         [JsonPropertyOrder(5)]
-        public DateTime SignedAt { get; set; }
+        public string SignedAt { get; set; } = string.Empty;
 
         [JsonPropertyName("sizeBytes")]
         [JsonPropertyOrder(6)]

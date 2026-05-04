@@ -142,12 +142,15 @@ jobs:
         fi
 
     - name: Copy binary to share
+      env:
+        REF_NAME: ${{ github.ref_name }}
+        UPDATES_PATH_RAW: ${{ vars.UPDATES_PATH }}
       run: |
         set -euo pipefail
         # Strip leading 'v' from the tag name to get a bare semver (e.g. v1.2.0 → 1.2.0)
-        VERSION="${{ github.ref_name }}"
-        VERSION="${VERSION#v}"
-        UPDATES_PATH="${{ vars.UPDATES_PATH }}"
+        REF_NAME_VAR="$REF_NAME"
+        VERSION="${REF_NAME_VAR#v}"
+        UPDATES_PATH="$UPDATES_PATH_RAW"
         FILE_NAME="plainsight-player-${VERSION}"
         SRC_BINARY="./publish/player/PlainSight.Player"
         # Write to a .tmp file first, then rename for an atomic replacement on a local FS
@@ -160,6 +163,8 @@ jobs:
     - name: Build and sign manifest
       env:
         PLAINSIGHT_SIGNING_KEY: ${{ secrets.PLAINSIGHT_SIGNING_KEY }}
+        REF_NAME: ${{ github.ref_name }}
+        REPOSITORY: ${{ github.repository }}
       run: |
         set -euo pipefail
         VERSION="${VERSION}"
@@ -176,7 +181,7 @@ jobs:
         # ISO-8601 UTC timestamp
         SIGNED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-        RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+        RELEASE_URL="https://github.com/${REPOSITORY}/releases/tag/${REF_NAME}"
 
         # Build canonical JSON (sorted keys, compact) — this is what gets signed.
         # The 'signature' field is intentionally absent here; verifiers must

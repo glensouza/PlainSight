@@ -203,7 +203,7 @@
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             versions = await context.PlayerVersions
                 .OrderByDescending(v => v.UploadedAt)
                 .ToListAsync();
@@ -251,7 +251,7 @@
         syncMessage = null;
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             PlayerVersion? version = await context.PlayerVersions.FindAsync(id);
             if (version == null) return;
 
@@ -293,7 +293,7 @@
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
 
             bool anyBinariesExist = await context.PlayerVersions.AnyAsync();
             if (anyBinariesExist)
@@ -349,7 +349,7 @@
         
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             DeviceGroupVersion? existing = await context.DeviceGroupVersions
                 .FirstOrDefaultAsync(g => g.GroupName == groupName);
 
