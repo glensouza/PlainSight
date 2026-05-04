@@ -101,12 +101,36 @@ All pages in `src/PlainSight.Server/Components/Pages/` use `@rendermode Interact
 
 ## Coding Rules
 
-- **Always use explicit types; never use `var`** — this is a hard requirement from the project conventions.
+### Hard requirements
+
+- **Always use explicit types; never use `var`** — applies to assignments, `foreach`, out-vars, lambdas — everywhere.
 - Use C# 14 idioms: file-scoped namespaces, `ArgumentNullException.ThrowIfNull`, `Async` suffix on async methods.
-- Prefer least visibility: `private`/`internal` before `public`.
+- Prefer least visibility: `private`/`internal` before `public`. Do not add public interfaces unless required for DI or testing.
 - Async methods must accept and thread `CancellationToken` where appropriate.
-- No silent catches — log and rethrow, or return errors explicitly.
-- Keep diffs minimal; avoid unrelated formatting changes.
-- Do not add new public interfaces unless required for DI or testing.
+- No silent catches — log and rethrow, or return errors explicitly. Empty catch blocks must use a brace body with a comment explaining what's swallowed (e.g., `catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* expected during shutdown */ }`); never `catch { }` on one line.
 - When adding EF schema changes, always create and apply a migration; do not modify existing migration files.
 - `VersionService.GetTargetVersion` is intentionally hardcoded; database-driven canary deployment is an open TODO.
+
+### Style rules — apply on every edit
+
+- **`this.` prefix** on all instance field and method access (`this.activeWebSocket`, `this.LoadApiKey()`).
+- **No underscore prefix** on private fields (`_logger` → `logger`, `_lock` → `@lock`). `static readonly` and `const` use **PascalCase** (e.g., `CanonicalOptions`, `SmCxvirtualscreen`) — not `_camelCase`, not `ALL_CAPS`.
+- **Acronym casing**: acronyms >2 letters use Pascal-style (`OBSDiscoveryService` → `ObsDiscoveryService`, `NDI` → `Ndi`). Two-letter acronyms (`Id`, `Db`) stay as-is.
+- **Primary constructors** when no validation is required; use a classical constructor when you need `ArgumentNullException.ThrowIfNull`. Captured fields still don't get underscores.
+- **`init` accessors** for properties only set during construction (`Id`, `CreatedAt`, navigation properties set once, JSON DTO/options/manifest types).
+- **Computed/getter-only properties use `PascalCase`** (e.g., `onlineCount` → `OnlineCount`).
+- **No redundant initializers** like `volatile bool chromiumReady = false;` — drop the `= false`.
+- **Collection expressions `[]`** instead of `new List<T>()`, `new()`, `Enumerable.Empty<T>()`, or `new[] { ... }`.
+- **`coll.Any()` → `coll.Count != 0`** when `Count` is available.
+- **Always brace** `if`/`else`/`foreach`/`using` — no single-line bodies, no single-line early returns.
+- **Switch expressions** over if-else chains returning a value; use property patterns (`device is { NdiAutoSwitch: true, AssignedNdiSourceId: not null }`).
+- **Invert conditions** to reduce nesting (early-return / `continue` style).
+- **`await using`** for any `IAsyncDisposable` — `FileStream(useAsync: true)`, `DbContext`, etc.
+- **`System.Threading.Lock`** for lock targets, not `object`. Common name: `@lock` or `processLock`.
+- **One top-level type per file** — split helper types into their own files.
+- **Collapse multi-line method signatures** to a single line, even if long.
+- **Unused lambda params use `_`** (`(s, e) =>` → `(_, e) =>`).
+- **`[LibraryImport]` + `partial`** over `[DllImport]` + `extern`.
+- **No fully-qualified type names** when a `using` directive can be added.
+- **`configuration.GetValue<T>(key, default)` → `configuration.GetValue(key, default)`** when `T` is inferable.
+- **Razor `@using` directives** belong in `Components/_Imports.razor`, not per page.

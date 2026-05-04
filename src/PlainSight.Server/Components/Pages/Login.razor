@@ -1,11 +1,9 @@
 @page "/login"
 @layout LoginLayout
-@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@attribute [AllowAnonymous]
 @using System.Security.Claims
 @using Microsoft.AspNetCore.Authentication
 @using Microsoft.AspNetCore.Authentication.Cookies
-@using Microsoft.EntityFrameworkCore
-@using PlainSight.Server.Data
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject NavigationManager Navigation
 
@@ -54,12 +52,12 @@
 
     protected override void OnInitialized()
     {
-        Model ??= new();
+        Model ??= new LoginModel();
     }
 
     private async Task HandleLoginAsync()
     {
-        using var context = await DbFactory.CreateDbContextAsync();
+        await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
         AdminUser? user = await context.AdminUsers
             .FirstOrDefaultAsync(u => u.Username == Model!.Username && u.IsActive);
 
@@ -74,8 +72,8 @@
 
         List<Claim> claims =
         [
-            new Claim(ClaimTypes.Name, user.Username),
-            new Claim(ClaimTypes.Role, user.Role.ToString())
+            new(ClaimTypes.Name, user.Username),
+            new(ClaimTypes.Role, user.Role.ToString())
         ];
         if (user.MustChangePassword)
             claims.Add(new Claim("must_change_password", "true"));

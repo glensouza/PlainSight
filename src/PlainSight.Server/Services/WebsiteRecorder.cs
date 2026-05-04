@@ -10,21 +10,20 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
     private const int FrameRate = 10;
     private const int JpegQuality = 80;
 
-    private readonly string? _executablePath = Environment.GetEnvironmentVariable("PUPPETEER_EXECUTABLE_PATH");
-    private readonly SemaphoreSlim _downloadLock = new(1, 1);
-    private volatile bool _chromiumReady = false;
+    private readonly string? executablePath = Environment.GetEnvironmentVariable("PUPPETEER_EXECUTABLE_PATH");
+    private readonly SemaphoreSlim downloadLock = new(1, 1);
+    private volatile bool chromiumReady;
 
-    public async Task<string> ConvertUrlToVideoAsync(string url, int durationSec, string outputPath, CancellationToken cancellationToken = default)
+    public async Task ConvertUrlToVideoAsync(string url, int durationSec, string outputPath, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Starting screencast render: {Url} ({Duration}s) -> {OutputPath}", url, durationSec, outputPath);
 
-        await EnsureChromiumAsync(cancellationToken);
+        await this.EnsureChromiumAsync(cancellationToken);
 
-        await using IBrowser browser = await Puppeteer.LaunchAsync(BuildLaunchOptions(_executablePath));
+        await using IBrowser browser = await Puppeteer.LaunchAsync(BuildLaunchOptions(this.executablePath));
         await using IPage page = await browser.NewPageAsync();
 
-        await page.SetUserAgentAsync(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+        await page.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
         await page.SetExtraHttpHeadersAsync(new Dictionary<string, string>
         {
             ["Accept-Language"] = "en-US,en;q=0.9"
@@ -50,54 +49,27 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
         // Let JS frameworks render their initial DOM before the screencast starts
         await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
 
-        await page.EvaluateFunctionAsync<object>(@"(durationSec) => {
-            const totalHeight = Math.max(document.body.scrollHeight - window.innerHeight, 0);
-            if (totalHeight === 0) return;
-            const start = performance.now();
-            function step(now) {
-                const elapsed = (now - start) / 1000;
-                if (elapsed < durationSec) {
-                    window.scrollTo(0, (elapsed / durationSec) * totalHeight);
-                    requestAnimationFrame(step);
-                }
-            }
-            requestAnimationFrame(step);
-        }", durationSec);
+        await page.EvaluateFunctionAsync<object>("""
+                                                 (durationSec) => {
+                                                             const totalHeight = Math.max(document.body.scrollHeight - window.innerHeight, 0);
+                                                             if (totalHeight === 0) return;
+                                                             const start = performance.now();
+                                                             function step(now) {
+                                                                 const elapsed = (now - start) / 1000;
+                                                                 if (elapsed < durationSec) {
+                                                                     window.scrollTo(0, (elapsed / durationSec) * totalHeight);
+                                                                     requestAnimationFrame(step);
+                                                                 }
+                                                             }
+                                                             requestAnimationFrame(step);
+                                                         }
+                                                 """, durationSec);
 
         byte[]? latestFrame = null;
         object frameLock = new();
         int frameCount = 0;
 
         CDPSession cdpSession = (CDPSession)page.Client;
-
-        void OnMessage(object? sender, MessageEventArgs e)
-        {
-            if (e.MessageID != "Page.screencastFrame")
-                return;
-
-            try
-            {
-                string? data = e.MessageData.GetProperty("data").GetString();
-                if (data != null)
-                {
-                    byte[] frame = Convert.FromBase64String(data);
-                    lock (frameLock)
-                    {
-                        latestFrame = frame;
-                    }
-                }
-
-                if (e.MessageData.TryGetProperty("sessionId", out JsonElement sessionIdEl))
-                {
-                    int sessionId = sessionIdEl.GetInt32();
-                    _ = cdpSession.SendAsync("Page.screencastFrameAck", new { sessionId });
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Error processing screencast frame");
-            }
-        }
 
         cdpSession.MessageReceived += OnMessage;
         await cdpSession.SendAsync("Page.startScreencast", new
@@ -109,15 +81,17 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
             everyNthFrame = 1
         });
 
-        using Process ffmpegProcess = StartFfmpegProcess(outputPath);
+        using Process ffmpegProcess = this.StartFfmpegProcess(outputPath);
         StringBuilder ffmpegError = new();
-        ffmpegProcess.ErrorDataReceived += (s, e) =>
+        ffmpegProcess.ErrorDataReceived += (_, e) =>
         {
-            if (e.Data != null)
+            if (e.Data == null)
             {
-                ffmpegError.AppendLine(e.Data);
-                logger.LogDebug("FFmpeg: {Log}", e.Data);
+                return;
             }
+
+            ffmpegError.AppendLine(e.Data);
+            logger.LogDebug("FFmpeg: {Log}", e.Data);
         };
         ffmpegProcess.BeginErrorReadLine();
 
@@ -136,24 +110,27 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
                     frame = latestFrame;
                 }
 
-                if (frame != null)
+                if (frame == null)
                 {
-                    try
+                    continue;
+                }
+
+                try
+                {
+                    await ffmpegProcess.StandardInput.BaseStream.WriteAsync(frame, cancellationToken);
+                    frameCount++;
+                }
+                catch (IOException)
+                {
+                    // Check if FFmpeg exited and why
+                    if (!ffmpegProcess.HasExited)
                     {
-                        await ffmpegProcess.StandardInput.BaseStream.WriteAsync(frame, cancellationToken);
-                        frameCount++;
-                    }
-                    catch (IOException)
-                    {
-                        // Check if FFmpeg exited and why
-                        if (ffmpegProcess.HasExited)
-                        {
-                            string details = ffmpegError.ToString();
-                            logger.LogError("FFmpeg exited prematurely. Details: {Details}", details);
-                            throw new InvalidOperationException($"FFmpeg exited prematurely with code {ffmpegProcess.ExitCode}. Details: {details}");
-                        }
                         throw;
                     }
+
+                    string details = ffmpegError.ToString();
+                    logger.LogError("FFmpeg exited prematurely. Details: {Details}", details);
+                    throw new InvalidOperationException($"FFmpeg exited prematurely with code {ffmpegProcess.ExitCode}. Details: {details}");
                 }
             }
         }
@@ -165,12 +142,26 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
         finally
         {
             cdpSession.MessageReceived -= OnMessage;
-            try { await cdpSession.SendAsync("Page.stopScreencast"); } catch { /* best effort */ }
+            try
+            {
+                await cdpSession.SendAsync("Page.stopScreencast");
+            }
+            catch
+            {
+                /* best effort */
+            }
 
             if (!durationExpired)
             {
                 // Request cancelled mid-recording — kill FFmpeg immediately rather than waiting
-                try { ffmpegProcess.Kill(entireProcessTree: true); } catch { /* ignore */ }
+                try
+                {
+                    ffmpegProcess.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                    /* ignore */
+                }
             }
         }
 
@@ -187,29 +178,60 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
         }
 
         logger.LogInformation("Screencast complete: {OutputPath} ({FrameCount} frames at {FrameRate} fps)", outputPath, frameCount, FrameRate);
-        return outputPath;
+        return;
+
+        void OnMessage(object? sender, MessageEventArgs e)
+        {
+            if (e.MessageID != "Page.screencastFrame")
+                return;
+
+            try
+            {
+                string? data = e.MessageData.GetProperty("data").GetString();
+                if (data != null)
+                {
+                    byte[] frame = Convert.FromBase64String(data);
+                    lock (frameLock)
+                    {
+                        latestFrame = frame;
+                    }
+                }
+
+                if (!e.MessageData.TryGetProperty("sessionId", out JsonElement sessionIdEl))
+                {
+                    return;
+                }
+
+                int sessionId = sessionIdEl.GetInt32();
+                _ = cdpSession.SendAsync("Page.screencastFrameAck", new { sessionId });
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Error processing screencast frame");
+            }
+        }
     }
 
     private async Task EnsureChromiumAsync(CancellationToken cancellationToken)
     {
-        if (_chromiumReady || !string.IsNullOrEmpty(_executablePath))
+        if (this.chromiumReady || !string.IsNullOrEmpty(this.executablePath))
             return;
 
-        await _downloadLock.WaitAsync(cancellationToken);
+        await this.downloadLock.WaitAsync(cancellationToken);
         try
         {
-            if (_chromiumReady)
+            if (this.chromiumReady)
                 return;
 
             logger.LogInformation("Downloading Chromium for PuppeteerSharp...");
             BrowserFetcher browserFetcher = new();
             await browserFetcher.DownloadAsync();
-            _chromiumReady = true;
+            this.chromiumReady = true;
             logger.LogInformation("Chromium download complete");
         }
         finally
         {
-            _downloadLock.Release();
+            this.downloadLock.Release();
         }
     }
 
@@ -223,7 +245,7 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
             "--disable-gpu",
             "--disable-blink-features=AutomationControlled"
         ];
-        return new LaunchOptions
+        return new LaunchOptions()
         {
             Headless = true,
             Args = args,
@@ -239,7 +261,7 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
 
         Process process = new()
         {
-            StartInfo = new ProcessStartInfo
+            StartInfo = new ProcessStartInfo()
             {
                 FileName = "ffmpeg",
                 Arguments = $"-y -f image2pipe -framerate {FrameRate} -i pipe:0 -c:v libx264 -pix_fmt yuv420p -preset fast -f {format} \"{outputPath}\"",

@@ -1,8 +1,6 @@
 namespace PlainSight.Server.Services;
 
-public class ContentSyncWorkerService(
-    IServiceScopeFactory scopeFactory,
-    ILogger<ContentSyncWorkerService> logger) : BackgroundService
+public class ContentSyncWorkerService(IServiceScopeFactory scopeFactory, ILogger<ContentSyncWorkerService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -18,7 +16,9 @@ public class ContentSyncWorkerService(
                 ContentSyncService syncService = scope.ServiceProvider.GetRequiredService<ContentSyncService>();
                 (int added, int removed) = await syncService.SyncAsync(stoppingToken);
                 if (added > 0 || removed > 0)
+                {
                     logger.LogInformation("Background sync: +{Added} added, -{Removed} removed", added, removed);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

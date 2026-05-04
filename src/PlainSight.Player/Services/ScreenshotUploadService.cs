@@ -1,5 +1,4 @@
 using System.Net.Http.Headers;
-using Microsoft.Extensions.Logging;
 
 namespace PlainSight.Player.Services;
 
@@ -10,7 +9,9 @@ public class ScreenshotUploadService(HttpClient http, HeartbeatService heartbeat
     public async Task UploadAsync(byte[] pngBytes, CancellationToken cancellationToken = default)
     {
         if (pngBytes.Length == 0)
+        {
             return;
+        }
 
         try
         {
@@ -31,11 +32,18 @@ public class ScreenshotUploadService(HttpClient http, HeartbeatService heartbeat
             HttpResponseMessage response = await http.SendAsync(request, cancellationToken);
 
             if (response.IsSuccessStatusCode)
+            {
                 logger.LogInformation("Screenshot uploaded ({Bytes} bytes)", pngBytes.Length);
+            }
             else
+            {
                 logger.LogWarning("Screenshot upload failed: {Status}", response.StatusCode);
+            }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+             /* Operation was canceled */
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error uploading screenshot");

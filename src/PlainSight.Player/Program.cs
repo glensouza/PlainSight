@@ -43,10 +43,10 @@ builder.Services.AddSingleton<NdiPlayerService>();
 
 // Register cache manager for both content and idle folders
 builder.Services.AddSingleton(sp => new CacheManager(
-    new[] {
+    [
         (contentPath, cachePath),
         (idleSourcePath, idleCachePath)
-    },
+    ],
     sp.GetRequiredService<ILogger<CacheService>>()));
 
 builder.Services.AddSingleton(sp =>
@@ -113,7 +113,9 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
     }
 
     if (!File.Exists(filePath))
+    {
         return Results.NotFound();
+    }
 
     string contentType = VideoFormats.ContentTypes.GetValueOrDefault(ext, "application/octet-stream");
     return Results.File(filePath, contentType, enableRangeProcessing: true);
@@ -147,4 +149,4 @@ app.MapPost("/api/player/now-playing", async (HttpContext ctx, PlaylistService p
 
 await app.RunAsync();
 
-internal sealed record NowPlayingRequest(string? Filename);
+internal abstract record NowPlayingRequest(string? Filename);

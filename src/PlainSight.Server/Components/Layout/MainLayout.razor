@@ -1,7 +1,4 @@
 @inherits LayoutComponentBase
-@using Microsoft.EntityFrameworkCore
-@using PlainSight.Shared.Models
-@using PlainSight.Server.Data
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @implements IDisposable
 
@@ -70,9 +67,9 @@
     protected override async Task OnInitializedAsync()
     {
         await RefreshKpisAsync();
-        refreshTimer = new Timer(async _ =>
+        refreshTimer = new Timer(_ =>
         {
-            await InvokeAsync(async () =>
+            InvokeAsync(async () =>
             {
                 await RefreshKpisAsync();
                 currentTime = DateTime.UtcNow.ToString("HH:mm:ss");
@@ -85,7 +82,7 @@
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             DateTime now = DateTime.UtcNow;
             DateTime onlineCutoff = now.AddSeconds(-60);
             DateTime warnCutoff = now.AddMinutes(-5);

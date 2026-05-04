@@ -1,28 +1,13 @@
-using System.Text.Json.Serialization;
-
 namespace PlainSight.Shared.Models;
 
 public class Playlist
 {
-    public int Id { get; set; }
+    public int Id { get; init; }
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
-    public DateTime CreatedAt { get; set; }
+    public DateTime CreatedAt { get; init; }
     public DateTime UpdatedAt { get; set; }
     public bool IsActive { get; set; }
 
-    public List<PlaylistItem> Items { get; set; } = new();
-}
-
-public class PlaylistItem
-{
-    public int Id { get; set; }
-    public int PlaylistId { get; set; }
-    public int ContentItemId { get; set; }
-    public int Order { get; set; }
-    public int? OverrideDurationSeconds { get; set; }
-
-    [JsonIgnore]
-    public Playlist Playlist { get; set; } = null!;
-    public ContentItem ContentItem { get; set; } = null!;
+    public List<PlaylistItem> Items { get; init; } = [];
 }

@@ -1,9 +1,6 @@
 @page "/users"
 @rendermode InteractiveServer
 @attribute [Authorize(Roles = "Admin")]
-@using Microsoft.AspNetCore.Authorization
-@using Microsoft.EntityFrameworkCore
-@using PlainSight.Server.Data
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject ILogger<Users> Logger
 
@@ -271,13 +268,13 @@ else
 
     private async Task LoadUsersAsync()
     {
-        using var context = await DbFactory.CreateDbContextAsync();
+        await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
         users = await context.AdminUsers
             .AsNoTracking()
             .OrderBy(u => u.Username)
             .ToListAsync();
         activeCount = users.Count(u => u.IsActive);
-        adminCount = users.Count(u => u.Role == AdminUserRole.Admin && u.IsActive);
+        adminCount = users.Count(u => u is { Role: AdminUserRole.Admin, IsActive: true });
     }
 
     private void ShowAddForm()
@@ -286,37 +283,49 @@ else
         addPassword = string.Empty;
         addPasswordConfirm = string.Empty;
         addRole = AdminUserRole.User;
-        addErrors = new();
+        addErrors = new Dictionary<string, string>();
         showAddForm = true;
     }
 
     private void CancelAdd()
     {
         showAddForm = false;
-        addErrors = new();
+        addErrors = new Dictionary<string, string>();
     }
 
     private async Task AddUserAsync()
     {
-        addErrors = new();
+        addErrors = new Dictionary<string, string>();
 
         if (string.IsNullOrWhiteSpace(addUsername))
+        {
             addErrors["username"] = "Username is required.";
+        }
         else if (addUsername.Length < 2)
+        {
             addErrors["username"] = "Username must be at least 2 characters.";
+        }
 
         if (string.IsNullOrWhiteSpace(addPassword))
+        {
             addErrors["password"] = "Password is required.";
+        }
         else if (addPassword.Length < 6)
+        {
             addErrors["password"] = "Password must be at least 6 characters.";
+        }
 
         if (addPassword != addPasswordConfirm)
+        {
             addErrors["confirm"] = "Passwords do not match.";
+        }
 
         if (addErrors.Count > 0)
+        {
             return;
+        }
 
-        using var context = await DbFactory.CreateDbContextAsync();
+        await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
         bool exists = await context.AdminUsers.AnyAsync(u => u.Username == addUsername.Trim());
         if (exists)
         {
@@ -355,36 +364,49 @@ else
         editingPasswordUserId = userId;
         editPassword = string.Empty;
         editPasswordConfirm = string.Empty;
-        pwErrors = new();
+        pwErrors = new Dictionary<string, string>();
     }
 
     private void CancelEditPassword()
     {
         editingPasswordUserId = null;
-        pwErrors = new();
+        pwErrors = new Dictionary<string, string>();
     }
 
     private async Task SavePasswordAsync(int userId)
     {
-        pwErrors = new();
+        pwErrors = new Dictionary<string, string>();
 
         if (string.IsNullOrWhiteSpace(editPassword))
+        {
             pwErrors["new"] = "Password is required.";
+        }
         else if (editPassword.Length < 6)
+        {
             pwErrors["new"] = "Password must be at least 6 characters.";
+        }
 
         if (editPassword != editPasswordConfirm)
+        {
             pwErrors["confirm"] = "Passwords do not match.";
+        }
 
         if (pwErrors.Count > 0)
+        {
             return;
+        }
 
         saving = true;
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             AdminUser? user = await context.AdminUsers.FindAsync(userId);
-            if (user is null) { globalError = "User not found."; return; }
+            if (user is null)
+            {
+                globalError = "User not found."; 
+                return;
+            }
+
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(editPassword);
             user.MustChangePassword = false;
             await context.SaveChangesAsync();
@@ -408,9 +430,13 @@ else
         try
         {
             string tempPassword = GenerateTempPassword();
-            using var context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             AdminUser? entity = await context.AdminUsers.FindAsync(user.Id);
-            if (entity is null) { globalError = "User not found."; return; }
+            if (entity is null)
+            {
+                globalError = "User not found."; 
+                return;
+            }
             entity.PasswordHash = BCrypt.Net.BCrypt.HashPassword(tempPassword);
             entity.MustChangePassword = true;
             await context.SaveChangesAsync();
@@ -441,9 +467,13 @@ else
         saving = true;
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             AdminUser? entity = await context.AdminUsers.FindAsync(user.Id);
-            if (entity is null) return;
+            if (entity is null)
+            {
+                return;
+            }
+
             entity.Role = entity.Role == AdminUserRole.Admin ? AdminUserRole.User : AdminUserRole.Admin;
             await context.SaveChangesAsync();
             await LoadUsersAsync();
@@ -470,9 +500,13 @@ else
         saving = true;
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             AdminUser? entity = await context.AdminUsers.FindAsync(user.Id);
-            if (entity is null) return;
+            if (entity is null)
+            {
+                return;
+            }
+
             entity.IsActive = !entity.IsActive;
             await context.SaveChangesAsync();
             await LoadUsersAsync();
@@ -506,7 +540,7 @@ else
         saving = true;
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             AdminUser? entity = await context.AdminUsers.FindAsync(deleteTarget.Id);
             if (entity is null)
             {
@@ -557,7 +591,10 @@ else
         System.Security.Cryptography.RandomNumberGenerator.Fill(randomBytes);
         char[] result = new char[12];
         for (int i = 0; i < 12; i++)
+        {
             result[i] = chars[randomBytes[i] % chars.Length];
+        }
+
         return new string(result);
     }
 }

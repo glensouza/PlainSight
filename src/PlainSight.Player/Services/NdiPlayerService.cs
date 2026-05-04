@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Microsoft.Extensions.Logging;
 
 namespace PlainSight.Player.Services;
 
@@ -12,7 +11,7 @@ public class NdiPlayerService(IConfiguration configuration, ILogger<NdiPlayerSer
 {
     private readonly string viewerExecutable = configuration["NdiViewerPath"] ?? "dicaffeine";
     private readonly string viewerArgsTemplate = configuration["NdiViewerArgs"] ?? "--fullscreen --source \"{0}\"";
-    private readonly object processLock = new();
+    private readonly Lock processLock = new();
     private Process? viewerProcess;
     private string? activeSource;
 
@@ -20,9 +19,9 @@ public class NdiPlayerService(IConfiguration configuration, ILogger<NdiPlayerSer
     {
         get
         {
-            lock (processLock)
+            lock (this.processLock)
             {
-                return viewerProcess is { HasExited: false };
+                return this.viewerProcess is { HasExited: false };
             }
         }
     }
@@ -31,9 +30,9 @@ public class NdiPlayerService(IConfiguration configuration, ILogger<NdiPlayerSer
     {
         get
         {
-            lock (processLock)
+            lock (this.processLock)
             {
-                return activeSource;
+                return this.activeSource;
             }
         }
     }
@@ -46,15 +45,15 @@ public class NdiPlayerService(IConfiguration configuration, ILogger<NdiPlayerSer
     {
         ArgumentException.ThrowIfNullOrEmpty(sourceName);
 
-        lock (processLock)
+        lock (this.processLock)
         {
-            if (viewerProcess is { HasExited: false } && string.Equals(activeSource, sourceName, StringComparison.Ordinal))
+            if (this.viewerProcess is { HasExited: false } && string.Equals(this.activeSource, sourceName, StringComparison.Ordinal))
             {
                 return;
             }
 
-            StopLocked("source change");
-            LaunchLocked(sourceName);
+            this.StopLocked("source change");
+            this.LaunchLocked(sourceName);
         }
     }
 
@@ -63,9 +62,9 @@ public class NdiPlayerService(IConfiguration configuration, ILogger<NdiPlayerSer
     /// </summary>
     public void Stop(string reason = "stopped by command")
     {
-        lock (processLock)
+        lock (this.processLock)
         {
-            StopLocked(reason);
+            this.StopLocked(reason);
         }
     }
 
@@ -75,20 +74,20 @@ public class NdiPlayerService(IConfiguration configuration, ILogger<NdiPlayerSer
         {
             logger.LogInformation(
                 "Not running on Linux — skipping NDI viewer launch for source {SourceName}.", sourceName);
-            activeSource = sourceName;
+            this.activeSource = sourceName;
             return;
         }
 
         // Use ArgumentList for robust escaping.
         // We parse the template to extract static flags and then add the source.
-        ProcessStartInfo startInfo = new(viewerExecutable)
+        ProcessStartInfo startInfo = new(this.viewerExecutable)
         {
             UseShellExecute = false
         };
 
         // If the template contains "{0}", we remove that part and treat the rest as a list of static flags.
         // Otherwise, we just add the sourceName as the final argument.
-        string cleanTemplate = viewerArgsTemplate.Replace("\"{0}\"", "").Replace("{0}", "").Trim();
+        string cleanTemplate = this.viewerArgsTemplate.Replace("\"{0}\"", "").Replace("{0}", "").Trim();
         string[] staticArgs = cleanTemplate.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         foreach (string arg in staticArgs)
@@ -100,33 +99,32 @@ public class NdiPlayerService(IConfiguration configuration, ILogger<NdiPlayerSer
 
         try
         {
-            viewerProcess = Process.Start(startInfo);
-            activeSource = sourceName;
+            this.viewerProcess = Process.Start(startInfo);
+            this.activeSource = sourceName;
             logger.LogInformation("Started NDI viewer for {SourceName} (PID {Pid}) with arguments: {Args}",
-                sourceName, viewerProcess?.Id, string.Join(" ", startInfo.ArgumentList));
+                sourceName, this.viewerProcess?.Id, string.Join(" ", startInfo.ArgumentList));
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to launch NDI viewer {Executable} for source {SourceName}. " +
-                "Set NdiViewerPath in configuration to point to a valid NDI viewer binary.",
-                viewerExecutable, sourceName);
-            viewerProcess = null;
-            activeSource = null;
+                "Set NdiViewerPath in configuration to point to a valid NDI viewer binary.", this.viewerExecutable, sourceName);
+            this.viewerProcess = null;
+            this.activeSource = null;
         }
     }
 
     private void StopLocked(string reason)
     {
-        if (viewerProcess == null)
+        if (this.viewerProcess == null)
             return;
 
         try
         {
-            if (!viewerProcess.HasExited)
+            if (!this.viewerProcess.HasExited)
             {
-                logger.LogInformation("Stopping NDI viewer ({Reason}, PID {Pid})", reason, viewerProcess.Id);
-                viewerProcess.Kill(entireProcessTree: true);
-                viewerProcess.WaitForExit(5000);
+                logger.LogInformation("Stopping NDI viewer ({Reason}, PID {Pid})", reason, this.viewerProcess.Id);
+                this.viewerProcess.Kill(entireProcessTree: true);
+                this.viewerProcess.WaitForExit(5000);
             }
         }
         catch (Exception ex)
@@ -135,16 +133,18 @@ public class NdiPlayerService(IConfiguration configuration, ILogger<NdiPlayerSer
         }
         finally
         {
-            try { viewerProcess.Dispose(); }
+            try {
+                this.viewerProcess.Dispose(); }
             catch (Exception ex) { logger.LogDebug(ex, "Error disposing NDI viewer process"); }
-            viewerProcess = null;
-            activeSource = null;
+
+            this.viewerProcess = null;
+            this.activeSource = null;
         }
     }
 
     public ValueTask DisposeAsync()
     {
-        Stop("service disposed");
+        this.Stop("service disposed");
         GC.SuppressFinalize(this);
         return ValueTask.CompletedTask;
     }

@@ -51,7 +51,7 @@ public class NdiDiscoveryService(
                         if (hosts.Count > 0)
                         {
                             logger.LogInformation("NDI Discovery: Found {Count} hosts using {Protocol}", hosts.Count, protocol);
-                            await UpsertAsync(hosts, stoppingToken);
+                            await this.UpsertAsync(hosts, stoppingToken);
                         }
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
@@ -61,7 +61,7 @@ public class NdiDiscoveryService(
                     }
                 }
                 
-                await PruneStaleAsync(stalenessWindow, stoppingToken);
+                await this.PruneStaleAsync(stalenessWindow, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -70,8 +70,15 @@ public class NdiDiscoveryService(
             catch (System.Net.NetworkInformation.NetworkInformationException ex)
             {
                 logger.LogWarning("NDI discovery network error (Interface issue): {Message}. Retrying in 30s...", ex.Message);
-                try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
-                catch (OperationCanceledException) { break; }
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
                 continue;
             }
             catch (Exception ex)
@@ -93,7 +100,9 @@ public class NdiDiscoveryService(
     private async Task UpsertAsync(IReadOnlyList<IZeroconfHost> hosts, CancellationToken cancellationToken)
     {
         if (hosts.Count == 0)
+        {
             return;
+        }
 
         DateTime now = DateTime.UtcNow;
         await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -103,9 +112,7 @@ public class NdiDiscoveryService(
             foreach (KeyValuePair<string, IService> svcEntry in host.Services)
             {
                 IService svc = svcEntry.Value;
-                string serviceName = !string.IsNullOrEmpty(host.DisplayName)
-                    ? host.DisplayName
-                    : svc.Name;
+                string serviceName = !string.IsNullOrEmpty(host.DisplayName) ? host.DisplayName : svc.Name;
 
                 NdiSource? existing = await context.NdiSources
                     .FirstOrDefaultAsync(s => s.ServiceName == serviceName, cancellationToken);
@@ -122,8 +129,7 @@ public class NdiDiscoveryService(
                         LastSeenUtc = now
                     });
 
-                    logger.LogInformation("Discovered new NDI source: {ServiceName} at {IpAddress}:{Port}",
-                        serviceName, host.IPAddress, svc.Port);
+                    logger.LogInformation("Discovered new NDI source: {ServiceName} at {IpAddress}:{Port}", serviceName, host.IPAddress, svc.Port);
                 }
                 else
                 {
@@ -160,7 +166,9 @@ public class NdiDiscoveryService(
 
         List<NdiSource> deletable = stale.Where(s => !assignedIds.Contains(s.Id)).ToList();
         if (deletable.Count == 0)
+        {
             return;
+        }
 
         context.NdiSources.RemoveRange(deletable);
         await context.SaveChangesAsync(cancellationToken);

@@ -4,9 +4,6 @@
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject NavigationManager Navigation
 @inject ILogger<Home> Logger
-@using Microsoft.EntityFrameworkCore
-@using PlainSight.Shared.Models
-@using PlainSight.Server.Data
 
 <PageTitle>PlainSight — Overview</PageTitle>
 
@@ -150,7 +147,7 @@
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             
             DateTime onlineThreshold = DateTime.UtcNow.AddSeconds(-60);
             onlineCount = await context.Devices.CountAsync(d => d.LastSeen >= onlineThreshold);

@@ -1,7 +1,5 @@
-using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
-using Microsoft.Extensions.Logging;
 using PlainSight.Shared.Models;
 
 namespace PlainSight.Player.Services;
@@ -18,14 +16,14 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
     private static string FormatVersion(Version? v) =>
         v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "0.0.0";
 
-    public string? GetApiKey() => LoadApiKey();
+    public string? GetApiKey() => this.LoadApiKey();
 
     private string? LoadApiKey()
     {
         // Prefer the in-memory cache (set when key was assigned or first loaded)
-        if (cachedApiKey != null)
+        if (this.cachedApiKey != null)
         {
-            return cachedApiKey;
+            return this.cachedApiKey;
         }
 
         try
@@ -35,8 +33,8 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
                 string key = File.ReadAllText(ApiKeyPath).Trim();
                 if (!string.IsNullOrEmpty(key))
                 {
-                    cachedApiKey = key;
-                    return cachedApiKey;
+                    this.cachedApiKey = key;
+                    return this.cachedApiKey;
                 }
             }
         }
@@ -51,7 +49,7 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
     private void SaveApiKey(string key)
     {
         // Cache in memory immediately so subsequent heartbeats work even if disk write fails
-        cachedApiKey = key;
+        this.cachedApiKey = key;
 
         try
         {
@@ -103,7 +101,7 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
     {
         try
         {
-            string? callbackUrl = GetCallbackUrl();
+            string? callbackUrl = this.GetCallbackUrl();
 
             DeviceTelemetryDto telemetry = new()
             {
@@ -114,7 +112,7 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
                 Timestamp = DateTime.UtcNow
             };
 
-            string? apiKey = LoadApiKey();
+            string? apiKey = this.LoadApiKey();
 
             using HttpRequestMessage request = new(HttpMethod.Post, "/api/device/heartbeat");
             request.Content = JsonContent.Create(telemetry);
@@ -131,7 +129,7 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
 
             if (heartbeatResponse != null && !string.IsNullOrEmpty(heartbeatResponse.AssignedApiKey))
             {
-                SaveApiKey(heartbeatResponse.AssignedApiKey);
+                this.SaveApiKey(heartbeatResponse.AssignedApiKey);
             }
 
             return heartbeatResponse;

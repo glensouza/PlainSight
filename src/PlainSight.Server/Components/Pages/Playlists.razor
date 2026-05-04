@@ -2,11 +2,7 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
-@inject NavigationManager Navigation
 @inject ILogger<Playlists> Logger
-@using Microsoft.EntityFrameworkCore
-@using PlainSight.Shared.Models
-@using PlainSight.Server.Data
 
 <PageTitle>Playlists — PlainSight</PageTitle>
 
@@ -247,7 +243,7 @@ else
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             playlists = await context.Playlists
                 .Include(p => p.Items)
                 .ThenInclude(i => i.ContentItem)
@@ -257,7 +253,7 @@ else
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error loading playlists");
-            playlists = new List<Playlist>();
+            playlists = [];
         }
     }
 
@@ -265,7 +261,7 @@ else
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             availableContent = await context.ContentItems
                 .OrderByDescending(c => c.UploadedAt)
                 .ToListAsync();
@@ -273,7 +269,7 @@ else
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error loading content items");
-            availableContent = new List<ContentItem>();
+            availableContent = [];
         }
     }
 
@@ -289,14 +285,16 @@ else
     private void EditPlaylist(int id)
     {
         Playlist? playlist = playlists?.FirstOrDefault(p => p.Id == id);
-        if (playlist != null)
+        if (playlist == null)
         {
-            showCreateForm = true;
-            editingPlaylistId = id;
-            playlistName = playlist.Name;
-            playlistDescription = playlist.Description ?? string.Empty;
-            playlistIsActive = playlist.IsActive;
+            return;
         }
+
+        showCreateForm = true;
+        editingPlaylistId = id;
+        playlistName = playlist.Name;
+        playlistDescription = playlist.Description ?? string.Empty;
+        playlistIsActive = playlist.IsActive;
     }
 
     private void CancelEdit()
@@ -315,7 +313,7 @@ else
 
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             
             if (editingPlaylistId.HasValue)
             {
@@ -356,7 +354,7 @@ else
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             Playlist? playlist = await context.Playlists.FindAsync(id);
             if (playlist != null)
             {
@@ -377,7 +375,7 @@ else
         availableContent = null;
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             selectedPlaylist = await context.Playlists
                 .Include(p => p.Items)
                 .ThenInclude(i => i.ContentItem)
@@ -413,7 +411,7 @@ else
         isAddingItem = true;
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             Playlist? playlist = await context.Playlists
                 .Include(p => p.Items)
                 .FirstOrDefaultAsync(p => p.Id == managingPlaylistId.Value);
@@ -466,7 +464,7 @@ else
                 items.RemoveAt(index);
                 items.Insert(newIndex, itemToMove);
 
-                using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+                await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
                 List<PlaylistItem> dbItems = await context.PlaylistItems
                     .Where(i => i.PlaylistId == playlistId)
                     .ToListAsync();
@@ -482,7 +480,7 @@ else
                 }
 
                 Playlist? playlist = await context.Playlists.FindAsync(playlistId);
-                if (playlist != null) playlist.UpdatedAt = DateTime.UtcNow;
+                playlist?.UpdatedAt = DateTime.UtcNow;
 
                 await context.SaveChangesAsync();
 
@@ -511,7 +509,7 @@ else
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             PlaylistItem? item = await context.PlaylistItems
                 .Include(i => i.Playlist)
                 .FirstOrDefaultAsync(i => i.Id == playlistItemId);

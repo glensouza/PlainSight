@@ -2,12 +2,8 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
-@inject NavigationManager Navigation
 @inject ILogger<Devices> Logger
 @inject IHttpClientFactory HttpClientFactory
-@using Microsoft.EntityFrameworkCore
-@using PlainSight.Shared.Models
-@using PlainSight.Server.Data
 @implements IDisposable
 
 <PageTitle>Devices — PlainSight</PageTitle>
@@ -43,19 +39,19 @@ else
                 All <span class="ps-filter__count">@devices.Count</span>
             </button>
             <button class="ps-filter ps-filter--online @(statusFilter == "online" ? "is-active" : "")" @onclick='() => SetFilter("online")'>
-                <span class="ps-led"></span> Online <span class="ps-filter__count">@onlineCount</span>
+                <span class="ps-led"></span> Online <span class="ps-filter__count">@OnlineCount</span>
             </button>
             <button class="ps-filter ps-filter--warn @(statusFilter == "warn" ? "is-active" : "")" @onclick='() => SetFilter("warn")'>
-                <span class="ps-led"></span> Degraded <span class="ps-filter__count">@warnCount</span>
+                <span class="ps-led"></span> Degraded <span class="ps-filter__count">@WarnCount</span>
             </button>
             <button class="ps-filter ps-filter--offline @(statusFilter == "offline" ? "is-active" : "")" @onclick='() => SetFilter("offline")'>
-                <span class="ps-led"></span> Offline <span class="ps-filter__count">@offlineCount</span>
+                <span class="ps-led"></span> Offline <span class="ps-filter__count">@OfflineCount</span>
             </button>
         </div>
         <div class="ps-toolbar__actions">
             <button class="btn btn-sm btn-outline-secondary" @onclick="ToggleSelectAllVisible" title="Select all visible">
                 <i class="bi bi-check2-square"></i>
-                @(allVisibleSelected ? "Deselect all" : "Select all")
+                @(AllVisibleSelected ? "Deselect all" : "Select all")
             </button>
             <button class="btn btn-sm btn-primary" @onclick="LoadDevices">
                 <i class="bi bi-arrow-clockwise"></i> Refresh
@@ -373,7 +369,7 @@ else
                 <select class="form-select form-select-sm bulk-action-bar__select"
                         @bind="bulkGroupSelection">
                     <option value="">— Move to group —</option>
-                    @foreach (DeviceGroup g in deviceGroups ?? new List<DeviceGroup>())
+                    @foreach (DeviceGroup g in deviceGroups ?? [])
                     {
                         <option value="@g.Name">@g.Name</option>
                     }
@@ -395,7 +391,7 @@ else
                 <select class="form-select form-select-sm bulk-action-bar__select"
                         @bind="bulkVersionGroup">
                     <option value="">— Group —</option>
-                    @foreach (DeviceGroup g in deviceGroups ?? new List<DeviceGroup>())
+                    @foreach (DeviceGroup g in deviceGroups ?? [])
                     {
                         <option value="@g.Name">@g.Name</option>
                     }
@@ -403,7 +399,7 @@ else
                 <select class="form-select form-select-sm bulk-action-bar__select"
                         @bind="bulkVersionSelection">
                     <option value="">— Version —</option>
-                    @foreach (PlayerVersion v in playerVersions ?? new List<PlayerVersion>())
+                    @foreach (PlayerVersion v in playerVersions ?? [])
                     {
                         <option value="@v.VersionNumber">@v.VersionNumber</option>
                     }
@@ -424,9 +420,9 @@ else
 
 @code {
     private List<Device>? devices;
-    private HashSet<string> requestingScreenshot = new();
-    private HashSet<string> resettingApiKey = new();
-    private HashSet<string> selectedDeviceIds = new();
+    private readonly HashSet<string> requestingScreenshot = [];
+    private readonly HashSet<string> resettingApiKey = [];
+    private readonly HashSet<string> selectedDeviceIds = [];
     private List<DeviceGroup>? deviceGroups;
     private List<PlayerVersion>? playerVersions;
     private List<NdiSource>? ndiSources;
@@ -450,11 +446,11 @@ else
     private bool bulkResultIsSuccess;
     private string statusFilter = "all";
 
-    private int onlineCount => devices?.Count(d => GetStatusKey(d.LastSeen) == "online") ?? 0;
-    private int warnCount => devices?.Count(d => GetStatusKey(d.LastSeen) == "warn") ?? 0;
-    private int offlineCount => devices?.Count(d => GetStatusKey(d.LastSeen) == "offline") ?? 0;
+    private int OnlineCount => devices?.Count(d => GetStatusKey(d.LastSeen) == "online") ?? 0;
+    private int WarnCount => devices?.Count(d => GetStatusKey(d.LastSeen) == "warn") ?? 0;
+    private int OfflineCount => devices?.Count(d => GetStatusKey(d.LastSeen) == "offline") ?? 0;
 
-    private bool allVisibleSelected
+    private bool AllVisibleSelected
     {
         get
         {
@@ -465,7 +461,7 @@ else
 
     private IEnumerable<Device> FilteredDevices()
     {
-        if (devices == null) return Enumerable.Empty<Device>();
+        if (devices == null) return [];
         return statusFilter switch
         {
             "online"  => devices.Where(d => GetStatusKey(d.LastSeen) == "online"),
@@ -477,26 +473,32 @@ else
 
     private void SetFilter(string key) => statusFilter = key;
 
-    private string GetStatusKey(DateTime lastSeen)
+    private static string GetStatusKey(DateTime lastSeen)
     {
         double secs = (DateTime.UtcNow - lastSeen).TotalSeconds;
-        if (secs < 60) return "online";
-        if (secs < 300) return "warn";
-        return "offline";
+        return secs switch
+        {
+            < 60 => "online",
+            < 300 => "warn",
+            _ => "offline"
+        };
     }
 
-    private string GetStatusLabel(string key) => key switch
+    private static string GetStatusLabel(string key) => key switch
     {
         "online"  => "ONLINE",
         "warn"    => "DEGRADED",
         _         => "OFFLINE"
     };
 
-    private bool IsLiveModeActive(Device device)
+    private static bool IsLiveModeActive(Device device)
     {
-        if (device.LiveModeOverride == true) return true;
-        if (device.LiveModeOverride == false) return false;
-        return device.NdiAutoSwitch && device.AssignedNdiSourceId.HasValue;
+        return device.LiveModeOverride switch
+        {
+            true => true,
+            false => false,
+            _ => device is { NdiAutoSwitch: true, AssignedNdiSourceId: not null }
+        };
     }
 
     protected override async Task OnInitializedAsync()
@@ -507,12 +509,19 @@ else
             LoadVersionsAsync()
         );
 
-        refreshTimer = new Timer(async _ =>
+        refreshTimer = new Timer(_ =>
         {
-            await InvokeAsync(async () =>
+            InvokeAsync(async () =>
             {
-                await LoadDevices();
-                StateHasChanged();
+                try
+                {
+                    await LoadDevices();
+                    StateHasChanged();
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex, "Error during auto-refresh of devices");
+                }
             });
         }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
     }
@@ -521,7 +530,7 @@ else
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             devices = await context.Devices
                 .Include(d => d.AssignedNdiSource)
                 .OrderByDescending(d => d.LastSeen)
@@ -530,7 +539,7 @@ else
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error loading devices");
-            devices = new List<Device>();
+            devices = [];
         }
     }
 
@@ -538,7 +547,7 @@ else
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             ndiSources = await context.NdiSources
                 .OrderBy(s => s.ServiceName)
                 .ToListAsync();
@@ -546,16 +555,18 @@ else
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error loading NDI sources");
-            ndiSources = new List<NdiSource>();
+            ndiSources = [];
         }
     }
 
-    private string GetLiveModeLabel(Device device)
+    private static string GetLiveModeLabel(Device device)
     {
-        if (device.LiveModeOverride == true) return "Forced ON";
-        if (device.LiveModeOverride == false) return "Forced OFF";
-        if (device.NdiAutoSwitch && device.AssignedNdiSourceId.HasValue) return "Auto";
-        return "Off";
+        return device.LiveModeOverride switch
+        {
+            true => "Forced ON",
+            false => "Forced OFF",
+            _ => device is { NdiAutoSwitch: true, AssignedNdiSourceId: not null } ? "Auto" : "Off"
+        };
     }
 
     private async Task OpenLiveModeEditor(Device device)
@@ -581,7 +592,7 @@ else
         isSavingLiveMode = true;
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == liveModeDevice.DeviceId);
             if (device == null) return;
 
@@ -613,13 +624,13 @@ else
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             deviceGroups = await context.DeviceGroups.OrderBy(g => g.Name).ToListAsync();
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error loading device groups");
-            deviceGroups = new List<DeviceGroup>();
+            deviceGroups = [];
         }
     }
 
@@ -627,13 +638,13 @@ else
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             playerVersions = await context.PlayerVersions.OrderByDescending(v => v.VersionNumber).ToListAsync();
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error loading player versions");
-            playerVersions = new List<PlayerVersion>();
+            playerVersions = [];
         }
     }
 
@@ -641,7 +652,7 @@ else
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
             if (device != null)
             {
@@ -661,7 +672,7 @@ else
         requestingScreenshot.Add(deviceId);
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
             if (device != null && !string.IsNullOrEmpty(device.CallbackUrl))
             {
@@ -692,7 +703,7 @@ else
         resettingApiKey.Add(deviceId);
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
             if (device != null)
             {
@@ -748,7 +759,7 @@ else
         isBulkScreenshotting = true;
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             List<Device> targetDevices = await context.Devices
                 .Where(d => selectedDeviceIds.Contains(d.DeviceId) && !string.IsNullOrEmpty(d.CallbackUrl))
                 .ToListAsync();
@@ -781,7 +792,7 @@ else
         isBulkMovingGroup = true;
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             List<Device> targetDevices = await context.Devices
                 .Where(d => selectedDeviceIds.Contains(d.DeviceId))
                 .ToListAsync();
@@ -814,7 +825,7 @@ else
         isBulkAssigningVersion = true;
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             DeviceGroupVersion? groupVersion = await context.DeviceGroupVersions
                 .FirstOrDefaultAsync(gv => gv.GroupName == bulkVersionGroup);
 
@@ -864,7 +875,7 @@ else
 
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             screenshotHistory = await context.DeviceScreenshots
                 .Where(s => s.DeviceId == device.Id)
                 .OrderByDescending(s => s.CapturedAt)
@@ -880,7 +891,7 @@ else
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error loading screenshot history for device {DeviceId}", device.DeviceId);
-            screenshotHistory = new List<DeviceScreenshotDto>();
+            screenshotHistory = [];
         }
 
         StateHasChanged();

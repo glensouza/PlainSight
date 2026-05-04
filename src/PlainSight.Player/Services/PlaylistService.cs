@@ -3,22 +3,12 @@ using PlainSight.Shared.Models;
 
 namespace PlainSight.Player.Services;
 
-public class PlaylistService
+public class PlaylistService(string contentPath, string idlePath, ILogger<PlaylistService> logger)
 {
-    private readonly string _contentPath;
-    private readonly string _idlePath;
-    private readonly ILogger<PlaylistService> _logger;
-    private readonly Lock _lock = new();
-    private List<PlaylistItemDto> _playlist = [];
-    private List<PlaylistItemDto> _idlePlaylist = [];
-    private string? _currentFile;
-
-    public PlaylistService(string contentPath, string idlePath, ILogger<PlaylistService> logger)
-    {
-        _contentPath = contentPath;
-        _idlePath = idlePath;
-        _logger = logger;
-    }
+    private readonly Lock @lock = new();
+    private List<PlaylistItemDto> playlist = [];
+    private List<PlaylistItemDto> idlePlaylist = [];
+    private string? currentFile;
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
@@ -26,7 +16,7 @@ public class PlaylistService
         {
             // 1. Refresh Main Playlist
             List<PlaylistItemDto> newPlaylist = [];
-            string playlistFile = Path.Combine(_contentPath, "playlist.json");
+            string playlistFile = Path.Combine(contentPath, "playlist.json");
             if (File.Exists(playlistFile))
             {
                 string json = await File.ReadAllTextAsync(playlistFile, cancellationToken);
@@ -41,13 +31,13 @@ public class PlaylistService
 
             // 2. Refresh Idle Playlist (Alphabetical from idle folder)
             List<PlaylistItemDto> newIdlePlaylist = [];
-            if (Directory.Exists(_idlePath))
+            if (Directory.Exists(idlePath))
             {
-                newIdlePlaylist = Directory.GetFiles(_idlePath)
+                newIdlePlaylist = Directory.GetFiles(idlePath)
                     .Where(f => VideoFormats.SupportedMediaExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
                     .Select(f => new PlaylistItemDto 
                     { 
-                        FileName = Path.GetFileName(f)!, 
+                        FileName = Path.GetFileName(f), 
                         DurationSeconds = 10 // Idle images default to 10s
                     })
                     .Where(i => !string.IsNullOrEmpty(i.FileName))
@@ -55,18 +45,18 @@ public class PlaylistService
                     .ToList();
             }
 
-            lock (_lock)
+            lock (this.@lock)
             {
-                _playlist = newPlaylist;
-                _idlePlaylist = newIdlePlaylist;
+                this.playlist = newPlaylist;
+                this.idlePlaylist = newIdlePlaylist;
             }
 
-            _logger.LogInformation("Playlists refreshed. Main: {MainCount}, Idle: {IdleCount}", newPlaylist.Count, newIdlePlaylist.Count);
+            logger.LogInformation("Playlists refreshed. Main: {MainCount}, Idle: {IdleCount}", newPlaylist.Count, newIdlePlaylist.Count);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error refreshing playlists");
+            logger.LogError(ex, "Error refreshing playlists");
         }
     }
 
@@ -77,27 +67,26 @@ public class PlaylistService
             .Where(i => VideoFormats.SupportedMediaExtensions.Contains(Path.GetExtension(i.FileName).ToLowerInvariant()))
             .ToList();
 
-        lock (_lock)
+        lock (this.@lock)
         {
             // Simple sequence check for change
-            bool hasChanged = _playlist.Count != validFiles.Count || 
-                             _playlist.Zip(validFiles).Any(pair => pair.First.FileName != pair.Second.FileName || pair.First.DurationSeconds != pair.Second.DurationSeconds);
+            bool hasChanged = this.playlist.Count != validFiles.Count || this.playlist.Zip(validFiles).Any(pair => pair.First.FileName != pair.Second.FileName || pair.First.DurationSeconds != pair.Second.DurationSeconds);
 
             if (hasChanged)
             {
-                _playlist = validFiles;
-                _logger.LogInformation("Playlist updated via heartbeat: {Count} item(s)", _playlist.Count);
+                this.playlist = validFiles;
+                logger.LogInformation("Playlist updated via heartbeat: {Count} item(s)", this.playlist.Count);
 
                 // Persist to playlist.json for offline resilience
                 try
                 {
-                    string playlistFile = Path.Combine(_contentPath, "playlist.json");
-                    string json = JsonSerializer.Serialize(new PlaylistData { Items = _playlist });
+                    string playlistFile = Path.Combine(contentPath, "playlist.json");
+                    string json = JsonSerializer.Serialize(new PlaylistData { Items = this.playlist });
                     File.WriteAllText(playlistFile, json);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to persist playlist.json for offline use");
+                    logger.LogWarning(ex, "Failed to persist playlist.json for offline use");
                 }
             }
         }
@@ -105,26 +94,26 @@ public class PlaylistService
 
     public IReadOnlyList<PlaylistItemDto> GetCurrentPlaylist()
     {
-        lock (_lock)
+        lock (this.@lock)
         {
             // If main playlist is empty, serve the idle playlist
-            return (_playlist.Count > 0 ? _playlist : _idlePlaylist).AsReadOnly();
+            return (this.playlist.Count > 0 ? this.playlist : this.idlePlaylist).AsReadOnly();
         }
     }
 
     public string? GetCurrentFile()
     {
-        lock (_lock)
+        lock (this.@lock)
         {
-            return _currentFile;
+            return this.currentFile;
         }
     }
 
     public void SetCurrentFile(string? filename)
     {
-        lock (_lock)
+        lock (this.@lock)
         {
-            _currentFile = filename;
+            this.currentFile = filename;
         }
     }
 
@@ -138,6 +127,6 @@ public class PlaylistService
 
     private sealed class PlaylistData
     {
-        public List<PlaylistItemDto> Items { get; set; } = [];
+        public List<PlaylistItemDto> Items { get; init; } = [];
     }
 }

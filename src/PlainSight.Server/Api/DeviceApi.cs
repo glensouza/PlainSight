@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Data;
 using PlainSight.Server.Services;
 using PlainSight.Shared.Models;
-using Microsoft.Extensions.Configuration;
 
 namespace PlainSight.Server.Api;
 
@@ -23,8 +22,7 @@ public static class DeviceApi
         return CryptographicOperations.FixedTimeEquals(incomingHash, expectedHash);
     }
 
-    private static string SanitizeForLog(string? value) =>
-        value == null ? "(null)" : value.Replace('\r', '_').Replace('\n', '_').Replace('\0', '_');
+    private static string SanitizeForLog(string? value) => value == null ? "(null)" : value.Replace('\r', '_').Replace('\n', '_').Replace('\0', '_');
 
     private static bool IsPathInsideRoot(string root, string path)
     {
@@ -33,15 +31,14 @@ public static class DeviceApi
         StringComparison comparison = OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
-        return fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, comparison)
-            || string.Equals(fullPath, fullRoot, comparison);
+        return fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, comparison) || string.Equals(fullPath, fullRoot, comparison);
     }
 
-    public static RouteGroupBuilder MapDeviceApi(this IEndpointRouteBuilder routes)
+    public static void MapDeviceApi(this IEndpointRouteBuilder routes)
     {
         RouteGroupBuilder group = routes.MapGroup("/api/device");
 
-        group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ScheduleService scheduleService, OBSDiscoveryService obsService, IConfiguration configuration, ILoggerFactory loggerFactory, CancellationToken ct) =>
+        group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ScheduleService scheduleService, ObsDiscoveryService obsService, IConfiguration configuration, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             ILogger logger = loggerFactory.CreateLogger("DeviceApi");
             try
@@ -54,7 +51,7 @@ public static class DeviceApi
 
                 if (device == null)
                 {
-                    device = new Device
+                    device = new Device()
                     {
                         DeviceId = data.DeviceId,
                         Name = $"Device-{data.DeviceId}",
@@ -216,19 +213,28 @@ public static class DeviceApi
             }
 
             if (!request.HasFormContentType)
+            {
                 return Results.BadRequest("Expected multipart/form-data");
+            }
 
             IFormCollection form = await request.ReadFormAsync(ct);
             IFormFile? file = form.Files["screenshot"];
             if (file == null || file.Length == 0)
+            {
                 return Results.BadRequest("Missing screenshot file");
+            }
 
             // Reject non-PNG uploads and cap size at 25 MB
             const long maxBytes = 25 * 1024 * 1024;
             if (!file.ContentType.Equals("image/png", StringComparison.OrdinalIgnoreCase))
+            {
                 return Results.BadRequest("Only image/png uploads are accepted");
+            }
+
             if (file.Length > maxBytes)
+            {
                 return Results.BadRequest("Screenshot exceeds 25 MB limit");
+            }
 
             string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
             string deviceDir = Path.Combine(screenshotsRoot, deviceId);
@@ -262,7 +268,7 @@ public static class DeviceApi
 
             try
             {
-                using Stream dest = File.Create(filePath);
+                await using Stream dest = File.Create(filePath);
                 await file.CopyToAsync(dest, ct);
             }
             catch (Exception ex)
@@ -288,18 +294,16 @@ public static class DeviceApi
             CancellationToken ct) =>
         {
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
-            if (device == null)
+            if (device == null || string.IsNullOrEmpty(device.LatestScreenshotPath) || !File.Exists(device.LatestScreenshotPath))
+            {
                 return Results.NotFound();
-
-            if (string.IsNullOrEmpty(device.LatestScreenshotPath) || !File.Exists(device.LatestScreenshotPath))
-                return Results.NotFound();
+            }
 
             // Guard against a poisoned DB path escaping ScreenshotsPath
             string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
-            if (!IsPathInsideRoot(screenshotsRoot, device.LatestScreenshotPath))
-                return Results.NotFound();
-
-            return Results.File(device.LatestScreenshotPath, "image/png");
+            return !IsPathInsideRoot(screenshotsRoot, device.LatestScreenshotPath) 
+                ? Results.NotFound() 
+                : Results.File(device.LatestScreenshotPath, "image/png");
         });
 
         group.MapGet("/{deviceId}/screenshots", async (
@@ -309,7 +313,9 @@ public static class DeviceApi
         {
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
             if (device == null)
+            {
                 return Results.NotFound();
+            }
 
             List<DeviceScreenshotDto> history = await context.DeviceScreenshots
                 .Where(s => s.DeviceId == device.Id)
@@ -334,24 +340,25 @@ public static class DeviceApi
         {
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
             if (device == null)
+            {
                 return Results.NotFound();
+            }
 
             DeviceScreenshot? screenshot = await context.DeviceScreenshots
                 .FirstOrDefaultAsync(s => s.Id == id && s.DeviceId == device.Id, ct);
             if (screenshot == null)
+            {
                 return Results.NotFound();
+            }
 
             string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
-            if (!IsPathInsideRoot(screenshotsRoot, screenshot.FilePath))
+            if (!IsPathInsideRoot(screenshotsRoot, screenshot.FilePath) || !File.Exists(screenshot.FilePath))
+            {
                 return Results.NotFound();
-
-            if (!File.Exists(screenshot.FilePath))
-                return Results.NotFound();
+            }
 
             return Results.File(screenshot.FilePath, "image/png");
         }).RequireAuthorization();
-
-        return group;
     }
 
     private static async Task RecordScreenshotHistoryAsync(
@@ -362,7 +369,7 @@ public static class DeviceApi
         ILogger logger,
         CancellationToken cancellationToken)
     {
-        int historyLimit = configuration.GetValue<int>("ScreenshotHistoryLimit", 10);
+        int historyLimit = configuration.GetValue("ScreenshotHistoryLimit", 10);
 
         DeviceScreenshot record = new()
         {
@@ -380,14 +387,18 @@ public static class DeviceApi
             .ToListAsync(cancellationToken);
 
         if (excess.Count == 0)
+        {
             return;
+        }
 
         foreach (DeviceScreenshot old in excess)
         {
             try
             {
                 if (File.Exists(old.FilePath))
+                {
                     File.Delete(old.FilePath);
+                }
             }
             catch (Exception ex)
             {

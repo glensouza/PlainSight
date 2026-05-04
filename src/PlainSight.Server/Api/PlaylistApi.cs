@@ -6,7 +6,7 @@ namespace PlainSight.Server.Api;
 
 public static class PlaylistApi
 {
-    public static RouteGroupBuilder MapPlaylistApi(this IEndpointRouteBuilder routes)
+    public static void MapPlaylistApi(this IEndpointRouteBuilder routes)
     {
         RouteGroupBuilder group = routes.MapGroup("/api/playlists");
 
@@ -52,7 +52,5 @@ public static class PlaylistApi
                 }).ToList()
             });
         });
-
-        return group;
     }
 }

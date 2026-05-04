@@ -1,14 +1,8 @@
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using PlainSight.Server.Data;
-using PlainSight.Server.Services;
-using PlainSight.Shared.Models;
-
 namespace PlainSight.Server.Api;
 
 public static class ContentApi
 {
-    public static RouteGroupBuilder MapContentApi(this IEndpointRouteBuilder routes)
+    public static void MapContentApi(this IEndpointRouteBuilder routes)
     {
         RouteGroupBuilder group = routes.MapGroup("/api/content");
 
@@ -27,8 +21,6 @@ public static class ContentApi
             string idlePath = configuration["IdlePath"] ?? "/mnt/plainsight/idle";
             return ServeFile(fileName, idlePath);
         });
-
-        return group;
     }
 
     private static IResult ServeFile(string fileName, string directoryPath)

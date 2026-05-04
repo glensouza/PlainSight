@@ -9,27 +9,27 @@ public class KioskService(
     IServer server,
     ILogger<KioskService> logger) : IHostedService
 {
-    private Process? _chromiumProcess;
+    private Process? chromiumProcess;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         // Register after ApplicationStarted so Kestrel has bound its port
         // and IServerAddressesFeature contains the real URL.
-        lifetime.ApplicationStarted.Register(LaunchChromium);
+        lifetime.ApplicationStarted.Register(this.LaunchChromium);
         return Task.CompletedTask;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_chromiumProcess == null)
+        if (this.chromiumProcess == null)
             return;
 
         try
         {
-            if (!_chromiumProcess.HasExited)
+            if (!this.chromiumProcess.HasExited)
             {
-                _chromiumProcess.Kill(entireProcessTree: true);
-                await _chromiumProcess.WaitForExitAsync(cancellationToken);
+                this.chromiumProcess.Kill(entireProcessTree: true);
+                await this.chromiumProcess.WaitForExitAsync(cancellationToken);
             }
         }
         catch (Exception ex)
@@ -38,8 +38,8 @@ public class KioskService(
         }
         finally
         {
-            _chromiumProcess.Dispose();
-            _chromiumProcess = null;
+            this.chromiumProcess.Dispose();
+            this.chromiumProcess = null;
         }
     }
 
@@ -73,11 +73,11 @@ public class KioskService(
 
         try
         {
-            _chromiumProcess = Process.Start(new ProcessStartInfo(browser, args)
+            this.chromiumProcess = Process.Start(new ProcessStartInfo(browser, args)
             {
                 UseShellExecute = false
             });
-            logger.LogInformation("Chromium started (PID {Pid})", _chromiumProcess?.Id);
+            logger.LogInformation("Chromium started (PID {Pid})", this.chromiumProcess?.Id);
         }
         catch (Exception ex)
         {

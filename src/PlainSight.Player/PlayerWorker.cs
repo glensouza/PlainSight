@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using PlainSight.Player.Services;
 using PlainSight.Shared.Models;
 
@@ -34,7 +32,7 @@ public class PlayerWorker(
 
                 if (response != null)
                 {
-                    consecutiveHeartbeatFailures = 0;
+                    this.consecutiveHeartbeatFailures = 0;
 
                     if (!string.IsNullOrEmpty(response.UpdateUrl))
                     {
@@ -62,11 +60,11 @@ public class PlayerWorker(
                         await playlist.RefreshAsync(stoppingToken);
                     }
 
-                    ApplyLiveMode(response);
+                    this.ApplyLiveMode(response);
                 }
                 else
                 {
-                    HandleHeartbeatFailure();
+                    this.HandleHeartbeatFailure();
                     // Fallback to disk if heartbeat fails
                     await playlist.RefreshAsync(stoppingToken);
                 }
@@ -102,15 +100,13 @@ public class PlayerWorker(
 
     private void HandleHeartbeatFailure()
     {
-        consecutiveHeartbeatFailures++;
-        logger.LogWarning("Heartbeat failed ({Count}/{Threshold} consecutive failures)",
-            consecutiveHeartbeatFailures, FailsafeThreshold);
+        this.consecutiveHeartbeatFailures++;
+        logger.LogWarning("Heartbeat failed ({Count}/{Threshold} consecutive failures)", this.consecutiveHeartbeatFailures, FailsafeThreshold);
 
-        if (consecutiveHeartbeatFailures >= FailsafeThreshold && ndi.IsRunning)
+        if (this.consecutiveHeartbeatFailures >= FailsafeThreshold && ndi.IsRunning)
         {
             logger.LogWarning(
-                "Fail-safe triggered: {Count} consecutive heartbeat failures — killing NDI viewer and reverting to cached playlist.",
-                consecutiveHeartbeatFailures);
+                "Fail-safe triggered: {Count} consecutive heartbeat failures — killing NDI viewer and reverting to cached playlist.", this.consecutiveHeartbeatFailures);
             ndi.Stop("failsafe: server unreachable");
         }
     }

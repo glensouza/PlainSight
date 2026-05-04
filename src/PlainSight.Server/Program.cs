@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -15,7 +14,10 @@ if (args.Contains("--hash-password"))
     Console.Write("Password: ");
     string? password = Console.ReadLine();
     if (!string.IsNullOrWhiteSpace(password))
+    {
         Console.WriteLine(BCrypt.Net.BCrypt.HashPassword(password));
+    }
+
     return;
 }
 
@@ -75,8 +77,8 @@ builder.Services.AddScoped<ScheduleService>();
 builder.Services.AddHostedService<AutoScreenshotService>();
 builder.Services.AddHostedService<DeviceMonitorService>();
 builder.Services.AddHostedService<NdiDiscoveryService>();
-builder.Services.AddSingleton<OBSDiscoveryService>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<OBSDiscoveryService>());
+builder.Services.AddSingleton<ObsDiscoveryService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ObsDiscoveryService>());
 
 // Add HttpClient for calling our own API and the players
 builder.Services.AddHttpClient();
@@ -94,7 +96,7 @@ using (IServiceScope scope = app.Services.CreateScope())
     if (!dbContext.AdminUsers.Any())
     {
         string initialPassword = GenerateInitialPassword();
-        dbContext.AdminUsers.Add(new AdminUser
+        dbContext.AdminUsers.Add(new AdminUser()
         {
             Username = "admin",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(initialPassword),
@@ -213,6 +215,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
+return;
 
 static string GenerateInitialPassword()
 {

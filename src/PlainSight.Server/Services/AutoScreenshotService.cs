@@ -4,19 +4,14 @@ using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Services;
 
-internal sealed class AutoScreenshotService(
-    IServiceScopeFactory scopeFactory,
-    IConfiguration configuration,
-    ILogger<AutoScreenshotService> logger) : BackgroundService
+internal sealed class AutoScreenshotService(IServiceScopeFactory scopeFactory, IConfiguration configuration, ILogger<AutoScreenshotService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         int intervalMinutes = configuration.GetValue<int>("ScreenshotIntervalMinutes", 15);
         if (intervalMinutes < 1)
         {
-            logger.LogWarning(
-                "ScreenshotIntervalMinutes configured to {Value}, which is invalid; using 1 minute minimum",
-                intervalMinutes);
+            logger.LogWarning("ScreenshotIntervalMinutes configured to {Value}, which is invalid; using 1 minute minimum", intervalMinutes);
             intervalMinutes = 1;
         }
         TimeSpan interval = TimeSpan.FromMinutes(intervalMinutes);
@@ -28,7 +23,7 @@ internal sealed class AutoScreenshotService(
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            await TriggerScreenshotsAsync(stoppingToken);
+            await this.TriggerScreenshotsAsync(stoppingToken);
             await Task.Delay(interval, stoppingToken);
         }
     }
@@ -53,15 +48,18 @@ internal sealed class AutoScreenshotService(
             }
 
             foreach (Device device in onlineDevices)
+            {
                 device.ScreenshotRequested = true;
+            }
 
             await context.SaveChangesAsync(cancellationToken);
 
-            logger.LogInformation(
-                "AutoScreenshot: requested screenshots on {Count} online device(s)",
-                onlineDevices.Count);
+            logger.LogInformation("AutoScreenshot: requested screenshots on {Count} online device(s)", onlineDevices.Count);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Expected during shutdown, no action needed.
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "AutoScreenshotService: error triggering periodic screenshots");

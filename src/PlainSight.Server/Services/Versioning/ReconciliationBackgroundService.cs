@@ -1,82 +1,71 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-
 namespace PlainSight.Server.Services.Versioning;
 
 internal sealed class ReconciliationBackgroundService : BackgroundService
 {
-    private readonly IServiceProvider _serviceProvider;
-    private readonly ILogger<ReconciliationBackgroundService> _logger;
-    private readonly TimeSpan _reconcileInterval;
-    private readonly bool _reconcileEnabled;
+    private readonly IServiceProvider serviceProvider;
+    private readonly ILogger<ReconciliationBackgroundService> logger;
+    private readonly TimeSpan reconcileInterval;
+    private readonly bool reconcileEnabled;
 
-    public ReconciliationBackgroundService(
-        IServiceProvider serviceProvider,
-        IConfiguration configuration,
-        ILogger<ReconciliationBackgroundService> logger)
+    public ReconciliationBackgroundService(IServiceProvider serviceProvider, IConfiguration configuration, ILogger<ReconciliationBackgroundService> logger)
     {
         ArgumentNullException.ThrowIfNull(serviceProvider);
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _serviceProvider = serviceProvider;
-        _logger = logger;
+        this.serviceProvider = serviceProvider;
+        this.logger = logger;
         
-        double intervalSeconds = configuration.GetValue<double>("PlayerVersions:ReconcileIntervalSeconds", 60.0);
-        _reconcileInterval = TimeSpan.FromSeconds(intervalSeconds);
-        _reconcileEnabled = configuration.GetValue<bool>("PlayerVersions:ReconcileEnabled", true);
+        double intervalSeconds = configuration.GetValue("PlayerVersions:ReconcileIntervalSeconds", 60.0);
+        this.reconcileInterval = TimeSpan.FromSeconds(intervalSeconds);
+        this.reconcileEnabled = configuration.GetValue("PlayerVersions:ReconcileEnabled", true);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_reconcileEnabled)
+        if (!this.reconcileEnabled)
         {
-            _logger.LogInformation("ReconciliationBackgroundService is disabled by configuration.");
+            this.logger.LogInformation("ReconciliationBackgroundService is disabled by configuration.");
             return;
         }
 
-        _logger.LogInformation("ReconciliationBackgroundService started. Interval: {Interval}", _reconcileInterval);
+        this.logger.LogInformation("ReconciliationBackgroundService started. Interval: {Interval}", this.reconcileInterval);
 
         // Run immediately on startup
-        await RunReconciliationAsync(stoppingToken);
+        await this.RunReconciliationAsync(stoppingToken);
 
-        using PeriodicTimer timer = new PeriodicTimer(_reconcileInterval);
+        using PeriodicTimer timer = new(this.reconcileInterval);
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
-                await RunReconciliationAsync(stoppingToken);
+                await this.RunReconciliationAsync(stoppingToken);
             }
         }
         catch (OperationCanceledException)
         {
             // Expected on shutdown
         }
-        
-        _logger.LogInformation("ReconciliationBackgroundService stopping.");
+
+        this.logger.LogInformation("ReconciliationBackgroundService stopping.");
     }
 
     private async Task RunReconciliationAsync(CancellationToken ct)
     {
         try
         {
-            using IServiceScope scope = _serviceProvider.CreateScope();
+            using IServiceScope scope = this.serviceProvider.CreateScope();
             IPlayerVersionReconciler reconciler = scope.ServiceProvider.GetRequiredService<IPlayerVersionReconciler>();
             int ingestedCount = await reconciler.ReconcileAsync(ct);
             
             if (ingestedCount > 0)
             {
-                _logger.LogDebug("Background reconciliation tick complete. Ingested {Count} new version(s).", ingestedCount);
+                this.logger.LogDebug("Background reconciliation tick complete. Ingested {Count} new version(s).", ingestedCount);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "An error occurred during player version reconciliation tick.");
+            this.logger.LogWarning(ex, "An error occurred during player version reconciliation tick.");
         }
     }
 }

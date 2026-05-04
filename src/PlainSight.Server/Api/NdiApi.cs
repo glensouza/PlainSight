@@ -7,8 +7,8 @@ namespace PlainSight.Server.Api;
 
 public static class NdiApi
 {
-    public sealed record DeviceLiveConfigDto(bool NdiAutoSwitch, int? AssignedNdiSourceId, bool? LiveModeOverride);
-    public sealed record CreateNdiSourceDto(string ServiceName, string? HostName, string? IpAddress, int Port = 5960);
+    private sealed record DeviceLiveConfigDto(bool NdiAutoSwitch, int? AssignedNdiSourceId, bool? LiveModeOverride);
+    private sealed record CreateNdiSourceDto(string ServiceName, string? HostName, string? IpAddress, int Port = 5960);
 
     public static RouteGroupBuilder MapNdiApi(this IEndpointRouteBuilder routes)
     {

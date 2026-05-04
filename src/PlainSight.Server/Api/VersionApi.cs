@@ -1,16 +1,11 @@
-using System;
-using System.Threading;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
 using PlainSight.Server.Services.Versioning;
 
 namespace PlainSight.Server.Api;
 
 public static class VersionApi
 {
-    public static RouteGroupBuilder MapVersionApi(this IEndpointRouteBuilder routes)
+    public static void MapVersionApi(this IEndpointRouteBuilder routes)
     {
         RouteGroupBuilder group = routes.MapGroup("/api/versions").RequireAuthorization();
 
@@ -32,7 +27,5 @@ public static class VersionApi
                 return Results.StatusCode(503);
             }
         });
-
-        return group;
     }
 }

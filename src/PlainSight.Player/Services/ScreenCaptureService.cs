@@ -1,19 +1,19 @@
 using System.Diagnostics;
+using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using Microsoft.Extensions.Logging;
 
 namespace PlainSight.Player.Services;
 
-public class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
+public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
 {
     public async Task<byte[]> CaptureScreenshot()
     {
         if (OperatingSystem.IsLinux())
-            return await CaptureLinuxAsync();
+            return await this.CaptureLinuxAsync();
 
         if (OperatingSystem.IsWindows())
-            return CaptureWindows();
+            return this.CaptureWindows();
 
         logger.LogWarning("Screenshot capture not supported on this platform");
         return [];
@@ -56,10 +56,10 @@ public class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
     {
         try
         {
-            int width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-            int height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-            int left = GetSystemMetrics(SM_XVIRTUALSCREEN);
-            int top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+            int width = GetSystemMetrics(SmCxvirtualscreen);
+            int height = GetSystemMetrics(SmCyvirtualscreen);
+            int left = GetSystemMetrics(SmXvirtualscreen);
+            int top = GetSystemMetrics(SmYvirtualscreen);
 
             if (width <= 0 || height <= 0)
             {
@@ -67,9 +67,9 @@ public class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
                 return [];
             }
 
-            using System.Drawing.Bitmap bitmap = new(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-            using System.Drawing.Graphics graphics = System.Drawing.Graphics.FromImage(bitmap);
-            graphics.CopyFromScreen(left, top, 0, 0, new System.Drawing.Size(width, height), System.Drawing.CopyPixelOperation.SourceCopy);
+            using Bitmap bitmap = new(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using Graphics graphics = Graphics.FromImage(bitmap);
+            graphics.CopyFromScreen(left, top, 0, 0, new Size(width, height), CopyPixelOperation.SourceCopy);
 
             using MemoryStream ms = new();
             bitmap.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
@@ -82,12 +82,12 @@ public class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
         }
     }
 
-    private const int SM_XVIRTUALSCREEN = 76;
-    private const int SM_YVIRTUALSCREEN = 77;
-    private const int SM_CXVIRTUALSCREEN = 78;
-    private const int SM_CYVIRTUALSCREEN = 79;
+    private const int SmXvirtualscreen = 76;
+    private const int SmYvirtualscreen = 77;
+    private const int SmCxvirtualscreen = 78;
+    private const int SmCyvirtualscreen = 79;
 
-    [DllImport("user32.dll")]
+    [LibraryImport("user32.dll")]
     [SupportedOSPlatform("windows")]
-    private static extern int GetSystemMetrics(int nIndex);
+    private static partial int GetSystemMetrics(int nIndex);
 }

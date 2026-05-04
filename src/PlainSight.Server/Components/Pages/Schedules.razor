@@ -3,11 +3,8 @@
 @attribute [Authorize]
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject ILogger<Schedules> Logger
-@inject IJSRuntime JS
+@inject IJSRuntime Js
 @inject IConfiguration Configuration
-@using Microsoft.EntityFrameworkCore
-@using PlainSight.Shared.Models
-@using PlainSight.Server.Data
 
 <PageTitle>Schedules — PlainSight</PageTitle>
 
@@ -63,7 +60,7 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (var schedule in schedules.OrderByDescending(s => s.Priority))
+                @foreach (Schedule schedule in schedules.OrderByDescending(s => s.Priority))
                 {
                     <tr>
                         <td>
@@ -74,14 +71,14 @@ else
                             }
                         </td>
                         <td>
-                            @if (schedule.TargetGroups == null || schedule.TargetGroups.Count == 0)
+                            @if (schedule.TargetGroups.Count == 0)
                             {
                                 <span class="badge bg-secondary">All Groups</span>
                             }
                             else
                             {
                                 <div class="d-flex gap-1 flex-wrap" style="max-width: 250px;">
-                                    @foreach (var tg in schedule.TargetGroups)
+                                    @foreach (ScheduleTargetGroup tg in schedule.TargetGroups)
                                     {
                                         <span class="badge bg-info text-dark">@tg.GroupName</span>
                                     }
@@ -100,7 +97,7 @@ else
                             else
                             {
                                 <div class="d-flex gap-1 mt-1">
-                                    @foreach (var day in GetSelectedDays(schedule.DaysOfWeek))
+                                    @foreach (string day in GetSelectedDays(schedule.DaysOfWeek))
                                     {
                                         <span class="badge bg-light text-dark border" style="font-size: 0.7rem;">@day</span>
                                     }
@@ -183,7 +180,7 @@ else
                                             <strong>All Groups (Global)</strong>
                                         </button>
                                         <hr class="dropdown-divider my-1">
-                                        @foreach (var g in deviceGroups ?? new())
+                                        @foreach (DeviceGroup g in deviceGroups ?? [])
                                         {
                                             <button class="dropdown-item" type="button" @onclick="() => ToggleGroup(g.Name)">
                                                 <i class="bi @(formModel.TargetGroups.Contains(g.Name) ? "bi-check-square-fill text-primary" : "bi-square") me-2"></i>
@@ -199,7 +196,7 @@ else
                             <label class="form-label fw-bold">Playlist</label>
                             <select class="form-select" @bind="formModel.PlaylistId">
                                 <option value="0">-- Select Playlist --</option>
-                                @foreach (var playlist in playlists ?? new())
+                                @foreach (Playlist playlist in playlists ?? [])
                                 {
                                     <option value="@playlist.Id">@playlist.Name</option>
                                 }
@@ -305,7 +302,7 @@ else
 
     private async Task LoadAll()
     {
-        using var context = await DbFactory.CreateDbContextAsync();
+        await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
         schedules = await context.Schedules
             .Include(s => s.Playlist)
             .Include(s => s.TargetGroups)
@@ -376,7 +373,7 @@ else
         saving = true;
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             Schedule? entity;
             if (editingId.HasValue)
             {
@@ -444,8 +441,8 @@ else
         if (deleteTarget == null) return;
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
-            var existing = await context.Schedules.FindAsync(deleteTarget.Id);
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            Schedule? existing = await context.Schedules.FindAsync(deleteTarget.Id);
             if (existing != null)
             {
                 context.Schedules.Remove(existing);
@@ -464,8 +461,8 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
-            var existing = await context.Schedules.FindAsync(s.Id);
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            Schedule? existing = await context.Schedules.FindAsync(s.Id);
             if (existing != null)
             {
                 existing.IsActive = !existing.IsActive;
@@ -496,14 +493,15 @@ else
         }
     }
 
-    private List<string> GetSelectedDays(DayOfWeekFlags days)
+    private static List<string> GetSelectedDays(DayOfWeekFlags days)
     {
-        if (days == DayOfWeekFlags.All) return new List<string> { "Daily" };
+        if (days == DayOfWeekFlags.All) return ["Daily"];
         
-        var list = new List<string>();
+        List<string> list = [];
+        // ReSharper disable once LoopCanBeConvertedToQuery
         foreach (DayOfWeekFlags day in Enum.GetValues<DayOfWeekFlags>().Where(d => d != DayOfWeekFlags.None && d != DayOfWeekFlags.All))
         {
-            if ((days & day) != 0) list.Add(day.ToString().Substring(0, 3));
+            if ((days & day) != 0) list.Add(day.ToString()[..3]);
         }
         return list;
     }
@@ -512,13 +510,13 @@ else
     {
         public string Name { get; set; } = "";
         public int PlaylistId { get; set; }
-        public List<string> TargetGroups { get; set; } = new();
+        public List<string> TargetGroups { get; init; } = [];
         public bool UseSpecificDate { get; set; }
         public DayOfWeekFlags DaysOfWeek { get; set; } = DayOfWeekFlags.All;
         public DateOnly? ScheduledDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
-        public TimeOnly StartTime { get; set; } = new TimeOnly(0, 0);
-        public TimeOnly EndTime { get; set; } = new TimeOnly(23, 59, 59);
+        public TimeOnly StartTime { get; set; } = new(0, 0);
+        public TimeOnly EndTime { get; set; } = new(23, 59, 59);
         public int Priority { get; set; } = 1;
-        public bool IsActive { get; set; } = true;
+        public bool IsActive { get; init; } = true;
     }
 }

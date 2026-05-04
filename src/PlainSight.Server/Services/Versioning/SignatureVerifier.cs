@@ -1,39 +1,34 @@
-using System;
-using System.IO;
 using System.Security.Cryptography;
 
 namespace PlainSight.Server.Services.Versioning;
 
 internal sealed class SignatureVerifier : IDisposable
 {
-    private readonly ECDsa _ecdsa;
-    private readonly bool _isInitialized;
+    private readonly ECDsa ecdsa;
+    private readonly bool isInitialized;
 
     public SignatureVerifier(string publicKeyPath)
     {
         ArgumentNullException.ThrowIfNull(publicKeyPath);
 
-        _ecdsa = ECDsa.Create();
-        if (File.Exists(publicKeyPath))
+        this.ecdsa = ECDsa.Create();
+        if (!File.Exists(publicKeyPath))
         {
-            string pem = File.ReadAllText(publicKeyPath);
-            _ecdsa.ImportFromPem(pem);
-            _isInitialized = true;
+            return;
         }
+
+        string pem = File.ReadAllText(publicKeyPath);
+        this.ecdsa.ImportFromPem(pem);
+        this.isInitialized = true;
     }
 
     public bool VerifyDer(byte[] data, byte[] signature)
     {
-        if (!_isInitialized)
-        {
-            return false;
-        }
-
-        return _ecdsa.VerifyData(data, signature, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence);
+        return this.isInitialized && this.ecdsa.VerifyData(data, signature, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence);
     }
 
     public void Dispose()
     {
-        _ecdsa.Dispose();
+        this.ecdsa.Dispose();
     }
 }

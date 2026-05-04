@@ -3,12 +3,8 @@
 @attribute [Authorize]
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject IConfiguration Configuration
-@inject NavigationManager Navigation
 @inject ILogger<Versions> Logger
-@inject PlainSight.Server.Services.Versioning.IPlayerVersionReconciler Reconciler
-@using Microsoft.EntityFrameworkCore
-@using PlainSight.Shared.Models
-@using PlainSight.Server.Data
+@inject Services.Versioning.IPlayerVersionReconciler Reconciler
 @implements IDisposable
 
 <PageTitle>Versions — PlainSight</PageTitle>
@@ -70,7 +66,7 @@
                                             &middot; @FormatBytes(v.FileSizeBytes)
                                             @if (!string.IsNullOrEmpty(v.Sha256Hash))
                                             {
-                                                <span>&middot; <code title="@v.Sha256Hash">@v.Sha256Hash.Substring(0, Math.Min(12, v.Sha256Hash.Length))</code></span>
+                                                <span>&middot; <code title="@v.Sha256Hash">@v.Sha256Hash[..Math.Min(12, v.Sha256Hash.Length)]</code></span>
                                             }
                                         </small>
                                         @if (!string.IsNullOrWhiteSpace(v.Notes))
@@ -134,7 +130,7 @@
                                         @if (versions != null)
                                         {
                                             @* Always show the current assignment even if that binary isn't uploaded yet *@
-                                            @if (!versions.Any(v => v.VersionNumber == g.TargetVersion))
+                                            @if (versions.All(v => v.VersionNumber != g.TargetVersion))
                                             {
                                                 <option value="@g.TargetVersion">@g.TargetVersion (Missing)</option>
                                             }
@@ -203,7 +199,7 @@
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             versions = await context.PlayerVersions
                 .OrderByDescending(v => v.UploadedAt)
                 .ToListAsync();
@@ -229,7 +225,7 @@
         
         try
         {
-            int ingested = await Reconciler.ReconcileAsync(System.Threading.CancellationToken.None);
+            int ingested = await Reconciler.ReconcileAsync(CancellationToken.None);
             syncMessage = $"Sync complete. Ingested {ingested} new version(s).";
             await LoadAll();
         }
@@ -251,9 +247,12 @@
         syncMessage = null;
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             PlayerVersion? version = await context.PlayerVersions.FindAsync(id);
-            if (version == null) return;
+            if (version == null)
+            {
+                return;
+            }
 
             // Check if any group is still using this version
             bool inUse = await context.DeviceGroupVersions.AnyAsync(g => g.TargetVersion == version.VersionNumber);
@@ -268,11 +267,15 @@
             
             string filePath = Path.Combine(updatesPath, safeFileName);
             if (File.Exists(filePath))
+            {
                 File.Delete(filePath);
+            }
                 
             string manifestPath = Path.Combine(updatesPath, safeFileName + ".json");
             if (File.Exists(manifestPath))
+            {
                 File.Delete(manifestPath);
+            }
 
             context.PlayerVersions.Remove(version);
             await context.SaveChangesAsync();
@@ -293,7 +296,7 @@
     {
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
 
             bool anyBinariesExist = await context.PlayerVersions.AnyAsync();
             if (anyBinariesExist)
@@ -316,7 +319,9 @@
 
                 bool deviceGroupExists = await context.DeviceGroups.AnyAsync(g => g.Name == groupName);
                 if (!deviceGroupExists)
+                {
                     context.DeviceGroups.Add(new DeviceGroup { Name = groupName });
+                }
             }
 
             existing.TargetVersion = targetVersion;
@@ -349,7 +354,7 @@
         
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             DeviceGroupVersion? existing = await context.DeviceGroupVersions
                 .FirstOrDefaultAsync(g => g.GroupName == groupName);
 
@@ -360,7 +365,9 @@
                 DeviceGroup? deviceGroup = await context.DeviceGroups
                     .FirstOrDefaultAsync(g => g.Name == groupName);
                 if (deviceGroup != null)
+                {
                     context.DeviceGroups.Remove(deviceGroup);
+                }
 
                 await context.SaveChangesAsync();
                 await LoadAll();
@@ -375,11 +382,12 @@
 
     private static string FormatBytes(long bytes)
     {
-        if (bytes >= 1024 * 1024)
-            return $"{bytes / 1024.0 / 1024.0:F1} MB";
-        if (bytes >= 1024)
-            return $"{bytes / 1024.0 / 1024.0:F1} KB";
-        return $"{bytes} B";
+        return bytes switch
+        {
+            >= 1024 * 1024 => $"{bytes / 1024.0 / 1024.0:F1} MB",
+            >= 1024 => $"{bytes / 1024.0 / 1024.0:F1} KB",
+            _ => $"{bytes} B"
+        };
     }
 
     public void Dispose()

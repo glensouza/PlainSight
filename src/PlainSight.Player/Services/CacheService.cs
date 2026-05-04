@@ -1,6 +1,3 @@
-using Microsoft.Extensions.Logging;
-using PlainSight.Player;
-
 namespace PlainSight.Player.Services;
 
 public class CacheService(string sourcePath, string cachePath, ILogger logger)
@@ -51,11 +48,13 @@ public class CacheService(string sourcePath, string cachePath, ILogger logger)
             foreach (string cachedFile in cachedFiles)
             {
                 string fileName = Path.GetFileName(cachedFile);
-                if (!sourceFileNames.Contains(fileName))
+                if (sourceFileNames.Contains(fileName))
                 {
-                    logger.LogInformation("Removing {FileName} from cache {CachePath}", fileName, cachePath);
-                    File.Delete(cachedFile);
+                    continue;
                 }
+
+                logger.LogInformation("Removing {FileName} from cache {CachePath}", fileName, cachePath);
+                File.Delete(cachedFile);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
@@ -65,26 +64,34 @@ public class CacheService(string sourcePath, string cachePath, ILogger logger)
         }
     }
 
-    private static async Task<bool> ShouldUpdateAsync(string sourceFile, string destFile)
+    private static Task<bool> ShouldUpdateAsync(string sourceFile, string destFile)
     {
-        if (!File.Exists(destFile)) return true;
+        try
+        {
+            if (!File.Exists(destFile))
+            {
+                return Task.FromResult(true);
+            }
 
-        FileInfo sourceInfo = new(sourceFile);
-        FileInfo destInfo = new(destFile);
+            FileInfo sourceInfo = new(sourceFile);
+            FileInfo destInfo = new(destFile);
 
-        if (sourceInfo.Length != destInfo.Length) return true;
-
-        if (Math.Abs((sourceInfo.LastWriteTimeUtc - destInfo.LastWriteTimeUtc).TotalSeconds) > 1) return true;
-
-        return false;
+            return sourceInfo.Length != destInfo.Length 
+                ? Task.FromResult(true) 
+                : Task.FromResult(Math.Abs((sourceInfo.LastWriteTimeUtc - destInfo.LastWriteTimeUtc).TotalSeconds) > 1);
+        }
+        catch (Exception exception)
+        {
+            return Task.FromException<bool>(exception);
+        }
     }
 
     private static async Task CopyFileAsync(string sourceFile, string destFile, CancellationToken cancellationToken)
     {
         string tempFile = destFile + ".tmp";
-        
-        using (FileStream sourceStream = new(sourceFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
-        using (FileStream destStream = new(tempFile, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true))
+
+        await using (FileStream sourceStream = new(sourceFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
+        await using (FileStream destStream = new(tempFile, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true))
         {
             await sourceStream.CopyToAsync(destStream, cancellationToken);
         }
@@ -100,13 +107,13 @@ public class CacheManager(
     (string source, string cache)[] paths,
     ILogger<CacheService> logger)
 {
-    private readonly List<CacheService> _services = paths
+    private readonly List<CacheService> services = paths
         .Select(p => new CacheService(p.source, p.cache, logger))
         .ToList();
 
     public async Task SyncAllAsync(CancellationToken cancellationToken = default)
     {
-        foreach (var service in _services)
+        foreach (CacheService service in this.services)
         {
             await service.SyncAsync(cancellationToken);
         }

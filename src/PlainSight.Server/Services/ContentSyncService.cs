@@ -10,17 +10,18 @@ public class ContentSyncService(
     MediaMetadataService metadataService,
     ILogger<ContentSyncService> logger)
 {
-    private static readonly string[] SupportedExtensions =
-        [".mp4", ".avi", ".mov", ".mkv", ".webm", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"];
+    private static readonly string[] SupportedExtensions = [".mp4", ".avi", ".mov", ".mkv", ".webm", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"];
 
     private string ContentPath => configuration["ContentPath"] ?? "/mnt/plainsight/content";
 
     public async Task<(int Added, int Removed)> SyncAsync(CancellationToken cancellationToken = default)
     {
-        if (!Directory.Exists(ContentPath))
+        if (!Directory.Exists(this.ContentPath))
+        {
             return (0, 0);
+        }
 
-        HashSet<string> diskFiles = Directory.GetFiles(ContentPath)
+        HashSet<string> diskFiles = Directory.GetFiles(this.ContentPath)
             .Where(f => SupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
             .Select(f => Path.GetFileName(f))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -32,20 +33,20 @@ public class ContentSyncService(
         int removed = 0;
 
         // Remove DB entries whose file no longer exists
-        var itemsToRemove = dbItems.Where(i => !diskFiles.Contains(i.FileName)).ToList();
-        if (itemsToRemove.Any())
+        List<ContentItem> itemsToRemove = dbItems.Where(i => !diskFiles.Contains(i.FileName)).ToList();
+        if (itemsToRemove.Count != 0)
         {
-            var itemIdsToRemove = itemsToRemove.Select(i => i.Id).ToList();
+            List<int> itemIdsToRemove = itemsToRemove.Select(i => i.Id).ToList();
 
             // Batch clear playlist references first
-            var refs = await context.PlaylistItems
+            List<PlaylistItem> refs = await context.PlaylistItems
                 .Where(pi => itemIdsToRemove.Contains(pi.ContentItemId))
                 .ToListAsync(cancellationToken);
 
             context.PlaylistItems.RemoveRange(refs);
             context.ContentItems.RemoveRange(itemsToRemove);
 
-            foreach (var item in itemsToRemove)
+            foreach (ContentItem item in itemsToRemove)
             {
                 logger.LogInformation("Sync removed missing content: {FileName}", item.FileName);
                 removed++;
@@ -61,7 +62,7 @@ public class ContentSyncService(
                 ? ContentType.RenderedWebsite
                 : isVideo ? ContentType.Video : ContentType.Image;
 
-            string filePath = Path.Combine(ContentPath, fileName);
+            string filePath = Path.Combine(this.ContentPath, fileName);
             FileInfo fileInfo = new(filePath);
 
             int duration = 10;

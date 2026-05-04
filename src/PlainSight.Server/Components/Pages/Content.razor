@@ -6,12 +6,7 @@
 @inject MediaMetadataService MediaMetadataService
 @inject RenderQueue RenderQueue
 @inject IConfiguration Configuration
-@inject NavigationManager Navigation
 @inject ILogger<Content> Logger
-@using Microsoft.EntityFrameworkCore
-@using PlainSight.Shared.Models
-@using PlainSight.Server.Data
-@using PlainSight.Server.Services
 @implements IDisposable
 
 <PageTitle>Content Library — PlainSight</PageTitle>
@@ -187,17 +182,18 @@ else
                 {
                     <tr>
                         <td>
-                            @if (item.Type == ContentType.Video)
+                            @switch (item.Type)
                             {
-                                <span class="badge bg-primary"><i class="bi bi-play-circle"></i> Video</span>
-                            }
-                            else if (item.Type == ContentType.Image)
-                            {
-                                <span class="badge bg-success"><i class="bi bi-image"></i> Image</span>
-                            }
-                            else
-                            {
-                                <span class="badge bg-info"><i class="bi bi-globe"></i> Rendered</span>
+                                case ContentType.Video:
+                                    <span class="badge bg-primary"><i class="bi bi-play-circle"></i> Video</span>
+                                    break;
+                                case ContentType.Image:
+                                    <span class="badge bg-success"><i class="bi bi-image"></i> Image</span>
+                                    break;
+                                case ContentType.RenderedWebsite:
+                                default:
+                                    <span class="badge bg-info"><i class="bi bi-globe"></i> Rendered</span>
+                                    break;
                             }
                         </td>
                         <td>@item.Name</td>
@@ -437,7 +433,7 @@ else
                 <div class="modal-body p-0 bg-dark d-flex align-items-center justify-content-center" style="min-height: 400px;">
                     @if (isImage)
                     {
-                        <img src="@apiPath" class="img-fluid" style="max-height: 70vh;" />
+                        <img src="@apiPath" class="img-fluid" style="max-height: 70vh;" alt="@previewName"/>
                     }
                     else
                     {
@@ -458,9 +454,9 @@ else
 @code {
     private sealed class RenderJobState
     {
-        public string JobId { get; set; } = "";
-        public string Url { get; set; } = "";
-        public int DurationSeconds { get; set; }
+        public string JobId { get; init; } = "";
+        public string Url { get; init; } = "";
+        public int DurationSeconds { get; init; }
         public string Status { get; set; } = "Queued";
         public string? Error { get; set; }
     }
@@ -478,7 +474,7 @@ else
     private int renderDuration = 30;
     private string? renderSubmitError;
     private string? syncMessage;
-    private List<RenderJobState> renderJobs = new();
+    private readonly List<RenderJobState> renderJobs = [];
     private bool isPolling;
     private ContentItem? previewItem;
     private string? previewIdleFileName;
@@ -558,7 +554,7 @@ else
         if (renamingItem == null) return;
         try
         {
-            using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             ContentItem? item = await context.ContentItems.FindAsync(renamingItem.Id);
             if (item == null) return;
 
@@ -683,7 +679,7 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             contentItems = await context.ContentItems
                 .OrderByDescending(c => c.UploadedAt)
                 .ToListAsync(cts.Token);
@@ -691,7 +687,7 @@ else
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error loading content");
-            contentItems = new List<ContentItem>();
+            contentItems = [];
         }
     }
 
@@ -717,8 +713,8 @@ else
             string fileName = $"{DateTime.UtcNow:yyyyMMddHHmmss}_{safeOriginalName}";
             string filePath = Path.Combine(contentPath, fileName);
 
-            using (var stream = selectedFile.OpenReadStream(maxAllowedSize))
-            using (var fileStream = new FileStream(filePath, FileMode.Create))
+            await using (Stream stream = selectedFile.OpenReadStream(maxAllowedSize))
+            await using (FileStream fileStream = new(filePath, FileMode.Create))
             {
                 await stream.CopyToAsync(fileStream);
             }
@@ -733,7 +729,7 @@ else
                 duration = await MediaMetadataService.GetVideoDurationAsync(filePath);
             }
 
-            using var context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             ContentItem? contentItem = await context.ContentItems.FirstOrDefaultAsync(i => i.FileName == fileName);
 
             if (contentItem == null)
@@ -772,44 +768,53 @@ else
         }
     }
 
-    private async Task SubmitRender()
+    private Task SubmitRender()
     {
-        if (string.IsNullOrWhiteSpace(renderUrl)) return;
-
-        renderSubmitError = null;
         try
         {
-            if (renderDuration is < 5 or > 300)
+            if (string.IsNullOrWhiteSpace(renderUrl)) return Task.CompletedTask;
+
+            renderSubmitError = null;
+            try
             {
-                renderSubmitError = "Duration must be between 5 and 300 seconds";
-                return;
+                if (renderDuration is < 5 or > 300)
+                {
+                    renderSubmitError = "Duration must be between 5 and 300 seconds";
+                    return Task.CompletedTask;
+                }
+
+                string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+                Directory.CreateDirectory(contentPath);
+
+                string fileName = $"rendered_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}.mp4";
+                string outputPath = Path.Combine(contentPath, fileName);
+
+                RenderJob job = new()
+                {
+                    Url = renderUrl,
+                    DurationSeconds = renderDuration,
+                    OutputPath = outputPath,
+                    FileName = fileName
+                };
+
+                RenderQueue.Enqueue(job);
+                renderJobs.Add(new RenderJobState { JobId = job.Id, Url = renderUrl, DurationSeconds = renderDuration });
+                renderUrl = "";
+
+                if (!isPolling)
+                    _ = PollAllJobsAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error submitting render");
+                renderSubmitError = ex.Message;
             }
 
-            string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
-            Directory.CreateDirectory(contentPath);
-
-            string fileName = $"rendered_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}.mp4";
-            string outputPath = Path.Combine(contentPath, fileName);
-
-            RenderJob job = new()
-            {
-                Url = renderUrl,
-                DurationSeconds = renderDuration,
-                OutputPath = outputPath,
-                FileName = fileName
-            };
-
-            RenderQueue.Enqueue(job);
-            renderJobs.Add(new RenderJobState { JobId = job.Id, Url = renderUrl, DurationSeconds = renderDuration });
-            renderUrl = "";
-
-            if (!isPolling)
-                _ = PollAllJobsAsync();
+            return Task.CompletedTask;
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            Logger.LogError(ex, "Error submitting render");
-            renderSubmitError = ex.Message;
+            return Task.FromException(exception);
         }
     }
 
@@ -853,7 +858,7 @@ else
     {
         try
         {
-            using var context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             ContentItem? item = await context.ContentItems.FindAsync(id);
             if (item != null)
             {
@@ -876,25 +881,34 @@ else
         }
     }
 
-    private async Task LoadIdleContent()
+    private Task LoadIdleContent()
     {
         try
         {
-            string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
-            if (!Directory.Exists(idlePath))
+            try
             {
-                Directory.CreateDirectory(idlePath);
+                string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+                if (!Directory.Exists(idlePath))
+                {
+                    Directory.CreateDirectory(idlePath);
+                }
+
+                idleFiles = new DirectoryInfo(idlePath)
+                    .GetFiles()
+                    .OrderBy(f => f.Name)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error loading idle content");
+                idleFiles = [];
             }
 
-            idleFiles = new DirectoryInfo(idlePath)
-                .GetFiles()
-                .OrderBy(f => f.Name)
-                .ToList();
+            return Task.CompletedTask;
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            Logger.LogError(ex, "Error loading idle content");
-            idleFiles = new List<FileInfo>();
+            return Task.FromException(exception);
         }
     }
 
@@ -925,8 +939,8 @@ else
                 return;
             }
 
-            using (Stream stream = selectedIdleFile.OpenReadStream(maxAllowedSize))
-            using (FileStream fileStream = new FileStream(filePath, FileMode.Create))
+            await using (Stream stream = selectedIdleFile.OpenReadStream(maxAllowedSize))
+            await using (FileStream fileStream = new(filePath, FileMode.Create))
             {
                 await stream.CopyToAsync(fileStream);
             }

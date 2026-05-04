@@ -21,15 +21,13 @@ internal sealed class DeviceMonitorService(
             return;
         }
 
-        logger.LogInformation(
-            "DeviceMonitorService started; checking every 60s, offline threshold = {Minutes} min",
-            options.OfflineThresholdMinutes);
+        logger.LogInformation("DeviceMonitorService started; checking every 60s, offline threshold = {Minutes} min", options.OfflineThresholdMinutes);
 
         using PeriodicTimer timer = new(TimeSpan.FromSeconds(60));
 
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
-            await CheckDevicesAsync(options, stoppingToken);
+            await this.CheckDevicesAsync(options, stoppingToken);
         }
     }
 
@@ -48,13 +46,16 @@ internal sealed class DeviceMonitorService(
 
             foreach (Device device in newlyOffline)
             {
-                bool sent = await TrySendEmailAsync(options, BuildOfflineSubject(device), BuildOfflineBody(device, options));
-                if (sent)
+                bool sent = await this.TrySendEmailAsync(options, BuildOfflineSubject(device),
+                    BuildOfflineBody(device, options));
+                if (!sent)
                 {
-                    device.IsAlertSent = true;
-                    logger.LogInformation(
-                        "Offline alert sent for device {DeviceId} ({Name})", device.DeviceId, device.Name);
+                    continue;
                 }
+
+                device.IsAlertSent = true;
+                logger.LogInformation("Offline alert sent for device {DeviceId} ({Name})", device.DeviceId,
+                    device.Name);
             }
 
             List<Device> recovered = await context.Devices
@@ -63,19 +64,26 @@ internal sealed class DeviceMonitorService(
 
             foreach (Device device in recovered)
             {
-                bool sent = await TrySendEmailAsync(options, BuildOnlineSubject(device), BuildOnlineBody(device));
-                if (sent)
+                bool sent = await this.TrySendEmailAsync(options, BuildOnlineSubject(device), BuildOnlineBody(device));
+                if (!sent)
                 {
-                    device.IsAlertSent = false;
-                    logger.LogInformation(
-                        "Recovery email sent for device {DeviceId} ({Name})", device.DeviceId, device.Name);
+                    continue;
                 }
+
+                device.IsAlertSent = false;
+                logger.LogInformation("Recovery email sent for device {DeviceId} ({Name})", device.DeviceId,
+                    device.Name);
             }
 
             if (newlyOffline.Count > 0 || recovered.Count > 0)
+            {
                 await context.SaveChangesAsync(cancellationToken);
+            }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Expected during shutdown, no action needed
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "DeviceMonitorService: error during device check");
@@ -86,9 +94,7 @@ internal sealed class DeviceMonitorService(
     {
         AlertEmailOptions email = options.Email;
 
-        if (string.IsNullOrWhiteSpace(email.SmtpHost) ||
-            string.IsNullOrWhiteSpace(email.To) ||
-            string.IsNullOrWhiteSpace(email.Username))
+        if (string.IsNullOrWhiteSpace(email.SmtpHost) || string.IsNullOrWhiteSpace(email.To) || string.IsNullOrWhiteSpace(email.Username))
         {
             logger.LogDebug("DeviceMonitorService: SMTP not configured, skipping email send");
             return true;
@@ -96,13 +102,9 @@ internal sealed class DeviceMonitorService(
 
         try
         {
-#pragma warning disable SYSLIB0021
-            using SmtpClient smtp = new(email.SmtpHost, email.SmtpPort)
-            {
-                EnableSsl = true,
-                Credentials = new NetworkCredential(email.Username, email.Password)
-            };
-#pragma warning restore SYSLIB0021
+            using SmtpClient smtp = new(email.SmtpHost, email.SmtpPort);
+            smtp.EnableSsl = true;
+            smtp.Credentials = new NetworkCredential(email.Username, email.Password);
 
             string fromAddress = string.IsNullOrWhiteSpace(email.From) ? email.Username : email.From;
             using MailMessage message = new(fromAddress, email.To, subject, body);
@@ -117,8 +119,7 @@ internal sealed class DeviceMonitorService(
         }
     }
 
-    private static string BuildOfflineSubject(Device device) =>
-        $"[PlainSight] Device {device.Name} is OFFLINE";
+    private static string BuildOfflineSubject(Device device) => $"[PlainSight] Device {device.Name} is OFFLINE";
 
     private static string BuildOfflineBody(Device device, AlertsOptions options) =>
         $"""

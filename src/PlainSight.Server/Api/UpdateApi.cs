@@ -6,7 +6,7 @@ namespace PlainSight.Server.Api;
 
 public static class UpdateApi
 {
-    public static RouteGroupBuilder MapUpdateApi(this IEndpointRouteBuilder routes)
+    public static void MapUpdateApi(this IEndpointRouteBuilder routes)
     {
         RouteGroupBuilder group = routes.MapGroup("/api/updates");
 
@@ -21,15 +21,14 @@ public static class UpdateApi
 
             string updatesPath = configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
             string filePath = Path.Combine(updatesPath, record.FileName);
-            if (!File.Exists(filePath))
+            if (File.Exists(filePath))
             {
-                logger.LogError("Binary file missing for version {Version}: {Path}", version, filePath);
-                return Results.NotFound();
+                return Results.File(filePath, "application/octet-stream", record.FileName);
             }
 
-            return Results.File(filePath, "application/octet-stream", record.FileName);
-        });
+            logger.LogError("Binary file missing for version {Version}: {Path}", version, filePath);
+            return Results.NotFound();
 
-        return group;
+        });
     }
 }

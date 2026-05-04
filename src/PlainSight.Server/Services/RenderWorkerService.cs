@@ -31,6 +31,7 @@ public class RenderWorkerService(
                 {
                     File.Delete(job.OutputPath);
                 }
+
                 File.Move(tempPath, job.OutputPath);
 
                 long fileSize = File.Exists(job.OutputPath) ? new FileInfo(job.OutputPath).Length : 0;

@@ -8,9 +8,9 @@ public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, I
 {
     public async Task<Playlist?> GetActivePlaylistAsync(string deviceGroup, CancellationToken ct = default)
     {
-        using var context = await dbFactory.CreateDbContextAsync(ct);
+        await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(ct);
         
-        DateTime now = GetSystemTime();
+        DateTime now = this.GetSystemTime();
         DateOnly currentDate = DateOnly.FromDateTime(now);
         TimeOnly currentTime = TimeOnly.FromDateTime(now);
         DayOfWeekFlags dayFlag = GetDayOfWeekFlag(now.DayOfWeek);
@@ -18,7 +18,7 @@ public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, I
         // 1. Find all active schedules matching group and current day/time
         // Matches if: (TargetGroups is empty [Global] OR TargetGroups contains deviceGroup)
         // AND ((ScheduledDate matches today) OR (ScheduledDate is null AND DaysOfWeek matches today))
-        var eligibleSchedules = await context.Schedules
+        List<Schedule> eligibleSchedules = await context.Schedules
             .Include(s => s.TargetGroups)
             .Include(s => s.Playlist)
             .ThenInclude(p => p.Items)

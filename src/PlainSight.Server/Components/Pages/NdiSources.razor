@@ -2,12 +2,8 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
-@inject OBSDiscoveryService OBS
+@inject ObsDiscoveryService Obs
 @inject ILogger<NdiSources> Logger
-@using Microsoft.EntityFrameworkCore
-@using PlainSight.Server.Data
-@using PlainSight.Server.Services
-@using PlainSight.Shared.Models
 @implements IDisposable
 
 <PageTitle>NDI Sources — PlainSight</PageTitle>
@@ -38,22 +34,22 @@
 }
 
 @* OBS WebSocket status card *@
-@if (OBS.IsConfigured)
+@if (Obs.IsConfigured)
 {
-    <div class="alert @(OBS.IsConnected ? "alert-success" : "alert-warning") mt-3 d-flex align-items-center gap-2">
-        <i class="bi @(OBS.IsConnected ? "bi-broadcast" : "bi-broadcast-pin")"></i>
+    <div class="alert @(Obs.IsConnected ? "alert-success" : "alert-warning") mt-3 d-flex align-items-center gap-2">
+        <i class="bi @(Obs.IsConnected ? "bi-broadcast" : "bi-broadcast-pin")"></i>
         <span>
-            <strong>OBS WebSocket:</strong> @OBS.ConnectionStatus
-            @if (OBS.IsConnected)
+            <strong>OBS WebSocket:</strong> @Obs.ConnectionStatus
+            @if (Obs.IsConnected)
             {
-                <span class="ms-2 badge @(OBS.IsNdiOutputActive ? "bg-success" : "bg-secondary")">
-                    NDI Output @(OBS.IsNdiOutputActive ? "active" : "inactive")
+                <span class="ms-2 badge @(Obs.IsNdiOutputActive ? "bg-success" : "bg-secondary")">
+                    NDI Output @(Obs.IsNdiOutputActive ? "active" : "inactive")
                 </span>
-                @if (OBS.IsStreaming)
+                @if (Obs.IsStreaming)
                 {
                     <span class="ms-1 badge bg-danger">Streaming</span>
                 }
-                @if (OBS.IsRecording)
+                @if (Obs.IsRecording)
                 {
                     <span class="ms-1 badge bg-danger">Recording</span>
                 }
@@ -76,12 +72,12 @@ else
             <div class="d-flex align-items-center gap-4 small text-muted">
                 <div class="form-check form-switch mb-0">
                     <input class="form-check-input" type="checkbox" role="switch" id="syncStreaming" 
-                           checked="@OBS.SyncWithStreaming" @onchange="(e) => UpdateSyncSettings((bool)(e.Value ?? false), OBS.SyncWithRecording)">
+                           checked="@Obs.SyncWithStreaming" @onchange="(e) => UpdateSyncSettings((bool)(e.Value ?? false), Obs.SyncWithRecording)">
                     <label class="form-check-label" for="syncStreaming">Sync with Streaming</label>
                 </div>
                 <div class="form-check form-switch mb-0">
                     <input class="form-check-input" type="checkbox" role="switch" id="syncRecording" 
-                           checked="@OBS.SyncWithRecording" @onchange="(e) => UpdateSyncSettings(OBS.SyncWithStreaming, (bool)(e.Value ?? false))">
+                           checked="@Obs.SyncWithRecording" @onchange="(e) => UpdateSyncSettings(Obs.SyncWithStreaming, (bool)(e.Value ?? false))">
                     <label class="form-check-label" for="syncRecording">Sync with Recording</label>
                 </div>
             </div>
@@ -169,23 +165,17 @@ else
                         </td>
                         <td>
                             <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" role="switch" 
-                                       checked="@source.IsDefault" 
-                                       @onchange="() => SetDefault(source)" />
+                                <input class="form-check-input" type="checkbox" role="switch" checked="@source.IsDefault" @onchange="() => SetDefault(source)" />
                             </div>
                         </td>
                         <td><code>@source.ServiceName</code></td>
                         <td>@(source.HostName ?? "-")</td>
                         <td>@(source.IpAddress != null ? $"{source.IpAddress}:{source.Port}" : "-")</td>
                         <td>
-                            <span title="@source.FirstSeenUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC">
-                                @GetTimeSince(source.FirstSeenUtc)
-                            </span>
+                            <span title="@source.FirstSeenUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC">@GetTimeSince(source.FirstSeenUtc)</span>
                         </td>
                         <td>
-                            <span title="@source.LastSeenUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC">
-                                @GetTimeSince(source.LastSeenUtc)
-                            </span>
+                            <span title="@source.LastSeenUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC">@GetTimeSince(source.LastSeenUtc)</span>
                         </td>
                         <td class="text-end action-cell">
                             @if (isCurrentlyLiveSource)
@@ -354,7 +344,7 @@ else
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error loading NDI sources");
-            sources = new List<NdiSource>();
+            sources = [];
             errorMessage = "Failed to load NDI sources.";
         }
     }
@@ -431,8 +421,7 @@ else
             await query.ExecuteUpdateAsync(d => d
                 .SetProperty(x => x.LiveModeOverride, (bool?)null));
 
-            Logger.LogInformation("End Live: cleared live mode override for group '{Group}'", 
-                string.IsNullOrEmpty(targetGroup) ? "All" : targetGroup);
+            Logger.LogInformation("End Live: cleared live mode override for group '{Group}'", string.IsNullOrEmpty(targetGroup) ? "All" : targetGroup);
             await LoadLiveStatus();
         }
         catch (Exception ex)
@@ -449,15 +438,16 @@ else
     private bool IsLive(NdiSource source)
     {
         // A source is live if OBS is active AND (it's the configured name OR it's the default source)
-        if (OBS.IsConnected && OBS.IsLiveActive())
+        if (!Obs.IsConnected || !Obs.IsLiveActive())
         {
-            bool isObsSource = !string.IsNullOrEmpty(OBS.ConfiguredNdiSourceName) && 
-                               string.Equals(source.ServiceName, OBS.ConfiguredNdiSourceName, StringComparison.Ordinal);
+            return (DateTime.UtcNow - source.LastSeenUtc).TotalSeconds < 60;
+        }
+
+        bool isObsSource = !string.IsNullOrEmpty(Obs.ConfiguredNdiSourceName) && string.Equals(source.ServiceName, Obs.ConfiguredNdiSourceName, StringComparison.Ordinal);
             
-            if (isObsSource || source.IsDefault)
-            {
-                return true;
-            }
+        if (isObsSource || source.IsDefault)
+        {
+            return true;
         }
 
         // Fallback to mDNS heartbeats
@@ -538,8 +528,7 @@ else
             await query.ExecuteUpdateAsync(d => d
                 .SetProperty(x => x.NdiAutoSwitch, false));
 
-            Logger.LogInformation("Disable Auto-Switch: targeted group '{Group}' unset from NDI automation", 
-                string.IsNullOrEmpty(targetGroup) ? "All" : targetGroup);
+            Logger.LogInformation("Disable Auto-Switch: targeted group '{Group}' unset from NDI automation", string.IsNullOrEmpty(targetGroup) ? "All" : targetGroup);
             
             await LoadGroups();
             errorMessage = string.Empty;
@@ -559,7 +548,7 @@ else
     {
         try
         {
-            await OBS.UpdateSyncSettingsAsync(streaming, recording);
+            await Obs.UpdateSyncSettingsAsync(streaming, recording);
             errorMessage = string.Empty;
         }
         catch (Exception ex)
@@ -656,10 +645,17 @@ else
     private string GetTimeSince(DateTime dateTime)
     {
         TimeSpan timeSpan = DateTime.UtcNow - dateTime;
-        if (timeSpan.TotalSeconds < 60) return $"{(int)timeSpan.TotalSeconds}s ago";
-        if (timeSpan.TotalMinutes < 60) return $"{(int)timeSpan.TotalMinutes}m ago";
-        if (timeSpan.TotalHours < 24) return $"{(int)timeSpan.TotalHours}h ago";
-        return $"{(int)timeSpan.TotalDays}d ago";
+        if (timeSpan.TotalSeconds < 60)
+        {
+            return $"{(int)timeSpan.TotalSeconds}s ago";
+        }
+
+        if (timeSpan.TotalMinutes < 60)
+        {
+            return $"{(int)timeSpan.TotalMinutes}m ago";
+        }
+
+        return timeSpan.TotalHours < 24 ? $"{(int)timeSpan.TotalHours}h ago" : $"{(int)timeSpan.TotalDays}d ago";
     }
 
     public void Dispose()
