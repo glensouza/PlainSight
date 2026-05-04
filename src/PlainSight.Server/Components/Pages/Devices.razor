@@ -94,7 +94,7 @@ else
                         <button class="ps-tile__screen-btn"
                                 @onclick="() => ShowScreenshotHistory(device)"
                                 title="View screenshot history">
-                            <img src="/api/device/@device.DeviceId/screenshots/latest?t=@previewCacheBust"
+                            <img src="/api/device/@device.DeviceId/screenshot?t=@previewCacheBust"
                                  alt="" />
                         </button>
                     }
