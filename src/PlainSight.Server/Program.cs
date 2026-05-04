@@ -7,6 +7,7 @@ using PlainSight.Server.Api;
 using PlainSight.Server.Components;
 using PlainSight.Server.Data;
 using PlainSight.Server.Services;
+using PlainSight.Server.Services.Versioning;
 
 // CLI utility: print a bcrypt hash for use in initial setup
 if (args.Contains("--hash-password"))
@@ -53,10 +54,6 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =
 {
     options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
 });
-
-using PlainSight.Server.Services.Versioning;
-
-// ... (top of file)
 
 // Add custom services
 builder.Services.AddSingleton<MediaMetadataService>();
