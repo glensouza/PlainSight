@@ -1,0 +1,158 @@
+@page "/logs"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using PlainSight.Server.Data
+@using PlainSight.Server.Services
+@using PlainSight.Shared.Models
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<PlainSightDbContext> DbFactory
+@inject ILogger<Logs> Logger
+
+<PageTitle>System Logs — PlainSight</PageTitle>
+
+<div class="page-header">
+    <h1>System Logs</h1>
+    <p class="text-muted mb-0">Centralized logs from the server and device fleet</p>
+</div>
+
+<div class="ps-toolbar">
+    <div class="ps-toolbar__filters">
+        <select class="ps-cell__select filter-select" @bind="sourceFilter">
+            <option value="">All Sources</option>
+            <option value="Server">Server</option>
+            <option value="Device">Devices</option>
+        </select>
+        
+        <select class="ps-cell__select filter-select" @bind="levelFilter">
+            <option value="">All Levels</option>
+            <option value="Information">Information</option>
+            <option value="Warning">Warning</option>
+            <option value="Error">Error</option>
+            <option value="Critical">Critical</option>
+        </select>
+
+        <button class="btn btn-sm btn-primary" @onclick="LoadLogs">
+            <i class="bi bi-filter"></i> Apply
+        </button>
+    </div>
+    <div class="ps-toolbar__actions">
+        <button class="btn btn-sm btn-outline-secondary" @onclick="LoadLogs">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+    </div>
+</div>
+
+@if (logs == null)
+{
+    <p><em>Loading logs...</em></p>
+}
+else if (!logs.Any())
+{
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> No logs found matching the criteria.
+    </div>
+}
+else
+{
+    <div class="ps-table-container">
+        <table class="ps-table">
+            <thead>
+                <tr>
+                    <th>TIMESTAMP</th>
+                    <th>SOURCE</th>
+                    <th>LEVEL</th>
+                    <th>CATEGORY</th>
+                    <th>MESSAGE</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (LogEntry log in logs)
+                {
+                    <tr class="log-row--@log.LogLevel.ToLower()">
+                        <td class="text-nowrap mono">@log.Timestamp.ToLocalTime().ToString("MM-dd HH:mm:ss")</td>
+                        <td class="text-nowrap">
+                            <span class="badge @(log.Source == LogSource.Server ? "bg-primary" : "bg-info")">
+                                @log.Source: @log.SourceId
+                            </span>
+                        </td>
+                        <td class="text-nowrap">
+                            <span class="pill pill--@GetLevelClass(log.LogLevel)">
+                                <span class="led"></span>
+                                @log.LogLevel
+                            </span>
+                        </td>
+                        <td class="text-muted small">
+                            <div class="category-text" title="@log.Category">@TruncateCategory(log.Category)</div>
+                        </td>
+                        <td>
+                            <div class="log-message">@log.Message</div>
+                            @if (!string.IsNullOrEmpty(log.Exception))
+                            {
+                                <pre class="log-exception mt-1">@log.Exception</pre>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<LogEntry>? logs;
+    private string sourceFilter = string.Empty;
+    private string levelFilter = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLogs();
+    }
+
+    private async Task LoadLogs()
+    {
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            IQueryable<LogEntry> query = context.LogEntries.AsNoTracking();
+
+            if (!string.IsNullOrEmpty(sourceFilter))
+            {
+                LogSource source = Enum.Parse<LogSource>(sourceFilter);
+                query = query.Where(l => l.Source == source);
+            }
+
+            if (!string.IsNullOrEmpty(levelFilter))
+            {
+                query = query.Where(l => l.LogLevel == levelFilter);
+            }
+
+            logs = await query
+                .OrderByDescending(l => l.Timestamp)
+                .Take(200)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading logs");
+            logs = [];
+        }
+    }
+
+    private static string GetLevelClass(string level) => level switch
+    {
+        "Information" => "online",
+        "Warning" => "warn",
+        "Error" or "Critical" => "offline",
+        _ => "muted"
+    };
+
+    private static string TruncateCategory(string category)
+    {
+        if (string.IsNullOrEmpty(category))
+        {
+            return string.Empty;
+        }
+        string[] parts = category.Split('.');
+        return parts.Last();
+    }
+}
