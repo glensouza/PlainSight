@@ -19,138 +19,97 @@
             </span>
         </p>
     </div>
-    <span class="badge text-bg-success px-3 py-2">
+    <span class="badge bg-success px-3 py-2">
         <i class="bi bi-broadcast me-1"></i> Live
     </span>
 </div>
 
-<!-- Stat cards -->
+<!-- Dashboard Cards -->
 <div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
-        <div class="stat-card">
-            <div class="stat-card-icon" style="background:#eff6ff;color:#3b82f6">
-                <i class="bi bi-display"></i>
-            </div>
-            <div>
-                <div class="stat-card-value">@(onlineCount?.ToString() ?? "—")</div>
-                <div class="stat-card-label">Online Devices</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="stat-card">
-            <div class="stat-card-icon" style="background:#f0fdf4;color:#16a34a">
-                <i class="bi bi-film"></i>
-            </div>
-            <div>
-                <div class="stat-card-value">@(contentCount?.ToString() ?? "—")</div>
-                <div class="stat-card-label">Content Items</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="stat-card">
-            <div class="stat-card-icon" style="background:#faf5ff;color:#9333ea">
-                <i class="bi bi-collection-play"></i>
-            </div>
-            <div>
-                <div class="stat-card-value">@(playlistCount?.ToString() ?? "—")</div>
-                <div class="stat-card-label">Playlists</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="stat-card">
-            <div class="stat-card-icon" style="background:#fff7ed;color:#ea580c">
-                <i class="bi bi-box-seam"></i>
-            </div>
-            <div>
-                <div class="stat-card-value">@(versionCount?.ToString() ?? "—")</div>
-                <div class="stat-card-label">Versions</div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Quick links -->
-<div class="row g-3">
     <div class="col-md-6 col-lg-3">
         <a href="/devices" class="text-decoration-none">
-            <div class="card h-100 quick-link-card">
-                <div class="card-body">
-                    <div class="d-flex align-items-center gap-2 mb-2">
-                        <i class="bi bi-display fs-5" style="color:#3b82f6"></i>
-                        <span class="fw-semibold">Devices</span>
+            <div class="stat-card h-100">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="stat-card-icon" style="background: var(--ps-blue-dim); color: var(--ps-blue); border-color: rgba(59, 130, 246, 0.25);">
+                        <i class="bi bi-display"></i>
                     </div>
-                    <p class="text-muted mb-0" style="font-size:0.8125rem">Monitor your fleet in real-time. View status, version, and what's playing.</p>
+                    <div>
+                        <div class="stat-card-value">@(this.onlineCount?.ToString() ?? "—")</div>
+                        <div class="stat-card-label">Online Devices</div>
+                    </div>
                 </div>
+                <p class="stat-card-description mb-0">Monitor your fleet in real-time. View status, version, and what's playing.</p>
             </div>
         </a>
     </div>
     <div class="col-md-6 col-lg-3">
         <a href="/content" class="text-decoration-none">
-            <div class="card h-100 quick-link-card">
-                <div class="card-body">
-                    <div class="d-flex align-items-center gap-2 mb-2">
-                        <i class="bi bi-film fs-5" style="color:#16a34a"></i>
-                        <span class="fw-semibold">Content</span>
+            <div class="stat-card h-100">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="stat-card-icon" style="background: var(--ps-online-dim); color: var(--ps-online); border-color: rgba(16, 185, 129, 0.25);">
+                        <i class="bi bi-film"></i>
                     </div>
-                    <p class="text-muted mb-0" style="font-size:0.8125rem">Upload videos and images, or render websites to video.</p>
+                    <div>
+                        <div class="stat-card-value">@(this.contentCount?.ToString() ?? "—")</div>
+                        <div class="stat-card-label">Content Items</div>
+                    </div>
                 </div>
+                <p class="stat-card-description mb-0">Upload videos and images, or render websites to video.</p>
             </div>
         </a>
     </div>
     <div class="col-md-6 col-lg-3">
         <a href="/playlists" class="text-decoration-none">
-            <div class="card h-100 quick-link-card">
-                <div class="card-body">
-                    <div class="d-flex align-items-center gap-2 mb-2">
-                        <i class="bi bi-collection-play fs-5" style="color:#9333ea"></i>
-                        <span class="fw-semibold">Playlists</span>
+            <div class="stat-card h-100">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="stat-card-icon" style="background: rgba(147, 51, 234, 0.16); color: #a855f7; border-color: rgba(147, 51, 234, 0.25);">
+                        <i class="bi bi-collection-play"></i>
                     </div>
-                    <p class="text-muted mb-0" style="font-size:0.8125rem">Organize content into playlists and assign them to device groups.</p>
+                    <div>
+                        <div class="stat-card-value">@(this.playlistCount?.ToString() ?? "—")</div>
+                        <div class="stat-card-label">Playlists</div>
+                    </div>
                 </div>
+                <p class="stat-card-description mb-0">Organize content into playlists and assign them to device groups.</p>
             </div>
         </a>
     </div>
     <div class="col-md-6 col-lg-3">
         <a href="/versions" class="text-decoration-none">
-            <div class="card h-100 quick-link-card">
-                <div class="card-body">
-                    <div class="d-flex align-items-center gap-2 mb-2">
-                        <i class="bi bi-box-seam fs-5" style="color:#ea580c"></i>
-                        <span class="fw-semibold">Versions</span>
+            <div class="stat-card h-100">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="stat-card-icon" style="background: var(--ps-warn-dim); color: var(--ps-warn); border-color: rgba(245, 158, 11, 0.25);">
+                        <i class="bi bi-box-seam"></i>
                     </div>
-                    <p class="text-muted mb-0" style="font-size:0.8125rem">Upload player binaries and run canary deployments by device group.</p>
-                </div>
-            </div>
-        </a>
-    </div>
-    <div class="col-md-6 col-lg-3">
-        <a href="/scalar/v1" target="_blank" class="text-decoration-none">
-            <div class="card h-100 quick-link-card">
-                <div class="card-body">
-                    <div class="d-flex align-items-center gap-2 mb-2">
-                        <i class="bi bi-braces fs-5" style="color:#64748b"></i>
-                        <span class="fw-semibold">API Reference</span>
+                    <div>
+                        <div class="stat-card-value">@(this.versionCount?.ToString() ?? "—")</div>
+                        <div class="stat-card-label">Versions</div>
                     </div>
-                    <p class="text-muted mb-0" style="font-size:0.8125rem">Explore the PlainSight API using the interactive Scalar documentation.</p>
                 </div>
+                <p class="stat-card-description mb-0">Upload player binaries and run canary deployments by device group.</p>
             </div>
         </a>
     </div>
 </div>
 
-<style>
-    .quick-link-card {
-        transition: box-shadow 0.15s, border-color 0.15s;
-        cursor: pointer;
-    }
-    .quick-link-card:hover {
-        border-color: #cbd5e1;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.07);
-    }
-</style>
+<div class="row g-3">
+    <div class="col-md-6 col-lg-3">
+        <a href="/scalar/v1" target="_blank" class="text-decoration-none">
+            <div class="stat-card h-100">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="stat-card-icon" style="background: var(--ps-bg-3); color: var(--ps-text-2); border-color: var(--ps-line-strong);">
+                        <i class="bi bi-braces"></i>
+                    </div>
+                    <div>
+                        <div class="stat-card-value scalar-value">Scalar</div>
+                        <div class="stat-card-label">API Reference</div>
+                    </div>
+                </div>
+                <p class="stat-card-description mb-0">Explore the PlainSight API using the interactive Scalar documentation.</p>
+            </div>
+        </a>
+    </div>
+</div>
 
 @code {
     private int? onlineCount;
@@ -160,28 +119,28 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadStats();
+        await this.LoadStats();
     }
 
     private async Task LoadStats()
     {
         try
         {
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await this.DbFactory.CreateDbContextAsync();
             
             DateTime onlineThreshold = DateTime.UtcNow.AddSeconds(-60);
-            onlineCount = await context.Devices.CountAsync(d => d.LastSeen >= onlineThreshold);
-            contentCount = await context.ContentItems.CountAsync();
-            playlistCount = await context.Playlists.CountAsync();
-            versionCount = await context.PlayerVersions.CountAsync();
+            this.onlineCount = await context.Devices.CountAsync(d => d.LastSeen >= onlineThreshold);
+            this.contentCount = await context.ContentItems.CountAsync();
+            this.playlistCount = await context.Playlists.CountAsync();
+            this.versionCount = await context.PlayerVersions.CountAsync();
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Failed to load overview statistics");
-            onlineCount = 0;
-            contentCount = 0;
-            playlistCount = 0;
-            versionCount = 0;
+            this.Logger.LogWarning(ex, "Failed to load overview statistics");
+            this.onlineCount = 0;
+            this.contentCount = 0;
+            this.playlistCount = 0;
+            this.versionCount = 0;
         }
     }
 }
