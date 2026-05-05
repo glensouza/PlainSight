@@ -35,6 +35,11 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddOpenApi();
 
+// Logging
+builder.Services.AddSingleton<LogQueue>();
+builder.Services.AddSingleton<ILoggerProvider, DbLoggerProvider>();
+builder.Services.AddHostedService<LogFlushService>();
+
 // Add database context factory
 builder.Services.AddDbContextFactory<PlainSightDbContext>(options =>
 {
@@ -84,6 +89,8 @@ builder.Services.AddHostedService<DeviceMonitorService>();
 builder.Services.AddHostedService<NdiDiscoveryService>();
 builder.Services.AddSingleton<ObsDiscoveryService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ObsDiscoveryService>());
+builder.Services.AddSingleton<DbLoggerProvider>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DbLoggerProvider>());
 
 // Add HttpClient for calling our own API and the players
 builder.Services.AddHttpClient();
@@ -91,6 +98,9 @@ builder.Services.AddHttpClient("player", client => client.Timeout = TimeSpan.Fro
 builder.Services.AddHttpContextAccessor();
 
 WebApplication app = builder.Build();
+
+app.Services.GetRequiredService<ILoggerFactory>()
+    .AddProvider(app.Services.GetRequiredService<DbLoggerProvider>());
 
 TimeExtensions.Configure(app.Configuration);
 

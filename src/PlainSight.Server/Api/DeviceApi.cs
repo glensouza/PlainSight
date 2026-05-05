@@ -63,7 +63,7 @@ public static class DeviceApi
                 // Validate or assign API key
                 if (device.ApiKey != null)
                 {
-                    // Registered device � validate X-Api-Key header
+                    // Registered device – validate X-Api-Key header
                     string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
                     if (string.IsNullOrEmpty(incomingKey))
                     {
@@ -181,6 +181,47 @@ public static class DeviceApi
             }
         });
 
+        group.MapPost("/logs", async (DeviceLogBatchDto data, HttpContext httpContext, PlainSightDbContext context, LogQueue queue, ILoggerFactory loggerFactory, CancellationToken ct) =>
+        {
+            ILogger logger = loggerFactory.CreateLogger("DeviceApi");
+            try
+            {
+                Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == data.DeviceId, ct);
+                if (device == null || device.ApiKey == null)
+                {
+                    return Results.Unauthorized();
+                }
+
+                string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
+                if (string.IsNullOrEmpty(incomingKey) || !VerifyApiKey(incomingKey, device.ApiKey))
+                {
+                    logger.LogWarning("Logs rejected for device {DeviceId}: invalid or missing API key", SanitizeForLog(data.DeviceId));
+                    return Results.Unauthorized();
+                }
+
+                foreach (DeviceLogEntryDto log in data.Logs)
+                {
+                    queue.Enqueue(new LogEntry
+                    {
+                        Source = LogSource.Device,
+                        SourceId = data.DeviceId,
+                        LogLevel = log.LogLevel,
+                        Category = log.Category,
+                        Message = log.Message,
+                        Exception = log.Exception,
+                        Timestamp = log.Timestamp
+                    });
+                }
+
+                return Results.Ok();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error processing logs from device {DeviceId}", SanitizeForLog(data.DeviceId));
+                return Results.Problem("Internal server error", statusCode: 500);
+            }
+        });
+
         group.MapPost("/{deviceId}/screenshot/notify", async (
             string deviceId,
             HttpRequest request,
@@ -198,7 +239,7 @@ public static class DeviceApi
                 return Results.NotFound();
             }
 
-            // Validate API key � reject if the device has no key yet (not yet registered via heartbeat)
+            // Validate API key – reject if the device has no key yet (not yet registered via heartbeat)
             // or if the provided key does not match.
             if (device.ApiKey == null)
             {
