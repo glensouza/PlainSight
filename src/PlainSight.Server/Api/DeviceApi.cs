@@ -181,6 +181,58 @@ public static class DeviceApi
             }
         });
 
+        group.MapPost("/{deviceId}/logs", async (
+            string deviceId,
+            DeviceLogBatchDto batch,
+            HttpContext httpContext,
+            PlainSightDbContext context,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            ILogger logger = loggerFactory.CreateLogger("DeviceApi");
+
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
+            if (device == null)
+            {
+                return Results.NotFound();
+            }
+
+            if (device.ApiKey == null)
+            {
+                return Results.Unauthorized();
+            }
+
+            string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
+            if (string.IsNullOrEmpty(incomingKey) || !VerifyApiKey(incomingKey, device.ApiKey))
+            {
+                logger.LogWarning("Log batch rejected for device {DeviceId}: invalid or missing API key", SanitizeForLog(deviceId));
+                return Results.Unauthorized();
+            }
+
+            if (batch.Entries == null || batch.Entries.Count == 0)
+            {
+                return Results.Ok();
+            }
+
+            List<LogEntry> entries = batch.Entries
+                .Take(500)
+                .Select(e => new LogEntry
+                {
+                    Category = LogEntryCategory.Device,
+                    SourceId = deviceId,
+                    Level = e.Level,
+                    Message = e.Message.Length > 2000 ? e.Message[..2000] : e.Message,
+                    Exception = e.Exception,
+                    Timestamp = e.Timestamp
+                })
+                .ToList();
+
+            context.LogEntries.AddRange(entries);
+            await context.SaveChangesAsync(ct);
+
+            return Results.Ok();
+        });
+
         group.MapPost("/{deviceId}/screenshot/notify", async (
             string deviceId,
             HttpRequest request,
