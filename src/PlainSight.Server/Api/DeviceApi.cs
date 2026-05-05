@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Data;
 using PlainSight.Server.Services;
@@ -189,7 +188,7 @@ public static class DeviceApi
             PlainSightDbContext context,
             IConfiguration configuration,
             ILoggerFactory loggerFactory,
-            IHubContext<DeviceHub> hubContext,
+            ScreenshotNotificationService notificationService,
             CancellationToken ct) =>
         {
             ILogger logger = loggerFactory.CreateLogger("DeviceApi");
@@ -258,8 +257,7 @@ public static class DeviceApi
 
             await RecordScreenshotHistoryAsync(device, filePath, context, configuration, logger, ct);
 
-            // Notify dashboard clients via SignalR
-            await hubContext.Clients.All.SendAsync("ScreenshotReceived", deviceId, ct);
+            notificationService.Notify(deviceId);
 
             logger.LogInformation("Screenshot registered via SMB for device {DeviceId}: {Path}", deviceId, filePath);
             return Results.Ok();

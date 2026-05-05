@@ -83,6 +83,7 @@ builder.Services.AddHostedService<DeviceMonitorService>();
 builder.Services.AddHostedService<NdiDiscoveryService>();
 builder.Services.AddSingleton<ObsDiscoveryService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ObsDiscoveryService>());
+builder.Services.AddSingleton<ScreenshotNotificationService>();
 
 // Add HttpClient for calling our own API and the players
 builder.Services.AddHttpClient();
@@ -163,9 +164,6 @@ app.MapPost("/auth/logout", async (HttpContext ctx) =>
 }).DisableAntiforgery();
 
 app.MapDefaultEndpoints();
-
-// SignalR Hubs
-app.MapHub<DeviceHub>("/hubs/device");
 
 // Register Minimal APIs
 app.MapOpenApi();

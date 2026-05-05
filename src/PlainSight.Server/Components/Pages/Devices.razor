@@ -1,11 +1,10 @@
 @page "/devices"
 @rendermode InteractiveServer
 @attribute [Authorize]
-@using Microsoft.AspNetCore.SignalR.Client
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject ILogger<Devices> Logger
 @inject IHttpClientFactory HttpClientFactory
-@inject NavigationManager Navigation
+@inject ScreenshotNotificationService ScreenshotNotificationService
 @implements IAsyncDisposable
 
 <PageTitle>Devices — PlainSight</PageTitle>
@@ -463,7 +462,6 @@ else
     private string? bulkResultMessage;
     private bool bulkResultIsSuccess;
     private string statusFilter = "all";
-    private HubConnection? hubConnection;
 
     private int OnlineCount => devices?.Count(d => GetStatusKey(d.LastSeen) == "online") ?? 0;
     private int WarnCount => devices?.Count(d => GetStatusKey(d.LastSeen) == "warn") ?? 0;
@@ -532,23 +530,7 @@ else
             LoadVersionsAsync()
         );
 
-        hubConnection = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri("/hubs/device"))
-            .WithAutomaticReconnect()
-            .Build();
-
-        hubConnection.On<string>("ScreenshotReceived", (deviceId) =>
-        {
-            InvokeAsync(async () =>
-            {
-                Logger.LogInformation("Real-time screenshot notification received for device {DeviceId}", deviceId);
-                previewCacheBust = DateTime.UtcNow.Ticks.ToString();
-                await LoadDevices();
-                StateHasChanged();
-            });
-        });
-
-        await hubConnection.StartAsync();
+        this.ScreenshotNotificationService.ScreenshotReceived += this.OnScreenshotReceived;
 
         refreshTimer = new Timer(_ =>
         {
@@ -565,6 +547,17 @@ else
                 }
             });
         }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private async void OnScreenshotReceived(string deviceId)
+    {
+        await this.InvokeAsync(async () =>
+        {
+            Logger.LogInformation("Real-time screenshot notification received for device {DeviceId}", deviceId);
+            previewCacheBust = DateTime.UtcNow.Ticks.ToString();
+            await LoadDevices();
+            StateHasChanged();
+        });
     }
 
     private async Task LoadDevices()
@@ -1067,12 +1060,10 @@ else
         return timeSpan.TotalHours < 24 ? $"{(int)timeSpan.TotalHours}h ago" : $"{(int)timeSpan.TotalDays}d ago";
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
+        this.ScreenshotNotificationService.ScreenshotReceived -= this.OnScreenshotReceived;
         refreshTimer?.Dispose();
-        if (hubConnection is not null)
-        {
-            await hubConnection.DisposeAsync();
-        }
+        return ValueTask.CompletedTask;
     }
 }
