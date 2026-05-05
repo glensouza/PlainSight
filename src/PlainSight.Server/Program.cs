@@ -7,6 +7,7 @@ using PlainSight.Server.Components;
 using PlainSight.Server.Data;
 using PlainSight.Server.Services;
 using PlainSight.Server.Services.Versioning;
+using Scalar.AspNetCore;
 
 // CLI utility: print a bcrypt hash for use in initial setup
 if (args.Contains("--hash-password"))
@@ -30,6 +31,8 @@ builder.AddServiceDefaults();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddHubOptions(o => o.MaximumReceiveMessageSize = 512L * 1024 * 1024); // 512 MB for video uploads
+
+builder.Services.AddOpenApi();
 
 // Add database context factory
 builder.Services.AddDbContextFactory<PlainSightDbContext>(options =>
@@ -152,23 +155,20 @@ app.Use(async (ctx, next) =>
 
 app.UseAntiforgery();
 
-// Logout endpoint
 app.MapPost("/auth/logout", async (HttpContext ctx) =>
 {
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.Redirect("/login");
 }).DisableAntiforgery();
 
-// Map default endpoints
 app.MapDefaultEndpoints();
 
 // Register Minimal APIs
-app.MapContentApi();
+app.MapOpenApi();
+app.MapScalarApiReference();
+
 app.MapDeviceApi();
-app.MapPlaylistApi();
-app.MapUpdateApi();
-app.MapVersionApi();
-app.MapNdiApi();
+app.MapContentApi();
 
 // Ensure storage directories exist
 using (IServiceScope scope = app.Services.CreateScope())

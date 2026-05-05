@@ -8,12 +8,6 @@ on:
       - 'src/PlainSight.Shared/**'
       - 'src/PlainSight.Player/**'
       - '.github/workflows/player.yml'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'src/PlainSight.Shared/**'
-      - 'src/PlainSight.Player/**'
-      - '.github/workflows/player.yml'
   workflow_dispatch:
 
 jobs:

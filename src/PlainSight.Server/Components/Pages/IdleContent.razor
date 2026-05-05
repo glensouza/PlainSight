@@ -5,6 +5,7 @@
 @inject VideoProcessorService VideoProcessorService
 @inject IConfiguration Configuration
 @inject ILogger<IdleContent> Logger
+
 @implements IDisposable
 
 <PageTitle>Idle Content Library — PlainSight</PageTitle>
@@ -87,7 +88,7 @@ else
                     <tr>
                         <td><code>@file.Name</code></td>
                         <td>@FormatFileSize(file.Length)</td>
-                        <td>@file.LastWriteTime.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@file.LastWriteTimeUtc.ToPacificString("yyyy-MM-dd HH:mm")</td>
                         <td>
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-primary" @onclick="() => PreviewIdleContent(file.Name)" title="Preview">
@@ -207,7 +208,7 @@ else
 @if (previewIdleFileName != null)
 {
     string previewName = previewIdleFileName;
-    string apiPath = $"/api/content/idle/{previewIdleFileName}";
+    string apiPath = $"/api/media/idle/{previewIdleFileName}";
     bool isImage = previewIdleFileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || previewIdleFileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || previewIdleFileName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase);
     long fileSize = idleFiles?.FirstOrDefault(f => f.Name == previewIdleFileName)?.Length ?? 0;
 
@@ -290,7 +291,7 @@ else
             string oldFileName = processingIdleFileName;
             string filePath = Path.Combine(idlePath, oldFileName);
             
-            string tempFileName = $"{Guid.NewGuid():N}.tmp.mp4";
+            string tempFileName = $"{Guid.CreateVersion7():N}.tmp.mp4";
             string tempPath = Path.Combine(idlePath, tempFileName);
 
             if (!File.Exists(filePath))
@@ -379,7 +380,7 @@ else
         }
     }
 
-    private string GetVideoType(string fileName)
+    private static string GetVideoType(string fileName)
     {
         return Path.GetExtension(fileName).ToLowerInvariant() switch
         {
@@ -388,25 +389,34 @@ else
         };
     }
 
-    private async Task LoadIdleContent()
+    private Task LoadIdleContent()
     {
         try
         {
-            string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
-            if (!Directory.Exists(idlePath))
+            try
             {
-                Directory.CreateDirectory(idlePath);
+                string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+                if (!Directory.Exists(idlePath))
+                {
+                    Directory.CreateDirectory(idlePath);
+                }
+
+                idleFiles = new DirectoryInfo(idlePath)
+                    .GetFiles()
+                    .OrderBy(f => f.Name)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error loading idle content");
+                idleFiles = [];
             }
 
-            idleFiles = new DirectoryInfo(idlePath)
-                .GetFiles()
-                .OrderBy(f => f.Name)
-                .ToList();
+            return Task.CompletedTask;
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            Logger.LogError(ex, "Error loading idle content");
-            idleFiles = [];
+            return Task.FromException(exception);
         }
     }
 

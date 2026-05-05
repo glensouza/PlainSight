@@ -4,418 +4,116 @@ This document describes the technical architecture of the PlainSight digital sig
 
 ## System Overview
 
-PlainSight uses a distributed architecture with server-side rendering to ensure reliable 24/7 operation of digital signage displays.
+PlainSight uses a distributed architecture with server-side rendering and a unified SMB-centric storage model to ensure reliable 24/7 operation of digital signage displays.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    GitHub Actions                        │
+│              Self-Hosted GitHub Runner (Mac)             │
 │  ┌──────────────────┐      ┌──────────────────┐        │
 │  │  Build Server    │      │  Build Player    │        │
-│  │  Docker Image    │      │  ARM64 Binary    │        │
+│  │  Local Docker    │      │  ARM64 Binary    │        │
 │  └────────┬─────────┘      └────────┬─────────┘        │
 │           │                         │                   │
 └───────────┼─────────────────────────┼───────────────────┘
             │                         │
             ▼                         ▼
 ┌─────────────────────────────────────────────────────────┐
-│              Production Server (macOS)                   │
+│              Production Server (Docker)                  │
 │  ┌──────────────────────────────────────────────────┐  │
-│  │              Docker Compose                       │  │
 │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐ │  │
-│  │  │ PostgreSQL │  │  PlainSight│  │   Samba    │ │  │
-│  │  │  Database  │  │   Server   │  │File Share  │ │  │
+│  │  │ PostgreSQL │  │  PlainSight│  │ Cloudflare │ │  │
+│  │  │  Database  │  │   Server   │  │   Tunnel   │ │  │
 │  │  └────────────┘  └────────────┘  └────────────┘ │  │
-│  └──────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
-            │                         │
-            │ Heartbeat API           │ SMB Stream
-            │ Updates                 │ Content Files
-            ▼                         ▼
-┌─────────────────────────────────────────────────────────┐
-│              Raspberry Pi 5 Players                      │
-│  ┌────────────────┐  ┌────────────────┐  ┌───────────┐ │
-│  │   Heartbeat    │  │   Self-Update  │  │Screenshot │ │
-│  │    Service     │  │    Service     │  │  Service  │ │
+│  └───────────────────▲──────────────────────────────┘  │
+└──────────────────────┼──────────────────────────────────┘
+            │          │              │
+            │          │              │ 
+            │          │              ▼
+            │          │      ┌────────────────────┐
+            │          └──────┤  External MyCloud  │
+            │                 │     SMB Share      │
+            │ Heartbeat API   └──────┬─────────────┘
+            │ API Keys               │
+            ▼                        │ SMB Mount (/mnt/plainsight)
+┌────────────────────────────────────┼────────────────────┐
+│              Raspberry Pi 5 Players│                    │
+│  ┌────────────────┐  ┌─────────────▼──┐  ┌───────────┐ │
+│  │   Heartbeat    │  │   SMB-First    │  │SMB-First  │ │
+│  │    Service     │  │    Updates     │  │Screenshots│ │
 │  └────────────────┘  └────────────────┘  └───────────┘ │
 │                   Player Application                     │
 └─────────────────────────────────────────────────────────┘
+```
+
+## Storage Architecture (SMB-Centric)
+
+The system is designed around a unified file system accessible via SMB to both the Server and Players. This "shared brain" approach minimizes network overhead for large files.
+
+**Mount Point**: `/mnt/plainsight` (Unified across the entire fleet)
+
+**Structure**:
+```
+/mnt/plainsight
+  ├── content/       # Final rendered MP4 videos and playlist.json
+  ├── idle/          # Fallback loop content (emergency/offline)
+  ├── updates/       # Signed player binaries for self-updating
+  └── screenshots/   # Player-uploaded PNG snapshots
 ```
 
 ## Components
 
 ### 1. PlainSight.Server (Admin Application)
 
-**Technology**: ASP.NET Core 10, Blazor Web App
+**Technology**: ASP.NET Core 10, Blazor Web App (Interactive Server)
 
 **Responsibilities**:
-- Device fleet management
-- Content rendering (HTML to video)
-- Update distribution
-- Telemetry collection
-- Configuration management
+- Content rendering (HTML to video via PuppeteerSharp)
+- Device fleet monitoring & API key management
+- Update manifest signing and distribution coordination
+- Screenshot history management
 
-**Key Services**:
-
-#### WebsiteRecorder
-Converts websites to video using PuppeteerSharp:
-```csharp
-public class WebsiteRecorder
-{
-    public async Task<string> ConvertUrlToVideoAsync(
-        string url, int durationSec, string outputPath)
-    {
-        // Launch headless Chrome
-        // Set viewport (1080p or 4K)
-        // Capture frames
-        // Encode to H.264/MP4
-    }
-}
-```
-
-#### DeviceController
-Handles device communication:
-```csharp
-[HttpPost("heartbeat")]
-public async Task<IActionResult> Heartbeat(DeviceTelemetryDto data)
-{
-    // Update device status
-    // Check for updates
-    // Handle screenshot requests
-}
-```
-
-#### VersionService
-Manages update distribution:
-```csharp
-public class VersionService
-{
-    public string GetTargetVersion(string deviceGroup)
-    {
-        // Returns target version for device group
-        // Enables canary deployments
-    }
-}
-```
+**Deployment Strategy**:
+- Built locally on the self-hosted runner (no external registry).
+- **Rollback Strategy**: Previous image tagged as `:previous` before update.
+- **Health Verification**: Automated 2-minute health check; auto-revert to `:previous` if health check fails.
 
 ### 2. PlainSight.Player (Raspberry Pi Client)
 
-**Technology**: .NET 10 Console Application
+**Technology**: .NET 10 Console Application (Optimized for Linux-ARM64)
 
 **Responsibilities**:
-- Stream content from SMB share
-- Report telemetry to server
-- Self-update when new versions available
-- Capture screenshots on demand
-
-**Key Services**:
-
-#### HeartbeatService
-Communicates with server:
-```csharp
-public class HeartbeatService
-{
-    public async Task<HeartbeatResponse> SendHeartbeat(
-        string currentFile)
-    {
-        // Send device status
-        // Receive commands (update, screenshot)
-    }
-}
-```
-
-#### UpdateService
-Handles self-updates:
-```csharp
-public class UpdateService
-{
-    public async Task PerformSelfUpdate(string updateUrl)
-    {
-        // Download new binary
-        // Swap files
-        // Exit (systemd restarts)
-    }
-}
-```
-
-#### ScreenCaptureService
-Captures display output:
-```csharp
-public class ScreenCaptureService
-{
-    public async Task<byte[]> CaptureScreenshot()
-    {
-        // Use grim to capture Wayland framebuffer
-        // Return PNG data
-    }
-}
-```
+- Play video content directly from SMB mount (low overhead)
+- Report telemetry to server every 30 seconds
+- **SMB-First Updates**: Pull binaries from `/mnt/plainsight/updates` (falls back to HTTP)
+- **SMB-First Screenshots**: Save PNGs to `/mnt/plainsight/screenshots/{DeviceId}/` (server notified of path)
 
 ### 3. Database (PostgreSQL)
 
-**Schema**:
+Stores metadata, telemetry history, and fleet configuration.
 
-```sql
-CREATE TABLE Devices (
-    Id SERIAL PRIMARY KEY,
-    DeviceId VARCHAR(255) UNIQUE NOT NULL,
-    Name VARCHAR(255) NOT NULL,
-    "Group" VARCHAR(255) DEFAULT 'Default',
-    LastSeen TIMESTAMP NOT NULL,
-    CurrentVersion VARCHAR(50) NOT NULL,
-    CurrentlyPlaying VARCHAR(255),
-    ScreenshotRequested BOOLEAN DEFAULT FALSE
-);
-```
+### 4. Networking & Access
 
-### 4. File Share (Samba)
-
-**Purpose**: 
-- Distribute rendered content to players
-- SMB protocol for compatibility
-- Read-only access for players
-
-**Structure**:
-```
-/share
-  ├── content/
-  │   ├── video1.mp4
-  │   ├── video2.mp4
-  │   └── playlist.json
-  └── updates/
-      ├── plainsight-player-1.0.0
-      ├── plainsight-player-1.0.0.json
-      ├── plainsight-player-1.1.0
-      └── plainsight-player-1.1.0.json
-```
-
-### 5. Orchestration (.NET Aspire)
-
-**Purpose**:
-- Service discovery
-- Configuration management
-- Development-time orchestration
-
-**Configuration**:
-```csharp
-var builder = DistributedApplication.CreateBuilder(args);
-
-var postgres = builder.AddPostgres("postgres");
-var signageDb = postgres.AddDatabase("plainsightdb");
-
-builder.AddProject<Projects.PlainSight_Server>("plainsight-server")
-    .WithReference(signageDb);
-```
-
-## Communication Protocols
-
-### 1. HTTP/REST API
-
-**Heartbeat Endpoint**:
-```http
-POST /api/device/heartbeat
-Content-Type: application/json
-
-{
-  "deviceId": "plainsight-sanctuary",
-  "appVersion": "1.0.0",
-  "currentFileName": "worship-service.mp4",
-  "timestamp": "2026-01-25T22:00:00Z"
-}
-```
-
-**Response**:
-```json
-{
-  "requestScreenshot": false,
-  "updateUrl": "/api/updates/1.1.0/binary"
-}
-```
-
-### 2. SMB File Sharing
-
-**Mount Point**: `/mnt/signage`
-**Protocol**: CIFS/SMB 3.0
-**Access**: Read-only for players
-
-### 3. Systemd Automount
-
-**Benefits**:
-- Non-blocking boot
-- Automatic retry on network issues
-- Lazy mounting
+- **Internal**: SMB (CIFS 3.0) for high-bandwidth media distribution.
+- **External**: Cloudflare Tunnel for secure admin dashboard access without open ports.
+- **Security**: ECDSA P-256 signing for all update binaries; mandatory SHA-256 verification before player execution.
 
 ## Data Flow
 
-### Device Registration Flow
+### 1. Unified Update Flow
+1. GitHub Action builds Linux-ARM64 binary on the Mac runner.
+2. Runner signs manifest and writes both binary + manifest to the MyCloud `updates/` folder.
+3. Player heartbeat receives new version info.
+4. Player checks `/mnt/plainsight/updates/` first. If found, it copies and verifies; otherwise, it downloads via HTTP.
 
-```
-1. Player boots → 2. Send heartbeat → 3. Server creates device record
-                                    ↓
-4. Server responds ← 5. Device ID stored ← 6. Continue heartbeat
-```
+### 2. Optimized Screenshot Flow
+1. Admin clicks "Request Screenshot" in Dashboard.
+2. Player receives request via next Heartbeat.
+3. Player captures screen and writes PNG directly to MyCloud `screenshots/{DeviceId}/`.
+4. Player notifies Server via API: "I just dropped `screenshot_123.png` on the share."
+5. Server verifies and adds to history.
 
-### Update Flow
+## Performance & Reliability
 
-```
-1. New version tagged in GitHub (v*)
-2. GitHub Actions builds ARM64 binary on self-hosted runner
-3. Runner signs manifest JSON with ECDSA P-256, writes binary + manifest to UpdatesPath share
-4. Server reconciler scans UpdatesPath every 60 seconds (or triggered by admin)
-5. Reconciler verifies manifest signature, confirms SHA-256 match, inserts PlayerVersion row
-6. Admin assigns version to device group via Versions page
-7. Player heartbeat detects update available
-8. Player downloads binary via GET /api/updates/{version}/binary
-9. Player installs and restarts with new version
-```
-
-### Screenshot Flow
-
-```
-1. Admin requests screenshot
-2. Server sets ScreenshotRequested flag
-3. Player detects flag in heartbeat response
-4. Player captures screen using grim
-5. Player uploads PNG to server
-6. Admin views screenshot in dashboard
-```
-
-## Deployment Architecture
-
-### Development Environment
-
-```
-Developer Workstation
-  ├── .NET 10 SDK
-  ├── Docker Desktop
-  └── .NET Aspire
-       ├── PlainSight.Server (localhost:5000)
-       └── PostgreSQL (localhost:5432)
-```
-
-### Production Environment
-
-```
-macOS Server (Docker Desktop)
-  ├── Docker Compose
-  │   ├── PostgreSQL Container
-  │   ├── PlainSight.Server Container
-  │   └── Samba Container
-  └── GitHub Actions Runner (Self-hosted)
-
-Raspberry Pi Fleet (Distributed)
-  ├── Device 1 (Sanctuary)
-  ├── Device 2 (Lobby)
-  ├── Device 3 (Chapel)
-  └── Device N...
-```
-
-## Security Architecture
-
-### Authentication & Authorization
-
-- **Admin Web**: Cookie-based authentication (future)
-- **API**: Device ID-based (no authentication currently)
-- **SMB**: Username/password (pi/secure)
-
-### Network Security
-
-- **Firewall**: Restrict PostgreSQL port (5432) to localhost
-- **SMB**: Read-only access for players
-- **HTTPS**: Recommended for production (reverse proxy)
-
-### Update Security
-
-- **Manifest Signing**: ECDSA P-256 asymmetric signing; private key held by CI runner only
-- **Binary Verification**: SHA256 checksums computed and verified at ingest
-- **Rollback**: Previous binary kept as .bak
-- **Canary**: Test on subset before fleet-wide
-
-## Scalability
-
-### Horizontal Scaling
-
-**Server**:
-- Run multiple server instances behind load balancer
-- Shared PostgreSQL database
-- Shared file storage (NFS/SMB)
-
-**Database**:
-- PostgreSQL replication for read scaling
-- Connection pooling
-
-### Device Limits
-
-- Designed for 10-100 devices per server
-- Each device: ~1KB/heartbeat every 30s
-- Network bandwidth: ~10Mbps per 4K stream
-
-## Monitoring & Observability
-
-### Metrics
-
-- Device online/offline status
-- Heartbeat frequency
-- Update success/failure rate
-- Screenshot capture latency
-
-### Logging
-
-**Server**:
-- ASP.NET Core logging
-- Entity Framework query logging
-- PuppeteerSharp browser logs
-
-**Player**:
-- Systemd journal
-- Player application logs
-
-### Health Checks
-
-- `/health` endpoint
-- Database connectivity check
-- File share availability
-
-## Performance Considerations
-
-### Server
-
-- **PuppeteerSharp**: CPU-intensive rendering
-- **Database**: Indexed queries on DeviceId
-- **File I/O**: SSD recommended for video storage
-
-### Player
-
-- **Video Decoding**: Hardware-accelerated (VideoCore VII)
-- **Memory**: 4GB sufficient for single stream
-- **Network**: Gigabit required for 4K streaming
-
-## Disaster Recovery
-
-### Backup Strategy
-
-- **Database**: Daily pg_dump backups
-- **Content**: File share snapshots
-- **Configuration**: Version controlled in Git
-
-### Recovery Procedures
-
-- **Server Failure**: Restore from Docker image
-- **Database Failure**: Restore from backup
-- **Player Failure**: Re-run install script
-
-## Future Enhancements
-
-- [ ] Authentication & authorization
-- [ ] Multi-tenancy support
-- [ ] Advanced content scheduling
-- [ ] Analytics and reporting
-- [ ] Mobile app for monitoring
-- [ ] WebRTC for live camera feeds
-- [ ] Content CDN integration
-
-## References
-
-- [ASP.NET Core Documentation](https://docs.microsoft.com/aspnet/core)
-- [.NET Aspire Documentation](https://learn.microsoft.com/dotnet/aspire)
-- [PuppeteerSharp Documentation](https://www.puppeteersharp.com/)
-- [Raspberry Pi Documentation](https://www.raspberrypi.com/documentation/)
+- **Zero-Touch Maintenance**: Players self-heal and self-update via systemd.
+- **Decoupled Playback**: If the Server API goes down, Players continue playing from the SMB share using their local `playlist.json` cache.
+- **Hardware Acceleration**: Players use the Raspberry Pi 5 VideoCore VII for smooth 4K H.264 decoding.

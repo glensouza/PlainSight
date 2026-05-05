@@ -34,10 +34,10 @@ public class PlayerWorker(
                 {
                     this.consecutiveHeartbeatFailures = 0;
 
-                    if (!string.IsNullOrEmpty(response.UpdateUrl))
+                    if (!string.IsNullOrEmpty(response.UpdateFileName))
                     {
-                        logger.LogInformation("Update available at {UpdateUrl}", response.UpdateUrl);
-                        await update.PerformSelfUpdate(response.UpdateUrl, response.ExpectedSha256, stoppingToken);
+                        logger.LogInformation("Update available: {FileName}", response.UpdateFileName);
+                        await update.PerformSelfUpdate(response.UpdateFileName, response.ExpectedSha256, stoppingToken);
                     }
 
                     if (response.RequestScreenshot)

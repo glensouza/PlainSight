@@ -2,30 +2,36 @@ using System.Security.Cryptography;
 
 namespace PlainSight.Player.Services;
 
-public class UpdateService(HttpClient http, ILogger<UpdateService> logger)
+public class UpdateService(HttpClient http, IConfiguration configuration, ILogger<UpdateService> logger)
 {
     private readonly string executablePath = Environment.ProcessPath ?? "/opt/plainsight/PlainSight.Player";
 
-    public async Task PerformSelfUpdate(string updateUrl, string? expectedSha256 = null, CancellationToken cancellationToken = default)
+    public async Task PerformSelfUpdate(string? updateFileName = null, string? expectedSha256 = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            logger.LogWarning("Downloading update from {UpdateUrl}...", updateUrl);
-            
-            string tempPath = this.executablePath + ".new";
-
-            // 1. Download
-            using HttpResponseMessage response = await http.GetAsync(updateUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
+            if (string.IsNullOrEmpty(updateFileName))
             {
-                logger.LogWarning("Update download failed: {StatusCode} {ReasonPhrase}", (int)response.StatusCode, response.ReasonPhrase);
                 return;
             }
 
-            byte[] data = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            string tempPath = this.executablePath + ".new";
+            byte[]? data = null;
 
-            // 2. Verify Integrity
+            string updatesPath = configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
+            string localFilePath = Path.Combine(updatesPath, updateFileName);
+
+            if (File.Exists(localFilePath))
+            {
+                logger.LogInformation("Found update locally at {Path}. Copying...", localFilePath);
+                data = await File.ReadAllBytesAsync(localFilePath, cancellationToken);
+            }
+            else
+            {
+                logger.LogError("Update file {FileName} not found in local updates directory {Dir}. SMB mount may be disconnected.", updateFileName, updatesPath);
+                return;
+            }
+
             if (!string.IsNullOrEmpty(expectedSha256))
             {
                 logger.LogInformation("Verifying update integrity (SHA256)...");
@@ -49,28 +55,24 @@ public class UpdateService(HttpClient http, ILogger<UpdateService> logger)
 
             await File.WriteAllBytesAsync(tempPath, data, cancellationToken);
 
-            // 3. Permissions (Linux)
             if (OperatingSystem.IsLinux())
             {
                 File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute);
             }
 
-            // 3. Swap Binaries (Linux allows renaming running files)
             File.Move(this.executablePath, this.executablePath + ".bak", overwrite: true);
             File.Move(tempPath, this.executablePath);
 
-            // 4. Restart via Systemd
             logger.LogWarning("Update applied. Exiting for restart...");
             Environment.Exit(0);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            logger.LogInformation("Self-update cancelled for {UpdateUrl}", updateUrl);
+            logger.LogInformation("Self-update cancelled");
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error performing self-update");
-            // Don't rethrow - failure to update should be non-fatal
+            logger.LogError(ex, "Error performing self-update via SMB");
         }
     }
 }

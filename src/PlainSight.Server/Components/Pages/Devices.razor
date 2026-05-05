@@ -85,12 +85,12 @@ else
                 </header>
 
                 <div class="ps-tile__screen">
-                    @if (device.LatestScreenshotAt.HasValue)
+                    @if (device.LatestScreenshotAt.HasValue && !string.IsNullOrEmpty(device.LatestScreenshotPath))
                     {
                         <button class="ps-tile__screen-btn"
                                 @onclick="() => ShowScreenshotHistory(device)"
                                 title="View screenshot history">
-                            <img src="/api/device/@device.DeviceId/screenshot?t=@previewCacheBust" alt="" />
+                            <img src="/api/media/screenshot/@device.DeviceId/@(Path.GetFileName(device.LatestScreenshotPath))?t=@previewCacheBust" alt="" />
                         </button>
                     }
                     else
@@ -120,7 +120,7 @@ else
                 <div class="ps-tile__telemetry">
                     <div class="ps-cell">
                         <div class="ps-cell__label">LAST SEEN</div>
-                        <div class="ps-cell__value" title="@device.LastSeen.ToString("yyyy-MM-dd HH:mm:ss") UTC">
+                        <div class="ps-cell__value" title="@device.LastSeen.ToPacificString()">
                             @GetTimeSince(device.LastSeen)
                         </div>
                     </div>
@@ -229,13 +229,28 @@ else
                 <div class="modal-body">
                     @if (selectedScreenshot != null)
                     {
-                        <div class="text-center mb-3">
+                        <div class="text-center mb-3 position-relative">
                             <img src="@selectedScreenshot.Url?t=@previewCacheBust"
-                                 alt="Screenshot @selectedScreenshot.CapturedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC"
+                                 alt="Screenshot @selectedScreenshot.CapturedAt.ToPacificString()"
                                  class="img-fluid rounded"
                                  style="max-height:60vh;" />
-                            <div class="mt-1 text-muted small">
-                                @selectedScreenshot.CapturedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC
+                            <div class="mt-2 d-flex align-items-center justify-content-center gap-3">
+                                <div class="text-muted small">
+                                    <i class="bi bi-clock me-1"></i> @selectedScreenshot.CapturedAt.ToPacificString()
+                                </div>
+                                <button class="btn btn-sm btn-outline-danger" 
+                                        @onclick="() => DeleteScreenshot(selectedScreenshot)"
+                                        disabled="@isDeletingScreenshot">
+                                    @if (isDeletingScreenshot)
+                                    {
+                                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-trash me-1"></i>
+                                    }
+                                    Delete
+                                </button>
                             </div>
                         </div>
                     }
@@ -436,6 +451,7 @@ else
     private List<DeviceScreenshotDto>? screenshotHistory;
     private DeviceScreenshotDto? selectedScreenshot;
     private string previewCacheBust = string.Empty;
+    private bool isDeletingScreenshot;
     private string? bulkGroupSelection;
     private string? bulkVersionGroup;
     private string? bulkVersionSelection;
@@ -926,7 +942,7 @@ else
                 {
                     Id = s.Id,
                     CapturedAt = s.CapturedAt,
-                    Url = $"/api/device/{device.DeviceId}/screenshots/{s.Id}"
+                    Url = $"/api/media/screenshot/{device.DeviceId}/{Path.GetFileName(s.FilePath)}"
                 })
                 .ToListAsync();
             if (screenshotHistory.Count > 0) selectedScreenshot = screenshotHistory[0];
@@ -953,20 +969,81 @@ else
         selectedScreenshot = null;
     }
 
+    private async Task DeleteScreenshot(DeviceScreenshotDto shot)
+    {
+        if (historyDevice == null) return;
+
+        isDeletingScreenshot = true;
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            DeviceScreenshot? entity = await context.DeviceScreenshots.FindAsync(shot.Id);
+            if (entity != null)
+            {
+                try
+                {
+                    if (File.Exists(entity.FilePath))
+                    {
+                        File.Delete(entity.FilePath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to delete screenshot file {Path}", entity.FilePath);
+                }
+
+                context.DeviceScreenshots.Remove(entity);
+
+                // Update device record if this was the latest
+                Device? device = await context.Devices.FirstOrDefaultAsync(d => d.Id == historyDevice.Id);
+                if (device != null && device.LatestScreenshotPath == entity.FilePath)
+                {
+                    device.LatestScreenshotPath = null;
+                    device.LatestScreenshotAt = null;
+                }
+
+                await context.SaveChangesAsync();
+                Logger.LogInformation("Screenshot {Id} deleted directly", shot.Id);
+
+                // Refresh history and main list
+                await ShowScreenshotHistory(historyDevice);
+                await LoadDevices();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error deleting screenshot {Id} directly", shot.Id);
+        }
+        finally
+        {
+            isDeletingScreenshot = false;
+            StateHasChanged();
+        }
+    }
+
     private void HandleModalKeyDown(KeyboardEventArgs e)
     {
         if (e.Key == "Escape") CloseHistory();
     }
 
-    private bool IsDeviceOnline(DateTime lastSeen) => (DateTime.UtcNow - lastSeen).TotalSeconds < 60;
+    private static bool IsDeviceOnline(DateTime lastSeen) => (DateTime.UtcNow - lastSeen).TotalSeconds < 60;
 
-    private string GetTimeSince(DateTime dateTime)
+    private static string GetTimeSince(DateTime dateTime)
     {
         TimeSpan timeSpan = DateTime.UtcNow - dateTime;
-        if (timeSpan.TotalSeconds < 60) return $"{(int)timeSpan.TotalSeconds}s ago";
-        if (timeSpan.TotalMinutes < 60) return $"{(int)timeSpan.TotalMinutes}m ago";
-        if (timeSpan.TotalHours < 24)   return $"{(int)timeSpan.TotalHours}h ago";
-        return $"{(int)timeSpan.TotalDays}d ago";
+        if (timeSpan.TotalSeconds < 60)
+        {
+            
+            return $"{(int)timeSpan.TotalSeconds}s ago";
+        }
+
+        if (timeSpan.TotalMinutes < 60)
+        {
+            
+            return $"{(int)timeSpan.TotalMinutes}m ago";
+        }
+
+        return timeSpan.TotalHours < 24 ? $"{(int)timeSpan.TotalHours}h ago" : $"{(int)timeSpan.TotalDays}d ago";
     }
 
     public void Dispose() => refreshTimer?.Dispose();

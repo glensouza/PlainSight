@@ -201,7 +201,7 @@ else
                         <td><code>@item.FileName</code></td>
                         <td>@item.DurationSeconds s</td>
                         <td>@FormatFileSize(item.FileSizeBytes)</td>
-                        <td>@item.UploadedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@item.UploadedAt.ToPacificString("yyyy-MM-dd HH:mm")</td>
                         <td>
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-primary" @onclick="() => PreviewContent(item)" title="Preview">
@@ -342,7 +342,7 @@ else
 {
     string previewName = previewItem.Name;
     string previewFileName = previewItem.FileName;
-    string apiPath = $"/api/content/file/{previewFileName}";
+    string apiPath = $"/api/media/content/{previewFileName}";
     bool isImage = previewItem.Type == ContentType.Image;
     long fileSize = previewItem.FileSizeBytes;
 
@@ -445,7 +445,7 @@ else
             string filePath = Path.Combine(folderPath, oldFileName);
             
             // Generate a unique temporary path for processing
-            string tempFileName = $"{Guid.NewGuid():N}.tmp.mp4";
+            string tempFileName = $"{Guid.CreateVersion7():N}.tmp.mp4";
             string tempPath = Path.Combine(folderPath, tempFileName);
 
             if (!File.Exists(filePath))
@@ -720,7 +720,7 @@ else
                 string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
                 Directory.CreateDirectory(contentPath);
 
-                string fileName = $"rendered_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}.mp4";
+                string fileName = $"rendered_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.CreateVersion7():N}.mp4";
                 string outputPath = Path.Combine(contentPath, fileName);
 
                 RenderJob job = new()

@@ -131,8 +131,8 @@ else
                                 <span class="badge bg-secondary"><i class="bi bi-circle me-1"></i>Inactive</span>
                             }
                         </td>
-                        <td title="@user.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC">@user.CreatedAt.ToString("yyyy-MM-dd")</td>
-                        <td>@(user.LastLoginAt.HasValue ? user.LastLoginAt.Value.ToString("yyyy-MM-dd HH:mm") + " UTC" : "Never")</td>
+                        <td title="@user.CreatedAt.ToPacificString()">@user.CreatedAt.ToPacific().ToString("yyyy-MM-dd")</td>
+                        <td>@(user.LastLoginAt.HasValue ? user.LastLoginAt.Value.ToPacificString("yyyy-MM-dd HH:mm") : "Never")</td>
                         <td>
                             @if (editingPasswordUserId == user.Id)
                             {

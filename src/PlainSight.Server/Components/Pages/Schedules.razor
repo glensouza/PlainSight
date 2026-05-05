@@ -15,7 +15,7 @@
             Define when and where your playlists should play. 
             <span class="badge bg-light text-dark border ms-2">
                 <i class="bi bi-clock me-1"></i>
-                Server Time: @GetDisplayTime() (@(Configuration["SystemTimeZone"] ?? "Local"))
+                Current Time: @GetDisplayTime() (Pacific)
             </span>
         </p>
     </div>
@@ -485,24 +485,9 @@ else
         }
     }
 
-    private string GetDisplayTime()
+    private static string GetDisplayTime()
     {
-        string? tzId = Configuration["SystemTimeZone"];
-        if (string.IsNullOrEmpty(tzId))
-        {
-            return DateTime.Now.ToString("HH:mm");
-        }
-
-
-        try
-        {
-            TimeZoneInfo tz = TimeZoneInfo.FindSystemTimeZoneById(tzId);
-            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz).ToString("HH:mm");
-        }
-        catch
-        {
-            return DateTime.Now.ToString("HH:mm");
-        }
+        return DateTime.UtcNow.ToPacific().ToString("HH:mm");
     }
 
     private static List<string> GetSelectedDays(DayOfWeekFlags days)

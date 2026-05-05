@@ -26,12 +26,12 @@
                     <div class="preview-container @(aspectRatio == "9:16" ? "portrait" : "landscape")">
                         @if (CurrentItem.ContentItem.Type == ContentType.Image)
                         {
-                            <img src="/api/content/file/@CurrentItem.ContentItem.FileName" class="preview-media" />
+                            <img src="/api/media/content/@CurrentItem.ContentItem.FileName" class="preview-media" />
                         }
                         else
                         {
                             <video autoplay muted class="preview-media" @onended="OnVideoEnded" @key="CurrentItem.Id">
-                                <source src="/api/content/file/@CurrentItem.ContentItem.FileName" type="video/mp4" />
+                                <source src="/api/media/content/@CurrentItem.ContentItem.FileName" type="video/mp4" />
                             </video>
                         }
                         

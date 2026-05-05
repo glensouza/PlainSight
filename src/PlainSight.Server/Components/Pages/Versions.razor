@@ -62,7 +62,7 @@
                                     <div>
                                         <h6 class="mb-1"><code>@v.VersionNumber</code></h6>
                                         <small class="text-muted">
-                                            @v.UploadedAt.ToString("yyyy-MM-dd HH:mm") UTC
+                                            @v.UploadedAt.ToPacificString("yyyy-MM-dd HH:mm")
                                             &middot; @FormatBytes(v.FileSizeBytes)
                                             @if (!string.IsNullOrEmpty(v.Sha256Hash))
                                             {

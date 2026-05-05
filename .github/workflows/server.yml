@@ -8,111 +8,69 @@ on:
       - 'src/PlainSight.Shared/**'
       - 'src/PlainSight.Server/**'
       - '.github/workflows/server.yml'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'src/PlainSight.Shared/**'
-      - 'src/PlainSight.Server/**'
-      - '.github/workflows/server.yml'
   workflow_dispatch:
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/plainsight-server
+  IMAGE_NAME: plainsight-server
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+  build-and-deploy:
+    runs-on: self-hosted
+    # Only run if DEPLOYMENT_PATH variable is configured
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOYMENT_PATH != ''
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Log in to the Container registry
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Extract metadata (tags, labels) for Docker
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=sha
-          type=raw,value=latest,enable={{is_default_branch}}
-
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        file: ./src/PlainSight.Server/Dockerfile
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-
-    - name: Check if package exists
-      if: github.event_name != 'pull_request'
-      id: check-package
-      continue-on-error: true
+    - name: Build Docker image
       run: |
-        # URL-encode the package name (replace / with %2F)
-        PACKAGE_NAME=$(echo "${{ env.IMAGE_NAME }}" | sed 's/\//%2F/g')
-        # Try org endpoint first, then user endpoint
-        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-          -H "Accept: application/vnd.github+json" \
-          "https://api.github.com/orgs/${{ github.repository_owner }}/packages/container/${PACKAGE_NAME}")
-        if [ "$RESPONSE" = "404" ]; then
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/users/${{ github.repository_owner }}/packages/container/${PACKAGE_NAME}")
-        fi
-        if [ "$RESPONSE" = "200" ]; then
-          echo "exists=true" >> $GITHUB_OUTPUT
-        else
-          echo "exists=false" >> $GITHUB_OUTPUT
-          echo "::warning::Package not found - skipping cleanup"
-        fi
+        SHA_TAG=$(git rev-parse --short HEAD)
+        echo "SHA_TAG=${SHA_TAG}" >> $GITHUB_ENV
+        docker build -t ${{ env.IMAGE_NAME }}:${SHA_TAG} -f src/PlainSight.Server/Dockerfile .
 
-    - name: Clean up old images (keep 5 most recent)
-      if: github.event_name != 'pull_request' && steps.check-package.outputs.exists == 'true'
-      uses: actions/delete-package-versions@v5
-      with:
-        package-name: ${{ env.IMAGE_NAME }}
-        package-type: 'container'
-        min-versions-to-keep: 5
-        delete-only-untagged-versions: 'false'
-
-  deploy-to-server:
-    runs-on: self-hosted
-    needs: build-and-push
-    # Only run if DEPLOYMENT_PATH secret is configured
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOYMENT_PATH != ''
-    
-    steps:
-    - name: Deploy to production server
+    - name: Deploy and Verify
       run: |
         cd ${{ vars.DEPLOYMENT_PATH }}
-        docker compose pull plainsight-server
+        
+        # Save the current tag if it exists for rollback
+        PREVIOUS_TAG=$(docker images ${{ env.IMAGE_NAME }} --format "{{.Tag}}" | grep -v "latest" | grep -v "current" | head -n 1 || echo "")
+        
+        # Backup the current 'current' tag to 'previous'
+        docker tag ${{ env.IMAGE_NAME }}:current ${{ env.IMAGE_NAME }}:previous || true
+        
+        # Tag the new build as 'current'
+        docker tag ${{ env.IMAGE_NAME }}:${{ env.SHA_TAG }} ${{ env.IMAGE_NAME }}:current
+        
+        echo "Starting deployment of ${{ env.SHA_TAG }}..."
         docker compose up -d plainsight-server
         
-    - name: Verify deployment
-      run: |
-        sleep 10
-        curl -f http://localhost:8080/health || exit 1
+        echo "Waiting for health check..."
+        MAX_RETRIES=12
+        COUNT=0
+        SUCCESS=0
+        
+        while [ $COUNT -lt $MAX_RETRIES ]; do
+          if curl -s -f http://localhost:8080/health > /dev/null; then
+            SUCCESS=1
+            break
+          fi
+          echo "Health check failed, retrying in 10s ($(($COUNT+1))/$MAX_RETRIES)..."
+          sleep 10
+          COUNT=$(($COUNT+1))
+        done
+        
+        if [ $SUCCESS -eq 1 ]; then
+          echo "Deployment successful!"
+          # Cleanup: Keep only 5 most recent images (excluding 'current', 'previous', and intermediate builds)
+          # We list tags, sort them, and remove all but the top 5
+          docker images ${{ env.IMAGE_NAME }} --format "{{.Tag}}" | grep -E "^[a-f0-9]{7}$" | sort -r | tail -n +6 | xargs -I {} docker rmi ${{ env.IMAGE_NAME }}:{} || true
+        else
+          echo "::error::Deployment failed health check! Rolling back..."
+          docker tag ${{ env.IMAGE_NAME }}:previous ${{ env.IMAGE_NAME }}:current
+          docker compose up -d plainsight-server
+          exit 1
+        fi
+
+    - name: Prune untagged images
+      run: docker image prune -f

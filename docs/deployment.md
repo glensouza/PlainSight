@@ -1,294 +1,105 @@
 # PlainSight Deployment Guide
 
-This guide covers deploying the PlainSight server using Docker Compose on macOS with Docker Desktop.
+This guide covers deploying the PlainSight server using Docker Compose on an ARM-based Mac, leveraging a self-hosted GitHub Actions runner and an external MyCloud SMB share.
+
+## Architecture Overview
+
+PlainSight uses a "Local-First" deployment model:
+1. **Host (Mac)**: Acts as the primary server, build machine, and GitHub runner.
+2. **Storage (MyCloud)**: External SMB share used for all persistent media and system files.
+3. **Registry-Free**: Docker images are built locally on the host; no external image registry is used.
 
 ## Prerequisites
 
-- macOS with Docker Desktop installed
-- At least 2GB available RAM
-- At least 10GB available disk space
-- Network access for Docker image pulls
+- ARM-based Mac (M1/M2/M3)
+- Docker Desktop installed
+- GitHub self-hosted runner configured on the Mac
+- MyCloud SMB share mounted at `~/MyCloudHome` (via startup script)
+- At least 4GB available RAM and 20GB disk space
 
-## Installation
+## Installation & Configuration
 
-### 1. Clone the Repository
+### 1. Configure SMB Storage
 
+Ensure your MyCloud share is mounted and contains a `PlainSight` folder at the root:
 ```bash
-git clone https://github.com/glensouza/PlainSight.git
-cd PlainSight
+~/MyCloudHome/PlainSight
+├── content/
+├── updates/
+└── screenshots/
 ```
 
-### 2. Configure Environment Variables
+### 2. Environment Variables
 
-**IMPORTANT:** Environment variables are now required for security.
-
-Copy the example environment file:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and set secure passwords:
+Create a `.env` file in the project root:
 
 ```bash
 # PostgreSQL password (REQUIRED)
 POSTGRES_PASSWORD=your_secure_password_here
 
-# SMB credentials (REQUIRED)
-SMB_USER=your_smb_username
-SMB_PASSWORD=your_secure_smb_password
+# Cloudflare Tunnel Token (REQUIRED)
+CLOUDFLARE_TUNNEL_TOKEN=your_token_here
+
+# Admin Dashboard Initial Credentials
+PGADMIN_DEFAULT_EMAIL=admin@example.com
+PGADMIN_DEFAULT_PASSWORD=your_secure_password_here
 ```
 
-**Generate secure passwords:**
+### 3. GitHub Actions Runner Setup
+
+The CI/CD pipeline (`server.yml`) requires two variables configured in your GitHub Repository settings (**Settings > Secrets and variables > Actions**):
+
+- `DEPLOYMENT_PATH`: The absolute path to the directory where `docker-compose.yml` resides on your Mac.
+- `UPDATES_PATH`: The absolute path to the `updates` folder on your mount (e.g., `/Users/admin/MyCloudHome/PlainSight/updates`).
+
+### 4. Release Signing Keys
+
+To enable player self-updates, you must provide an ECDSA P-256 keypair:
 
 ```bash
-# On Linux/macOS
-openssl rand -base64 32
-
-# On Windows PowerShell
-[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }))
-```
-
-**Security Notes:**
-- Never commit `.env` files to version control (already in .gitignore)
-- Use strong, randomly generated passwords (minimum 20 characters)
-- Change default credentials immediately in production
-- Store passwords securely (e.g., password manager)
-
-### 3. Generate Release Signing Keys
-
-To enable automatic player version updates, PlainSight uses ECDSA P-256 signatures to verify that binaries downloaded by the player are authentic. If the public key is not provided, the server will log a warning at startup and player updates will be disabled.
-
-**Generate the keypair:**
-```bash
-# 1. Generate the private key
+# Generate the keypair
 openssl ecparam -name prime256v1 -genkey -noout -out signing.key
-
-# 2. Convert it to PKCS#8 format (for GitHub Actions)
 openssl pkcs8 -topk8 -nocrypt -in signing.key -out signing.pkcs8
-
-# 3. Extract the public key (for the Server)
 openssl ec -in signing.key -pubout -out release-signing.pub
 ```
 
-**Configure the keys:**
-1. Copy the `release-signing.pub` file into `src/PlainSight.Server/Keys/release-signing.pub`. This file will be baked into your Docker image so the server can verify updates.
-2. In your GitHub repository, go to **Settings > Secrets and variables > Actions**, and add a new secret named `PLAINSIGHT_SIGNING_KEY`. Paste the entire contents of `signing.pkcs8` into it.
-3. Delete `signing.key` and `signing.pkcs8` from your local machine to keep the private key secure.
+1. **Server**: Copy `release-signing.pub` to `src/PlainSight.Server/Keys/`.
+2. **GitHub**: Add `signing.pkcs8` as a GitHub Secret named `PLAINSIGHT_SIGNING_KEY`.
 
-### 4. Start the Services
+## Deployment Workflow
+
+### Automatic (CI/CD)
+
+Whenever you push to the `main` branch, the self-hosted runner will:
+1. Build a new Docker image tagged with the Git SHA.
+2. Tag the current running image as `:previous`.
+3. Tag the new image as `:current`.
+4. Restart the `plainsight-server` container.
+5. **Health Check**: Wait 2 minutes for a `200 OK` on the health endpoint.
+6. **Auto-Rollback**: If the health check fails, the runner automatically re-tags the `:previous` image as `:current`, restarts the container, and fails the job.
+
+### Manual Commands
 
 ```bash
+# Start all services
 docker compose up -d
-```
 
-This command will:
-- Pull the PostgreSQL 17 image
-- Build the PlainSight.Server Docker image
-- Pull the Samba file share image
-- Create volumes for persistent data
-- Start all services
-
-### 4. Verify Deployment
-
-Check that all containers are running:
-
-```bash
+# View deployment status
 docker compose ps
-```
 
-You should see three services running:
-- `plainsight-postgres`
-- `plainsight-server`
-- `plainsight-samba`
-
-### 5. Access the Application
-
-Open your browser and navigate to:
-- **Admin Interface**: http://localhost:8080
-- **Health Check**: http://localhost:8080/health
-
-## Service Configuration
-
-### PostgreSQL Database
-
-- **Port**: 5432
-- **Database**: plainsightdb
-- **Username**: plainsight
-- **Password**: Set via `POSTGRES_PASSWORD` env var
-- **Data Volume**: `postgres_data`
-
-### PlainSight Server
-
-- **Port**: 8080
-- **Environment**: Production
-- **File Share Mount**: `/mnt/signage`
-
-### Samba File Share
-
-- **Ports**: 139, 445
-- **Username**: pi
-- **Password**: secure
-- **Share Name**: signage
-- **Share Path**: `/share`
-
-## Updating the Server
-
-### Pull Latest Changes
-
-```bash
-git pull origin main
-docker compose pull
-docker compose up -d
-```
-
-### Manual Image Build
-
-```bash
-docker compose build plainsight-server
-docker compose up -d plainsight-server
-```
-
-## Rollback
-
-Docker Compose doesn't automatically keep old images, but you can:
-
-### Tag Before Updating
-
-```bash
-docker tag plainsight-server:latest plainsight-server:backup-$(date +%Y%m%d)
-```
-
-### List Available Images
-
-```bash
-docker images | grep plainsight-server
-```
-
-### Rollback to Previous Version
-
-```bash
-docker compose down
-docker tag plainsight-server:backup-20260125 plainsight-server:latest
-docker compose up -d
-```
-
-## Monitoring
-
-### View Logs
-
-```bash
-# All services
-docker compose logs -f
-
-# Specific service
+# View logs
 docker compose logs -f plainsight-server
-docker compose logs -f postgres
 ```
 
-### Resource Usage
+## Maintenance & Operations
 
-```bash
-docker stats
-```
+### Image Retention
+The CI/CD pipeline automatically prunes old images, keeping only the **5 most recent** SHA-tagged images locally on the Mac to save disk space.
 
-## Maintenance
-
-### Backup Database
-
+### Database Backups
 ```bash
 docker compose exec postgres pg_dump -U plainsight plainsightdb > backup-$(date +%Y%m%d).sql
 ```
 
-### Restore Database
-
-```bash
-cat backup-20260125.sql | docker compose exec -T postgres psql -U plainsight plainsightdb
-```
-
-### Clean Up Old Data
-
-```bash
-# Remove unused images
-docker image prune -a
-
-# Remove unused volumes (WARNING: This deletes data)
-docker volume prune
-```
-
-## Troubleshooting
-
-### Container Won't Start
-
-```bash
-# Check logs
-docker compose logs plainsight-server
-
-# Restart service
-docker compose restart plainsight-server
-```
-
-### Database Connection Issues
-
-```bash
-# Check PostgreSQL is healthy
-docker compose exec postgres pg_isready -U plainsight
-
-# Reset database container
-docker compose down
-docker volume rm plainsight_postgres_data
-docker compose up -d
-```
-
-### Port Conflicts
-
-If ports 8080, 5432, 139, or 445 are already in use, modify `docker-compose.yml`:
-
-```yaml
-ports:
-  - "8081:8080"  # Use different external port
-```
-
-## Security Considerations
-
-1. **Change Default Passwords**: Update `POSTGRES_PASSWORD` in production
-2. **Use HTTPS**: Configure reverse proxy (nginx, Traefik) for TLS
-3. **Firewall Rules**: Restrict access to ports 5432, 139, 445
-4. **Regular Updates**: Keep Docker images updated
-5. **Backup Strategy**: Implement automated backups
-
-## Performance Tuning
-
-### PostgreSQL Configuration
-
-Create `postgres.conf` and mount it:
-
-```yaml
-volumes:
-  - ./postgres.conf:/etc/postgresql/postgresql.conf
-```
-
-### Resource Limits
-
-Add to `docker-compose.yml`:
-
-```yaml
-services:
-  plainsight-server:
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-```
-
-## Production Checklist
-
-- [ ] Change default PostgreSQL password
-- [ ] Configure automated backups
-- [ ] Set up monitoring and alerts
-- [ ] Configure HTTPS/TLS
-- [ ] Review security settings
-- [ ] Test rollback procedure
-- [ ] Document custom configurations
-- [ ] Set up log aggregation
+### Troubleshooting
+If the server container fails to start, verify that the MyCloud share is correctly mounted at `~/MyCloudHome`. If the directory is missing, Docker may create a local folder, preventing the SMB mount from linking correctly.

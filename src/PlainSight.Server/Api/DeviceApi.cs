@@ -63,7 +63,7 @@ public static class DeviceApi
                 // Validate or assign API key
                 if (device.ApiKey != null)
                 {
-                    // Registered device â€” validate X-Api-Key header
+                    // Registered device — validate X-Api-Key header
                     string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
                     if (string.IsNullOrEmpty(incomingKey))
                     {
@@ -80,7 +80,6 @@ public static class DeviceApi
                 else
                 {
                     // First registration or re-registration after key reset
-                    string plainTextKey = Guid.NewGuid().ToString("N");
                     device.ApiKey = HashApiKey(plainTextKey);
                     assignedApiKey = plainTextKey;
                     logger.LogInformation("API key assigned for device {DeviceId}", SanitizeForLog(data.DeviceId));
@@ -145,8 +144,8 @@ public static class DeviceApi
                 {
                     // Command Flags
                     RequestScreenshot = device.ScreenshotRequested,
-                    UpdateUrl = device.CurrentVersion != targetVersion && versionRecord != null
-                        ? $"/api/updates/{targetVersion}/binary"
+                    UpdateFileName = device.CurrentVersion != targetVersion && versionRecord != null
+                        ? versionRecord.FileName
                         : null,
                     ExpectedSha256 = device.CurrentVersion != targetVersion && versionRecord != null
                         ? versionRecord.Sha256Hash
@@ -182,7 +181,7 @@ public static class DeviceApi
             }
         });
 
-        group.MapPost("/{deviceId}/screenshot/upload", async (
+        group.MapPost("/{deviceId}/screenshot/notify", async (
             string deviceId,
             HttpRequest request,
             HttpContext httpContext,
@@ -199,18 +198,18 @@ public static class DeviceApi
                 return Results.NotFound();
             }
 
-            // Validate API key â€” reject if the device has no key yet (not yet registered via heartbeat)
+            // Validate API key — reject if the device has no key yet (not yet registered via heartbeat)
             // or if the provided key does not match.
             if (device.ApiKey == null)
             {
-                logger.LogWarning("Screenshot upload rejected for device {DeviceId}: device has no API key (heartbeat required first)", SanitizeForLog(deviceId));
+                logger.LogWarning("Screenshot notification rejected for device {DeviceId}: device has no API key", SanitizeForLog(deviceId));
                 return Results.Unauthorized();
             }
 
             string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
             if (string.IsNullOrEmpty(incomingKey) || !VerifyApiKey(incomingKey, device.ApiKey))
             {
-                logger.LogWarning("Screenshot upload rejected for device {DeviceId}: invalid or missing API key", SanitizeForLog(deviceId));
+                logger.LogWarning("Screenshot notification rejected for device {DeviceId}: invalid or missing API key", SanitizeForLog(deviceId));
                 return Results.Unauthorized();
             }
 
@@ -220,22 +219,11 @@ public static class DeviceApi
             }
 
             IFormCollection form = await request.ReadFormAsync(ct);
-            IFormFile? file = form.Files["screenshot"];
-            if (file == null || file.Length == 0)
-            {
-                return Results.BadRequest("Missing screenshot file");
-            }
+            string? fileName = form["fileName"].FirstOrDefault();
 
-            // Reject non-PNG uploads and cap size at 25 MB
-            const long maxBytes = 25 * 1024 * 1024;
-            if (!file.ContentType.Equals("image/png", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrEmpty(fileName))
             {
-                return Results.BadRequest("Only image/png uploads are accepted");
-            }
-
-            if (file.Length > maxBytes)
-            {
-                return Results.BadRequest("Screenshot exceeds 25 MB limit");
+                return Results.BadRequest("Missing fileName");
             }
 
             string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
@@ -248,35 +236,18 @@ public static class DeviceApi
                 return Results.BadRequest("Invalid device id");
             }
 
-            try
-            {
-                Directory.CreateDirectory(deviceDir);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Failed to create screenshot directory {Dir}", deviceDir);
-                return Results.Problem("Failed to create screenshot directory", statusCode: 500);
-            }
-
-            string timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
-            string fileName = $"{timestamp}_{Guid.NewGuid():N}.png";
+            // SMB flow: Player already wrote the file, just verify it exists
             string filePath = Path.Combine(deviceDir, fileName);
-
             if (!IsPathInsideRoot(deviceDir, filePath))
             {
-                logger.LogWarning("Constructed file path escaped device directory: {Path}", filePath);
-                return Results.BadRequest("Invalid path");
+                logger.LogWarning("Invalid fileName for device {DeviceId}: {FileName}", deviceId, fileName);
+                return Results.BadRequest("Invalid file name");
             }
 
-            try
+            if (!File.Exists(filePath))
             {
-                await using Stream dest = File.Create(filePath);
-                await file.CopyToAsync(dest, ct);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Failed to save screenshot for device {DeviceId}", deviceId);
-                return Results.Problem("Failed to save screenshot", statusCode: 500);
+                logger.LogWarning("Screenshot notification received but file missing on share for device {DeviceId}: {Path}", deviceId, filePath);
+                return Results.NotFound("Screenshot file not found on share");
             }
 
             device.LatestScreenshotPath = filePath;
@@ -285,82 +256,9 @@ public static class DeviceApi
 
             await RecordScreenshotHistoryAsync(device, filePath, context, configuration, logger, ct);
 
-            logger.LogInformation("Screenshot saved for device {DeviceId}: {Path}", deviceId, filePath);
+            logger.LogInformation("Screenshot registered via SMB for device {DeviceId}: {Path}", deviceId, filePath);
             return Results.Ok();
         }).DisableAntiforgery();
-
-        group.MapGet("/{deviceId}/screenshot", async (
-            string deviceId,
-            PlainSightDbContext context,
-            IConfiguration configuration,
-            CancellationToken ct) =>
-        {
-            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
-            if (device == null || string.IsNullOrEmpty(device.LatestScreenshotPath) || !File.Exists(device.LatestScreenshotPath))
-            {
-                return Results.NotFound();
-            }
-
-            // Guard against a poisoned DB path escaping ScreenshotsPath
-            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
-            return !IsPathInsideRoot(screenshotsRoot, device.LatestScreenshotPath) 
-                ? Results.NotFound() 
-                : Results.File(device.LatestScreenshotPath, "image/png");
-        });
-
-        group.MapGet("/{deviceId}/screenshots", async (
-            string deviceId,
-            PlainSightDbContext context,
-            CancellationToken ct) =>
-        {
-            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
-            if (device == null)
-            {
-                return Results.NotFound();
-            }
-
-            List<DeviceScreenshotDto> history = await context.DeviceScreenshots
-                .Where(s => s.DeviceId == device.Id)
-                .OrderByDescending(s => s.CapturedAt)
-                .Select(s => new DeviceScreenshotDto
-                {
-                    Id = s.Id,
-                    CapturedAt = s.CapturedAt,
-                    Url = $"/api/device/{deviceId}/screenshots/{s.Id}"
-                })
-                .ToListAsync(ct);
-
-            return Results.Ok(history);
-        }).RequireAuthorization();
-
-        group.MapGet("/{deviceId}/screenshots/{id:int}", async (
-            string deviceId,
-            int id,
-            PlainSightDbContext context,
-            IConfiguration configuration,
-            CancellationToken ct) =>
-        {
-            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
-            if (device == null)
-            {
-                return Results.NotFound();
-            }
-
-            DeviceScreenshot? screenshot = await context.DeviceScreenshots
-                .FirstOrDefaultAsync(s => s.Id == id && s.DeviceId == device.Id, ct);
-            if (screenshot == null)
-            {
-                return Results.NotFound();
-            }
-
-            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
-            if (!IsPathInsideRoot(screenshotsRoot, screenshot.FilePath) || !File.Exists(screenshot.FilePath))
-            {
-                return Results.NotFound();
-            }
-
-            return Results.File(screenshot.FilePath, "image/png");
-        }).RequireAuthorization();
     }
 
     private static async Task RecordScreenshotHistoryAsync(

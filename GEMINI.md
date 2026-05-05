@@ -5,13 +5,19 @@ PlainSight is an enterprise-grade digital signage solution optimized for Raspber
 ## 🚀 Project Overview
 
 - **Server**: ASP.NET Core 10 & Blazor Web App (Interactive Server Mode). Handles device management, content rendering (PuppeteerSharp), and update distribution.
-- **Player**: .NET 10 web app that streams content from an SMB share, reports telemetry via heartbeats, supports self-updating, and launches Chromium in kiosk mode to display an HTML5 video player page.
-- **Orchestration**: .NET Aspire is used for development-time orchestration of the server, player, and PostgreSQL database.
-- **Storage**: PostgreSQL for metadata/telemetry and Samba for content distribution.
+- **Player**: .NET 10 app that streams content from an SMB share, reports telemetry via heartbeats, supports self-updating, and launches Chromium in kiosk mode.
+- **Unified Storage**: External MyCloud SMB share mounted at `/mnt/plainsight` across all components (Server and Players).
+- **Deployment**: Local Docker builds on a self-hosted Mac runner with automated health-check rollbacks.
 
-## 🛠️ Building and Running
+## 📏 Development Conventions
 
-### Development Environment
+### Infrastructure & Storage — hard requirements
+
+- **SMB-First Logic**: Components must prioritize direct file access via `/mnt/plainsight` for large payloads (Updates, Screenshots, Videos) before falling back to HTTP APIs.
+- **Path Consistency**: Always use the unified `/mnt/plainsight` mount point for shared storage logic.
+- **Registry-Free Deployment**: The server is deployed using local builds on the self-hosted runner. Always tag previous stable images as `:previous` and new ones as `:current` to support automated rollbacks.
+
+### C# Coding Rules — hard requirements
 The easiest way to run the entire system locally is using .NET Aspire:
 ```powershell
 dotnet run --project src/PlainSight.AppHost

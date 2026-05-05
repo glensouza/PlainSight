@@ -4,7 +4,7 @@ public enum RenderJobStatus { Queued, Processing, Done, Failed }
 
 public class RenderJob
 {
-    public string Id { get; } = Guid.NewGuid().ToString("N");
+    public string Id { get; } = Guid.CreateVersion7().ToString("N");
     public required string Url { get; init; }
     public required int DurationSeconds { get; init; }
     public required string OutputPath { get; init; }

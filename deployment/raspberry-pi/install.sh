@@ -22,15 +22,17 @@ if [ -z "$SERVER_IP" ]; then
   exit 1
 fi
 
-# Read SMB credentials
+# Read SMB details
 echo ""
-echo "SMB Share Credentials:"
+echo "SMB Share Configuration:"
+read -p "Enter SMB Host (e.g., MyCloud.local): " SMB_HOST
+read -p "Enter SMB Share and Path (e.g., corona/PlainSight): " SMB_PATH
 read -p "Enter SMB username: " SMB_USER
 read -sp "Enter SMB password: " SMB_PASSWORD
 echo ""
 
-if [ -z "$SMB_USER" ] || [ -z "$SMB_PASSWORD" ]; then
-  echo "SMB credentials are required"
+if [ -z "$SMB_HOST" ] || [ -z "$SMB_PATH" ] || [ -z "$SMB_USER" ] || [ -z "$SMB_PASSWORD" ]; then
+  echo "All SMB configuration fields are required"
   exit 1
 fi
 
@@ -90,7 +92,7 @@ Description=Mount Remote Signage Assets
 After=network-online.target
 
 [Mount]
-What=//${SERVER_IP}/plainsight
+What=//${SMB_HOST}/${SMB_PATH}
 Where=/mnt/plainsight
 Type=cifs
 Options=credentials=/etc/samba/plainsight-credentials,ro,vers=3.0
