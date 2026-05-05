@@ -42,16 +42,8 @@ public class PlayerWorker(
 
                     if (response.RequestScreenshot)
                     {
-                        logger.LogInformation("Screenshot requested");
-                        byte[] screenshotBytes = await screenshot.CaptureScreenshot();
-                        if (screenshotBytes.Length > 0)
-                        {
-                            await screenshotUpload.UploadAsync(screenshotBytes, stoppingToken);
-                        }
-                        else
-                        {
-                            logger.LogWarning("Screenshot capture returned empty result; skipping upload");
-                        }
+                        // Fire-and-forget the screenshot capture to avoid blocking the heartbeat loop
+                        _ = this.ProcessScreenshotRequest(stoppingToken);
                     }
 
                     if (response.PlaylistItems != null)
@@ -90,6 +82,29 @@ public class PlayerWorker(
         }
 
         ndi.Stop("player shutting down");
+    }
+
+    private async Task ProcessScreenshotRequest(CancellationToken stoppingToken)
+    {
+        try
+        {
+            logger.LogInformation("Screenshot requested by server");
+            byte[] screenshotBytes = await screenshot.CaptureScreenshot();
+
+            if (screenshotBytes.Length > 0)
+            {
+                logger.LogInformation("Screenshot captured ({Bytes} bytes), uploading...", screenshotBytes.Length);
+                await screenshotUpload.UploadAsync(screenshotBytes, stoppingToken);
+            }
+            else
+            {
+                logger.LogWarning("Screenshot capture returned empty result; skipping upload");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error processing screenshot request");
+        }
     }
 
     private void ApplyLiveMode(HeartbeatResponse response)

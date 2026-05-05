@@ -84,10 +84,11 @@ builder.Services.AddHostedService<DeviceMonitorService>();
 builder.Services.AddHostedService<NdiDiscoveryService>();
 builder.Services.AddSingleton<ObsDiscoveryService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ObsDiscoveryService>());
+builder.Services.AddSingleton<ScreenshotNotificationService>();
 
 // Add HttpClient for calling our own API and the players
 builder.Services.AddHttpClient();
-builder.Services.AddHttpClient("player", client => client.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHttpClient("player", client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddHttpContextAccessor();
 
 WebApplication app = builder.Build();
@@ -98,6 +99,17 @@ using (IServiceScope scope = app.Services.CreateScope())
 {
     PlainSightDbContext dbContext = scope.ServiceProvider.GetRequiredService<PlainSightDbContext>();
     dbContext.Database.Migrate();
+
+    // One-time migration: clear SHA-256-hashed API keys (64-char hex) left from before the
+    // plaintext-key switch. Affected devices re-register and receive a new key on next heartbeat.
+    int clearedKeys = dbContext.Devices
+        .Where(d => d.ApiKey != null && d.ApiKey.Length == 64)
+        .ExecuteUpdate(s => s.SetProperty(d => d.ApiKey, (string?)null));
+    if (clearedKeys > 0)
+    {
+        ILogger startupLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+        startupLogger.LogInformation("Cleared {Count} hashed API key(s); devices will re-register on next heartbeat", clearedKeys);
+    }
 
     if (!dbContext.AdminUsers.Any())
     {
