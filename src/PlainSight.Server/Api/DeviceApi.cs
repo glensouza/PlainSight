@@ -63,7 +63,7 @@ public static class DeviceApi
                 // Validate or assign API key
                 if (device.ApiKey != null)
                 {
-                    // Registered device — validate X-Api-Key header
+                    // Registered device ï¿½ validate X-Api-Key header
                     string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
                     if (string.IsNullOrEmpty(incomingKey))
                     {
@@ -79,7 +79,7 @@ public static class DeviceApi
                 }
                 else
                 {
-                    // First registration or re-registration after key reset
+                    string plainTextKey = Guid.CreateVersion7().ToString("N");
                     device.ApiKey = HashApiKey(plainTextKey);
                     assignedApiKey = plainTextKey;
                     logger.LogInformation("API key assigned for device {DeviceId}", SanitizeForLog(data.DeviceId));
@@ -198,7 +198,7 @@ public static class DeviceApi
                 return Results.NotFound();
             }
 
-            // Validate API key — reject if the device has no key yet (not yet registered via heartbeat)
+            // Validate API key ï¿½ reject if the device has no key yet (not yet registered via heartbeat)
             // or if the provided key does not match.
             if (device.ApiKey == null)
             {
