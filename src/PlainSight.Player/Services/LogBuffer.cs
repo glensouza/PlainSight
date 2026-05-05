@@ -1,23 +1,30 @@
-using System.Threading.Channels;
+using System.Collections.Concurrent;
 using PlainSight.Shared.Models;
 
 namespace PlainSight.Player.Services;
 
-internal sealed class LogBuffer
+public class LogBuffer
 {
-    private readonly Channel<DeviceLogEntryDto> channel = Channel.CreateBounded<DeviceLogEntryDto>(
-        new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.DropOldest });
+    private readonly ConcurrentQueue<DeviceLogEntryDto> logs = new();
 
-    public void Add(DeviceLogEntryDto entry) => this.channel.Writer.TryWrite(entry);
-
-    public List<DeviceLogEntryDto> DrainAll()
+    public void Enqueue(DeviceLogEntryDto entry)
     {
-        List<DeviceLogEntryDto> result = [];
-        while (this.channel.Reader.TryRead(out DeviceLogEntryDto? entry))
+        this.logs.Enqueue(entry);
+        if (this.logs.Count > 1000)
         {
-            result.Add(entry);
+            this.logs.TryDequeue(out _);
         }
-
-        return result;
     }
+
+    public List<DeviceLogEntryDto> DequeueAll()
+    {
+        List<DeviceLogEntryDto> batch = [];
+        while (this.logs.TryDequeue(out DeviceLogEntryDto? entry))
+        {
+            batch.Add(entry);
+        }
+        return batch;
+    }
+
+    public bool IsEmpty => this.logs.IsEmpty;
 }

@@ -34,6 +34,11 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddOpenApi();
 
+// Logging
+builder.Services.AddSingleton<LogQueue>();
+builder.Services.AddSingleton<ILoggerProvider, DbLoggerProvider>();
+builder.Services.AddHostedService<LogFlushService>();
+
 // Add database context factory
 builder.Services.AddDbContextFactory<PlainSightDbContext>(options =>
 {

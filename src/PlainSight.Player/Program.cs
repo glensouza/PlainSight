@@ -50,6 +50,11 @@ builder.Services.AddHttpClient<LogShipperService>(client =>
 #pragma warning restore EXTEXP0001
 #pragma warning restore EXTEXP0001
 
+// Logging
+builder.Services.AddSingleton<LogBuffer>();
+builder.Services.AddSingleton<ILoggerProvider, PlayerLoggerProvider>();
+builder.Services.AddHostedService<LogRetentionService>();
+
 builder.Services.AddSingleton<ScreenCaptureService>();
 builder.Services.AddSingleton<NdiPlayerService>();
 

@@ -2,5 +2,6 @@ namespace PlainSight.Shared.Models;
 
 public class DeviceLogBatchDto
 {
-    public List<DeviceLogEntryDto> Entries { get; set; } = [];
+    public string DeviceId { get; set; } = string.Empty;
+    public List<DeviceLogEntryDto> Logs { get; set; } = [];
 }

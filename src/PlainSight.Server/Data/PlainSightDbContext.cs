@@ -24,6 +24,13 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
     {
         base.OnModelCreating(modelBuilder);
 
+        modelBuilder.Entity<LogEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.Source, e.SourceId, e.Timestamp });
+            entity.Property(e => e.Source).HasConversion<string>();
+        });
+
         modelBuilder.Entity<SystemSetting>(entity =>
         {
             entity.HasKey(e => e.Key);

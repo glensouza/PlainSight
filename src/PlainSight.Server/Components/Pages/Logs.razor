@@ -1,112 +1,94 @@
 @page "/logs"
 @rendermode InteractiveServer
 @attribute [Authorize]
+@using PlainSight.Server.Data
+@using PlainSight.Server.Services
+@using PlainSight.Shared.Models
+@using Microsoft.EntityFrameworkCore
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject ILogger<Logs> Logger
-@implements IDisposable
 
-<PageTitle>Logs — PlainSight</PageTitle>
+<PageTitle>System Logs — PlainSight</PageTitle>
 
 <div class="page-header">
     <h1>System Logs</h1>
-    <p class="text-muted mb-0">Aggregated logs from the server and all connected players</p>
+    <p class="text-muted mb-0">Centralized logs from the server and device fleet</p>
 </div>
 
-@if (loadError != null)
-{
-    <div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> @loadError</div>
-}
+<div class="ps-toolbar">
+    <div class="ps-toolbar__filters">
+        <select class="ps-cell__select filter-select" @bind="sourceFilter">
+            <option value="">All Sources</option>
+            <option value="Server">Server</option>
+            <option value="Device">Devices</option>
+        </select>
+        
+        <select class="ps-cell__select filter-select" @bind="levelFilter">
+            <option value="">All Levels</option>
+            <option value="Information">Information</option>
+            <option value="Warning">Warning</option>
+            <option value="Error">Error</option>
+            <option value="Critical">Critical</option>
+        </select>
 
-<div class="card mb-3">
-    <div class="card-body py-2">
-        <div class="row g-2 align-items-center">
-            <div class="col-auto">
-                <select class="form-select form-select-sm" @bind="filterCategory" @bind:after="ReloadAsync">
-                    <option value="">All sources</option>
-                    <option value="Server">Server</option>
-                    <option value="Device">Devices</option>
-                </select>
-            </div>
-            @if (filterCategory == "Device")
-            {
-                <div class="col-auto">
-                    <select class="form-select form-select-sm" @bind="filterSourceId" @bind:after="ReloadAsync">
-                        <option value="">All devices</option>
-                        @foreach (string deviceId in deviceIds)
-                        {
-                            <option value="@deviceId">@deviceId</option>
-                        }
-                    </select>
-                </div>
-            }
-            <div class="col-auto">
-                <select class="form-select form-select-sm" @bind="filterLevel" @bind:after="ReloadAsync">
-                    <option value="">All levels</option>
-                    <option value="Warning">Warning+</option>
-                    <option value="Error">Error+</option>
-                    <option value="Critical">Critical only</option>
-                </select>
-            </div>
-            <div class="col-auto ms-auto">
-                <button class="btn btn-sm btn-outline-secondary me-2" @onclick="ReloadAsync">
-                    <i class="bi bi-arrow-clockwise"></i> Refresh
-                </button>
-                <button class="btn btn-sm btn-outline-danger" @onclick="ConfirmClearAsync" disabled="@clearing">
-                    @if (clearing)
-                    {
-                        <span class="spinner-border spinner-border-sm me-1"></span>
-                    }
-                    <i class="bi bi-trash"></i> Clear all
-                </button>
-            </div>
-        </div>
+        <button class="btn btn-sm btn-primary" @onclick="LoadLogs">
+            <i class="bi bi-filter"></i> Apply
+        </button>
+    </div>
+    <div class="ps-toolbar__actions">
+        <button class="btn btn-sm btn-outline-secondary" @onclick="LoadLogs">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
     </div>
 </div>
 
-@if (entries == null)
+@if (logs == null)
 {
-    <p><em>Loading...</em></p>
+    <p><em>Loading logs...</em></p>
 }
-else if (entries.Count == 0)
+else if (!logs.Any())
 {
     <div class="alert alert-info">
-        <i class="bi bi-info-circle"></i> No log entries found.
+        <i class="bi bi-info-circle"></i> No logs found matching the criteria.
     </div>
 }
 else
 {
-    <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle">
-            <thead class="table-dark">
+    <div class="ps-table-container">
+        <table class="ps-table">
+            <thead>
                 <tr>
-                    <th style="width:170px">Timestamp</th>
-                    <th style="width:80px">Source</th>
-                    <th style="width:120px">Origin</th>
-                    <th style="width:90px">Level</th>
-                    <th>Message</th>
+                    <th>TIMESTAMP</th>
+                    <th>SOURCE</th>
+                    <th>LEVEL</th>
+                    <th>CATEGORY</th>
+                    <th>MESSAGE</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (LogEntry entry in entries)
+                @foreach (LogEntry log in logs)
                 {
-                    <tr @onclick="() => ToggleException(entry.Id)" style="cursor:pointer">
-                        <td><code class="small">@entry.Timestamp.ToLocalString("yyyy-MM-dd HH:mm:ss")</code></td>
-                        <td>
-                            <span class="badge @(entry.Category == LogEntryCategory.Server ? "bg-secondary" : "bg-primary")">
-                                @entry.Category.ToString()
+                    <tr class="log-row--@log.LogLevel.ToLower()">
+                        <td class="text-nowrap mono">@log.Timestamp.ToLocalTime().ToString("MM-dd HH:mm:ss")</td>
+                        <td class="text-nowrap">
+                            <span class="badge @(log.Source == LogSource.Server ? "bg-primary" : "bg-info")">
+                                @log.Source: @log.SourceId
                             </span>
                         </td>
-                        <td><small class="text-muted">@entry.SourceId</small></td>
-                        <td><span class="badge @LevelBadgeClass(entry.Level)">@entry.Level</span></td>
+                        <td class="text-nowrap">
+                            <span class="pill pill--@GetLevelClass(log.LogLevel)">
+                                <span class="led"></span>
+                                @log.LogLevel
+                            </span>
+                        </td>
+                        <td class="text-muted small">
+                            <div class="category-text" title="@log.Category">@TruncateCategory(log.Category)</div>
+                        </td>
                         <td>
-                            <span class="small">@entry.Message</span>
-                            @if (!string.IsNullOrEmpty(entry.Exception) && expandedIds.Contains(entry.Id))
+                            <div class="log-message">@log.Message</div>
+                            @if (!string.IsNullOrEmpty(log.Exception))
                             {
-                                <pre class="mt-1 mb-0 small text-danger" style="white-space:pre-wrap;font-size:0.75em">@entry.Exception</pre>
-                            }
-                            @if (!string.IsNullOrEmpty(entry.Exception) && !expandedIds.Contains(entry.Id))
-                            {
-                                <span class="text-muted ms-2 small">(has exception — click to expand)</span>
+                                <pre class="log-exception mt-1">@log.Exception</pre>
                             }
                         </td>
                     </tr>
@@ -114,187 +96,63 @@ else
             </tbody>
         </table>
     </div>
-
-    <div class="d-flex justify-content-between align-items-center">
-        <small class="text-muted">Showing @entries.Count of @totalCount entries (newest first)</small>
-        <div>
-            <button class="btn btn-sm btn-outline-secondary me-1" @onclick="PrevPage" disabled="@(currentPage == 0)">
-                <i class="bi bi-chevron-left"></i>
-            </button>
-            <span class="small">Page @(currentPage + 1)</span>
-            <button class="btn btn-sm btn-outline-secondary ms-1" @onclick="NextPage" disabled="@(entries.Count < PageSize)">
-                <i class="bi bi-chevron-right"></i>
-            </button>
-        </div>
-    </div>
-}
-
-@if (showClearConfirm)
-{
-    <div class="modal fade show d-block" tabindex="-1" style="background:rgba(0,0,0,0.5)">
-        <div class="modal-dialog modal-sm">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Clear logs</h5>
-                    <button type="button" class="btn-close" @onclick="() => showClearConfirm = false"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Delete all log entries? This cannot be undone.</p>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary btn-sm" @onclick="() => showClearConfirm = false">Cancel</button>
-                    <button class="btn btn-danger btn-sm" @onclick="ClearLogsAsync">Delete all</button>
-                </div>
-            </div>
-        </div>
-    </div>
 }
 
 @code {
-    private const int PageSize = 100;
-
-    private List<LogEntry>? entries;
-    private List<string> deviceIds = [];
-    private int totalCount;
-    private int currentPage;
-    private string filterCategory = string.Empty;
-    private string filterSourceId = string.Empty;
-    private string filterLevel = string.Empty;
-    private string? loadError;
-    private bool clearing;
-    private bool showClearConfirm;
-    private readonly HashSet<int> expandedIds = [];
-    private CancellationTokenSource cts = new();
+    private List<LogEntry>? logs;
+    private string sourceFilter = string.Empty;
+    private string levelFilter = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
-        await this.LoadDeviceIdsAsync();
-        await this.ReloadAsync();
+        await LoadLogs();
     }
 
-    private async Task LoadDeviceIdsAsync()
+    private async Task LoadLogs()
     {
         try
         {
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(this.cts.Token);
-            this.deviceIds = await context.LogEntries
-                .Where(e => e.Category == LogEntryCategory.Device)
-                .Select(e => e.SourceId)
-                .Distinct()
-                .OrderBy(id => id)
-                .ToListAsync(this.cts.Token);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Failed to load device IDs for log filter");
-        }
-    }
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            IQueryable<LogEntry> query = context.LogEntries.AsNoTracking();
 
-    private async Task ReloadAsync()
-    {
-        this.loadError = null;
-        try
-        {
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(this.cts.Token);
-
-            IQueryable<LogEntry> query = context.LogEntries;
-
-            if (!string.IsNullOrEmpty(this.filterCategory) && Enum.TryParse<LogEntryCategory>(this.filterCategory, out LogEntryCategory cat))
+            if (!string.IsNullOrEmpty(sourceFilter))
             {
-                query = query.Where(e => e.Category == cat);
+                LogSource source = Enum.Parse<LogSource>(sourceFilter);
+                query = query.Where(l => l.Source == source);
             }
 
-            if (!string.IsNullOrEmpty(this.filterSourceId))
+            if (!string.IsNullOrEmpty(levelFilter))
             {
-                query = query.Where(e => e.SourceId == this.filterSourceId);
+                query = query.Where(l => l.LogLevel == levelFilter);
             }
 
-            query = this.filterLevel switch
-            {
-                "Warning" => query.Where(e => e.Level == "Warning" || e.Level == "Error" || e.Level == "Critical"),
-                "Error" => query.Where(e => e.Level == "Error" || e.Level == "Critical"),
-                "Critical" => query.Where(e => e.Level == "Critical"),
-                _ => query
-            };
-
-            this.totalCount = await query.CountAsync(this.cts.Token);
-            this.entries = await query
-                .OrderByDescending(e => e.Timestamp)
-                .Skip(this.currentPage * PageSize)
-                .Take(PageSize)
-                .ToListAsync(this.cts.Token);
+            logs = await query
+                .OrderByDescending(l => l.Timestamp)
+                .Take(200)
+                .ToListAsync();
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to load log entries");
-            this.loadError = "Failed to load log entries.";
+            Logger.LogError(ex, "Error loading logs");
+            logs = [];
         }
     }
 
-    private async Task PrevPage()
+    private static string GetLevelClass(string level) => level switch
     {
-        if (this.currentPage > 0)
-        {
-            this.currentPage--;
-            await this.ReloadAsync();
-        }
-    }
-
-    private async Task NextPage()
-    {
-        if (this.entries?.Count == PageSize)
-        {
-            this.currentPage++;
-            await this.ReloadAsync();
-        }
-    }
-
-    private void ToggleException(int id)
-    {
-        if (!this.expandedIds.Add(id))
-        {
-            this.expandedIds.Remove(id);
-        }
-    }
-
-    private void ConfirmClearAsync() => this.showClearConfirm = true;
-
-    private async Task ClearLogsAsync()
-    {
-        this.showClearConfirm = false;
-        this.clearing = true;
-        try
-        {
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(this.cts.Token);
-            await context.LogEntries.ExecuteDeleteAsync(this.cts.Token);
-            this.currentPage = 0;
-            this.expandedIds.Clear();
-            await this.LoadDeviceIdsAsync();
-            await this.ReloadAsync();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Failed to clear log entries");
-            this.loadError = "Failed to clear logs.";
-        }
-        finally
-        {
-            this.clearing = false;
-        }
-    }
-
-    private static string LevelBadgeClass(string level) => level switch
-    {
-        "Critical" => "bg-dark",
-        "Error" => "bg-danger",
-        "Warning" => "bg-warning text-dark",
-        "Information" => "bg-info text-dark",
-        _ => "bg-secondary"
+        "Information" => "online",
+        "Warning" => "warn",
+        "Error" or "Critical" => "offline",
+        _ => "muted"
     };
 
-    public void Dispose()
+    private static string TruncateCategory(string category)
     {
-        this.cts.Cancel();
-        this.cts.Dispose();
+        if (string.IsNullOrEmpty(category))
+        {
+            return string.Empty;
+        }
+        string[] parts = category.Split('.');
+        return parts.Last();
     }
 }
