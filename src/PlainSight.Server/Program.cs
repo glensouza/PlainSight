@@ -164,6 +164,9 @@ app.MapPost("/auth/logout", async (HttpContext ctx) =>
 
 app.MapDefaultEndpoints();
 
+// SignalR Hubs
+app.MapHub<DeviceHub>("/hubs/device");
+
 // Register Minimal APIs
 app.MapOpenApi();
 app.MapScalarApiReference();
