@@ -1,8 +1,13 @@
 using System.Net.Http.Headers;
+using Microsoft.Extensions.Configuration;
 
 namespace PlainSight.Player.Services;
 
-public class ScreenshotUploadService(HttpClient http, HeartbeatService heartbeat, ILogger<ScreenshotUploadService> logger)
+public class ScreenshotUploadService(
+    HttpClient http, 
+    HeartbeatService heartbeat, 
+    IConfiguration configuration,
+    ILogger<ScreenshotUploadService> logger)
 {
     private readonly string deviceId = Environment.MachineName;
 
@@ -15,12 +20,26 @@ public class ScreenshotUploadService(HttpClient http, HeartbeatService heartbeat
 
         try
         {
-            using MultipartFormDataContent form = new();
-            using ByteArrayContent content = new(pngBytes);
-            content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
-            form.Add(content, "screenshot", "screenshot.png");
+            // 1. Save to SMB share
+            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
+            string deviceDir = Path.Combine(screenshotsRoot, this.deviceId);
+            
+            if (!Directory.Exists(deviceDir))
+            {
+                Directory.CreateDirectory(deviceDir);
+            }
 
-            using HttpRequestMessage request = new(HttpMethod.Post, $"/api/device/{this.deviceId}/screenshot/upload");
+            string fileName = $"screenshot_{DateTime.UtcNow:yyyyMMdd_HHmmss}.png";
+            string filePath = Path.Combine(deviceDir, fileName);
+
+            await File.WriteAllBytesAsync(filePath, pngBytes, cancellationToken);
+            logger.LogInformation("Screenshot saved to SMB: {Path} ({Bytes} bytes)", filePath, pngBytes.Length);
+
+            // 2. Notify server via HTTP
+            using MultipartFormDataContent form = new();
+            form.Add(new StringContent(fileName), "fileName");
+
+            using HttpRequestMessage request = new(HttpMethod.Post, $"/api/device/{this.deviceId}/screenshot/notify");
             request.Content = form;
 
             string? apiKey = heartbeat.GetApiKey();
@@ -33,11 +52,11 @@ public class ScreenshotUploadService(HttpClient http, HeartbeatService heartbeat
 
             if (response.IsSuccessStatusCode)
             {
-                logger.LogInformation("Screenshot uploaded ({Bytes} bytes)", pngBytes.Length);
+                logger.LogInformation("Screenshot notification sent to server for {FileName}", fileName);
             }
             else
             {
-                logger.LogWarning("Screenshot upload failed: {Status}", response.StatusCode);
+                logger.LogWarning("Screenshot notification failed: {Status}", response.StatusCode);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -46,7 +65,7 @@ public class ScreenshotUploadService(HttpClient http, HeartbeatService heartbeat
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error uploading screenshot");
+            logger.LogError(ex, "Error processing screenshot delivery");
         }
     }
 }

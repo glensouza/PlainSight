@@ -18,7 +18,6 @@ string idleCachePath = builder.Configuration["IdleCachePath"] ?? "/var/cache/pla
 string serverUrl = builder.Configuration["ServerUrl"] ?? "http://plainsight-server";
 
 // Remove the Polly resilience handlers that AddServiceDefaults adds to all clients.
-#pragma warning disable EXTEXP0001
 builder.Services.AddHttpClient<HeartbeatService>(client =>
 {
     client.BaseAddress = new Uri(serverUrl);
@@ -36,7 +35,6 @@ builder.Services.AddHttpClient<ScreenshotUploadService>(client =>
     client.BaseAddress = new Uri(serverUrl);
     client.Timeout = TimeSpan.FromSeconds(30);
 }).RemoveAllResilienceHandlers();
-#pragma warning restore EXTEXP0001
 
 builder.Services.AddSingleton<ScreenCaptureService>();
 builder.Services.AddSingleton<NdiPlayerService>();
@@ -130,6 +128,64 @@ app.MapGet("/api/screenshot", async (ScreenCaptureService screenCapture) =>
 {
     byte[] bytes = await screenCapture.CaptureScreenshot();
     return bytes.Length > 0 ? Results.Bytes(bytes, "image/png") : Results.StatusCode(503);
+});
+
+// Rate-limit state for the capture endpoint: one capture per cooldown window.
+Lock captureLock = new();
+DateTimeOffset lastCaptureAt = DateTimeOffset.MinValue;
+const int CaptureCooldownSeconds = 5;
+
+// Server-triggered screenshot: capture, write to SMB, and notify server via existing notify path.
+// Returns 202 immediately; the actual capture and upload runs in the background.
+app.MapPost("/api/screenshot/capture", (
+    HttpContext ctx,
+    HeartbeatService heartbeat,
+    ScreenCaptureService screenCapture,
+    ScreenshotUploadService uploader,
+    IHostApplicationLifetime lifetime,
+    ILogger<Program> logger) =>
+{
+    // Reject if the device is registered and the caller did not supply the correct key.
+    string? storedKey = heartbeat.GetApiKey();
+    if (storedKey != null)
+    {
+        string? incomingKey = ctx.Request.Headers["X-Api-Key"].FirstOrDefault();
+        if (string.IsNullOrEmpty(incomingKey) || incomingKey != storedKey)
+        {
+            return Results.Unauthorized();
+        }
+    }
+
+    lock (captureLock)
+    {
+        if ((DateTimeOffset.UtcNow - lastCaptureAt).TotalSeconds < CaptureCooldownSeconds)
+        {
+            return Results.StatusCode(429);
+        }
+        lastCaptureAt = DateTimeOffset.UtcNow;
+    }
+
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            byte[] bytes = await screenCapture.CaptureScreenshot();
+            if (bytes.Length > 0)
+            {
+                await uploader.UploadAsync(bytes, lifetime.ApplicationStopping);
+            }
+            else
+            {
+                logger.LogWarning("Manual capture returned empty result");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Manual screenshot capture failed");
+        }
+    });
+
+    return Results.Accepted();
 });
 
 // Browser page reports which file it is currently playing

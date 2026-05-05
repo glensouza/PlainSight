@@ -1,3 +1,5 @@
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using PlainSight.Shared.Models;
@@ -155,15 +157,41 @@ public class HeartbeatService(HttpClient http, IServer server, ILogger<Heartbeat
             return null;
         }
 
-        // If bound to all interfaces (*, 0.0.0.0, [::]), replace with the machine name
-        // so the server has a better chance of reaching us.
+        // If bound to all interfaces (*, 0.0.0.0, [::]), replace with a routable address.
+        // Prefer the machine's actual IP over the hostname — hostname may not resolve across
+        // Docker networks or in environments without DNS for the Pi's name.
         Uri uri = new(address);
         if (uri.Host is "*" or "0.0.0.0" or "[::]" or "localhost" or "127.0.0.1")
         {
-            string host = uri.Host is "localhost" or "127.0.0.1" ? "localhost" : Environment.MachineName;
+            string host = uri.Host is "localhost" or "127.0.0.1"
+                ? "localhost"
+                : GetRoutableIpAddress() ?? Environment.MachineName;
             address = new UriBuilder(uri) { Host = host }.Uri.ToString().TrimEnd('/');
         }
 
         return address;
+    }
+
+    private static string? GetRoutableIpAddress()
+    {
+        foreach (NetworkInterface ni in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (ni.OperationalStatus != OperationalStatus.Up)
+            {
+                continue;
+            }
+            if (ni.NetworkInterfaceType is NetworkInterfaceType.Loopback)
+            {
+                continue;
+            }
+            foreach (UnicastIPAddressInformation ip in ni.GetIPProperties().UnicastAddresses)
+            {
+                if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    return ip.Address.ToString();
+                }
+            }
+        }
+        return null;
     }
 }

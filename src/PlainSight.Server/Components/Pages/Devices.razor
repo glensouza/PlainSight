@@ -85,14 +85,10 @@ else
                     </span>
                 </header>
 
-                <div class="ps-tile__screen">
+                <div class="ps-tile__screen" @onclick="() => ShowScreenshotHistory(device)" style="cursor:pointer;" title="View screenshot history">
                     @if (device.LatestScreenshotAt.HasValue && !string.IsNullOrEmpty(device.LatestScreenshotPath))
                     {
-                        <button class="ps-tile__screen-btn"
-                                @onclick="() => ShowScreenshotHistory(device)"
-                                title="View screenshot history">
-                            <img src="/api/media/screenshot/@device.DeviceId/@(Path.GetFileName(device.LatestScreenshotPath))?t=@previewCacheBust" alt="" />
-                        </button>
+                        <img src="/api/media/screenshot/@device.DeviceId/@(Path.GetFileName(device.LatestScreenshotPath))?t=@previewCacheBust" alt="" />
                     }
                     else
                     {
@@ -149,16 +145,16 @@ else
                             </select>
                         </div>
                     </div>
-                    <div class="ps-cell">
+                    <div class="ps-cell ps-cell--interactive" @onclick="() => ShowScreenshotHistory(device)" title="View screenshot history">
                         <div class="ps-cell__label">SCREENSHOT</div>
                         <div class="ps-cell__value">
                             @if (device.LatestScreenshotAt.HasValue)
                             {
-                                @GetTimeSince(device.LatestScreenshotAt.Value)
+                                <i class="bi bi-clock-history me-1"></i> @GetTimeSince(device.LatestScreenshotAt.Value)
                             }
                             else
                             {
-                                <span class="text-muted">—</span>
+                                <span class="text-muted">No history</span>
                             }
                         </div>
                     </div>
@@ -178,6 +174,12 @@ else
                             <i class="bi bi-camera"></i>
                         }
                         <span>Capture</span>
+                    </button>
+                    <button class="ps-action"
+                            @onclick="() => ShowScreenshotHistory(device)"
+                            title="View screenshot history">
+                        <i class="bi bi-clock-history"></i>
+                        <span>History</span>
                     </button>
                     <button class="ps-action"
                             @onclick="() => OpenLiveModeEditor(device)"
@@ -553,11 +555,46 @@ else
     {
         await this.InvokeAsync(async () =>
         {
-            Logger.LogInformation("Real-time screenshot notification received for device {DeviceId}", deviceId);
-            previewCacheBust = DateTime.UtcNow.Ticks.ToString();
-            await LoadDevices();
-            StateHasChanged();
+            this.Logger.LogInformation("Real-time screenshot notification received for device {DeviceId}", deviceId);
+            this.previewCacheBust = DateTime.UtcNow.Ticks.ToString();
+            await this.LoadDevices();
+            await this.RefreshHistoryIfOpenAsync(deviceId);
+            this.StateHasChanged();
         });
+    }
+
+    private async Task RefreshHistoryIfOpenAsync(string deviceId)
+    {
+        if (this.historyDevice == null || this.historyDevice.DeviceId != deviceId)
+        {
+            return;
+        }
+
+        int? currentSelectedId = this.selectedScreenshot?.Id;
+        Device snapshot = this.historyDevice;
+
+        try
+        {
+            await using PlainSightDbContext context = await this.DbFactory.CreateDbContextAsync();
+            this.screenshotHistory = await context.DeviceScreenshots
+                .Where(s => s.DeviceId == snapshot.Id)
+                .OrderByDescending(s => s.CapturedAt)
+                .Select(s => new DeviceScreenshotDto
+                {
+                    Id = s.Id,
+                    CapturedAt = s.CapturedAt,
+                    Url = $"/api/media/screenshot/{snapshot.DeviceId}/{Path.GetFileName(s.FilePath)}"
+                })
+                .ToListAsync();
+
+            // Keep the user's current selection if it still exists; otherwise show the newest.
+            this.selectedScreenshot = this.screenshotHistory.FirstOrDefault(s => s.Id == currentSelectedId)
+                ?? this.screenshotHistory.FirstOrDefault();
+        }
+        catch (Exception ex)
+        {
+            this.Logger.LogError(ex, "Error refreshing screenshot history for device {DeviceId}", deviceId);
+        }
     }
 
     private async Task LoadDevices()
@@ -711,32 +748,58 @@ else
 
     private async Task RequestScreenshot(string deviceId)
     {
-        requestingScreenshot.Add(deviceId);
+        this.requestingScreenshot.Add(deviceId);
         try
         {
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await this.DbFactory.CreateDbContextAsync();
             Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
-            if (device != null && !string.IsNullOrEmpty(device.CallbackUrl))
+            if (device == null)
             {
-                HttpClient client = HttpClientFactory.CreateClient("player");
-                HttpResponseMessage response = await client.PostAsync($"{device.CallbackUrl}/screenshot", null);
-                if (response.IsSuccessStatusCode)
+                return;
+            }
+
+            bool delivered = false;
+            if (!string.IsNullOrEmpty(device.CallbackUrl))
+            {
+                try
                 {
-                    Logger.LogInformation("Screenshot requested for device {DeviceId} via {CallbackUrl}", deviceId, device.CallbackUrl);
-                    await LoadDevices();
-                    Device? updated = devices?.FirstOrDefault(d => d.DeviceId == deviceId);
-                    if (updated != null) await ShowScreenshotHistory(updated);
+                    HttpClient client = this.HttpClientFactory.CreateClient("player");
+                    using HttpRequestMessage req = new(HttpMethod.Post, $"{device.CallbackUrl}/api/screenshot/capture");
+                    if (!string.IsNullOrEmpty(device.ApiKey))
+                    {
+                        req.Headers.Add("X-Api-Key", device.ApiKey);
+                    }
+                    HttpResponseMessage response = await client.SendAsync(req);
+                    delivered = response.IsSuccessStatusCode;
+                    if (!delivered)
+                    {
+                        this.Logger.LogWarning(
+                            "Direct capture call to {Url} returned {Status}; falling back to heartbeat flag",
+                            device.CallbackUrl, response.StatusCode);
+                    }
                 }
+                catch (Exception ex)
+                {
+                    this.Logger.LogWarning(ex,
+                        "Direct capture call failed for {DeviceId}; falling back to heartbeat flag",
+                        deviceId);
+                }
+            }
+
+            if (!delivered)
+            {
+                device.ScreenshotRequested = true;
+                await context.SaveChangesAsync();
             }
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error requesting screenshot for device {DeviceId}", deviceId);
+            this.Logger.LogError(ex, "Error requesting screenshot for device {DeviceId}", deviceId);
         }
         finally
         {
-            requestingScreenshot.Remove(deviceId);
-            StateHasChanged();
+            this.requestingScreenshot.Remove(deviceId);
+            this.StateHasChanged();
         }
     }
 
@@ -813,38 +876,83 @@ else
 
     private async Task BulkScreenshot()
     {
-        if (selectedDeviceIds.Count == 0)
+        if (this.selectedDeviceIds.Count == 0)
         {
             return;
         }
 
-        isBulkScreenshotting = true;
+        this.isBulkScreenshotting = true;
         try
         {
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await this.DbFactory.CreateDbContextAsync();
             List<Device> targetDevices = await context.Devices
-                .Where(d => selectedDeviceIds.Contains(d.DeviceId) && !string.IsNullOrEmpty(d.CallbackUrl))
+                .Where(d => this.selectedDeviceIds.Contains(d.DeviceId))
                 .ToListAsync();
 
-            HttpClient client = HttpClientFactory.CreateClient("player");
-            List<Task<HttpResponseMessage>> tasks = targetDevices
-                .Select(d => client.PostAsync($"{d.CallbackUrl}/screenshot", null))
-                .ToList();
-            await Task.WhenAll(tasks);
+            HttpClient client = this.HttpClientFactory.CreateClient("player");
 
-            bulkResultMessage = $"Screenshot requested for {targetDevices.Count} online device(s).";
-            bulkResultIsSuccess = true;
+            List<Task<(Device Device, bool Delivered)>> tasks = targetDevices
+                .Select(async d =>
+                {
+                    bool delivered = false;
+                    if (!string.IsNullOrEmpty(d.CallbackUrl))
+                    {
+                        try
+                        {
+                            using HttpRequestMessage req = new(HttpMethod.Post, $"{d.CallbackUrl}/api/screenshot/capture");
+                            if (!string.IsNullOrEmpty(d.ApiKey))
+                            {
+                                req.Headers.Add("X-Api-Key", d.ApiKey);
+                            }
+                            HttpResponseMessage resp = await client.SendAsync(req);
+                            delivered = resp.IsSuccessStatusCode;
+                        }
+                        catch (Exception ex)
+                        {
+                            this.Logger.LogDebug(ex,
+                                "Direct capture call failed for {DeviceId}; will queue for heartbeat",
+                                d.DeviceId);
+                        }
+                    }
+                    return (d, delivered);
+                })
+                .ToList();
+
+            (Device Device, bool Delivered)[] results = await Task.WhenAll(tasks);
+
+            int direct = 0;
+            int fallback = 0;
+            foreach ((Device device, bool delivered) in results)
+            {
+                if (delivered)
+                {
+                    direct++;
+                }
+                else
+                {
+                    device.ScreenshotRequested = true;
+                    fallback++;
+                }
+            }
+
+            if (fallback > 0)
+            {
+                await context.SaveChangesAsync();
+            }
+
+            this.bulkResultMessage = $"Capture requested: {direct} immediate, {fallback} queued for next heartbeat.";
+            this.bulkResultIsSuccess = true;
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error requesting bulk screenshot");
-            bulkResultMessage = "Error requesting bulk screenshot.";
-            bulkResultIsSuccess = false;
+            this.Logger.LogError(ex, "Error requesting bulk screenshot");
+            this.bulkResultMessage = "Error requesting bulk screenshot.";
+            this.bulkResultIsSuccess = false;
         }
         finally
         {
-            isBulkScreenshotting = false;
-            StateHasChanged();
+            this.isBulkScreenshotting = false;
+            this.StateHasChanged();
         }
     }
 

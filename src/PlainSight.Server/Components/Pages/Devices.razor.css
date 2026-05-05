@@ -162,10 +162,12 @@
     border: 0;
     cursor: pointer;
 }
-.ps-tile__screen-btn img {
+.ps-tile__screen img {
     width: 100%; height: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    object-position: center;
     display: block;
+    background: #000;
 }
 .ps-tile__screen-empty {
     width: 100%; height: 100%;
@@ -290,7 +292,7 @@
 /* Actions */
 .ps-tile__actions {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 1px;
     margin-top: auto;
     background: var(--ps-line);
@@ -321,6 +323,17 @@
 }
 .ps-action .bi { font-size: 13px; }
 .ps-action--warn:hover:not(:disabled) { color: var(--ps-warn); }
+
+.ps-cell--interactive {
+    cursor: pointer;
+    transition: background-color 0.1s;
+}
+.ps-cell--interactive:hover {
+    background-color: var(--ps-bg-2);
+}
+.ps-cell--interactive:hover .ps-cell__label {
+    color: var(--ps-cyan);
+}
 
 /* ── Bulk action bar ───────────────────────────────────────────── */
 .bulk-action-bar {

@@ -9,17 +9,12 @@ namespace PlainSight.Server.Api;
 
 public static class DeviceApi
 {
-    private static string HashApiKey(string key)
+    // Timing-safe plaintext comparison — both sides now store and exchange the same key.
+    private static bool VerifyApiKey(string incoming, string stored)
     {
-        byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(key));
-        return Convert.ToHexString(bytes).ToLowerInvariant();
-    }
-
-    private static bool VerifyApiKey(string incomingKey, string storedHash)
-    {
-        byte[] incomingHash = SHA256.HashData(Encoding.UTF8.GetBytes(incomingKey));
-        byte[] expectedHash = Convert.FromHexString(storedHash);
-        return CryptographicOperations.FixedTimeEquals(incomingHash, expectedHash);
+        byte[] incomingBytes = Encoding.UTF8.GetBytes(incoming);
+        byte[] storedBytes = Encoding.UTF8.GetBytes(stored);
+        return CryptographicOperations.FixedTimeEquals(incomingBytes, storedBytes);
     }
 
     private static string SanitizeForLog(string? value) => value == null ? "(null)" : value.Replace('\r', '_').Replace('\n', '_').Replace('\0', '_');
@@ -79,9 +74,9 @@ public static class DeviceApi
                 }
                 else
                 {
-                    string plainTextKey = Guid.CreateVersion7().ToString("N");
-                    device.ApiKey = HashApiKey(plainTextKey);
-                    assignedApiKey = plainTextKey;
+                    string key = Guid.CreateVersion7().ToString("N");
+                    device.ApiKey = key;
+                    assignedApiKey = key;
                     logger.LogInformation("API key assigned for device {DeviceId}", SanitizeForLog(data.DeviceId));
                 }
 
@@ -140,6 +135,7 @@ public static class DeviceApi
                     }
                 }
 
+                // Prepare response
                 HeartbeatResponse response = new()
                 {
                     // Command Flags
@@ -163,14 +159,13 @@ public static class DeviceApi
                     NdiSourceName = liveSourceName
                 };
 
-                // Reset screenshot request
-                if (!device.ScreenshotRequested)
+                // Clear the request flag in the database AFTER we have captured the value for the response.
+                // This ensures the instruction is sent to the player in this response.
+                if (device.ScreenshotRequested)
                 {
-                    return Results.Ok(response);
+                    device.ScreenshotRequested = false;
+                    await context.SaveChangesAsync(ct);
                 }
-
-                device.ScreenshotRequested = false;
-                await context.SaveChangesAsync(ct);
 
                 return Results.Ok(response);
             }
@@ -273,6 +268,7 @@ public static class DeviceApi
         CancellationToken cancellationToken)
     {
         int historyLimit = configuration.GetValue("ScreenshotHistoryLimit", 10);
+        int retentionDays = configuration.GetValue("ScreenshotRetentionDays", 7);
 
         DeviceScreenshot record = new()
         {
@@ -283,18 +279,27 @@ public static class DeviceApi
         context.DeviceScreenshots.Add(record);
         await context.SaveChangesAsync(cancellationToken);
 
+        // Count-based trim: keep newest historyLimit entries per device.
         List<DeviceScreenshot> excess = await context.DeviceScreenshots
             .Where(s => s.DeviceId == device.Id)
             .OrderByDescending(s => s.CapturedAt)
             .Skip(historyLimit)
             .ToListAsync(cancellationToken);
 
-        if (excess.Count == 0)
+        // Age-based trim: remove anything older than retentionDays regardless of count.
+        DateTime cutoff = DateTime.UtcNow.AddDays(-retentionDays);
+        List<DeviceScreenshot> expired = await context.DeviceScreenshots
+            .Where(s => s.DeviceId == device.Id && s.CapturedAt < cutoff)
+            .ToListAsync(cancellationToken);
+
+        List<DeviceScreenshot> toDelete = excess.UnionBy(expired, s => s.Id).ToList();
+
+        if (toDelete.Count == 0)
         {
             return;
         }
 
-        foreach (DeviceScreenshot old in excess)
+        foreach (DeviceScreenshot old in toDelete)
         {
             try
             {
@@ -305,13 +310,13 @@ public static class DeviceApi
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to delete old screenshot file {Path}", old.FilePath);
+                logger.LogWarning(ex, "Failed to delete screenshot file {Path}", old.FilePath);
             }
         }
 
-        List<int> excessIds = excess.Select(s => s.Id).ToList();
+        List<int> deleteIds = toDelete.Select(s => s.Id).ToList();
         await context.DeviceScreenshots
-            .Where(s => excessIds.Contains(s.Id))
+            .Where(s => deleteIds.Contains(s.Id))
             .ExecuteDeleteAsync(cancellationToken);
     }
 }
