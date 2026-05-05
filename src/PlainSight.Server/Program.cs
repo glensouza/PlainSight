@@ -165,8 +165,8 @@ app.MapPost("/auth/logout", async (HttpContext ctx) =>
 app.MapDefaultEndpoints();
 
 // Register Minimal APIs
-app.MapOpenApi();
-app.MapScalarApiReference();
+app.MapOpenApi().RequireAuthorization();
+app.MapScalarApiReference().RequireAuthorization();
 
 app.MapDeviceApi();
 app.MapContentApi();
