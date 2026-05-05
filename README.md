@@ -1,5 +1,8 @@
 # PlainSight
 
+[![Server Build Status](https://github.com/glensouza/PlainSight/actions/workflows/server.yml/badge.svg)](https://github.com/glensouza/PlainSight/actions/workflows/server.yml)
+[![Player Build Status](https://github.com/glensouza/PlainSight/actions/workflows/player.yml/badge.svg)](https://github.com/glensouza/PlainSight/actions/workflows/player.yml)
+
 Enterprise-grade digital signage system for organizations, built with .NET 10 and optimized for Raspberry Pi 5.
 
 ## Name
