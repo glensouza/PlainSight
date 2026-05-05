@@ -269,6 +269,11 @@
     text-overflow: ellipsis;
 }
 .ps-cell__value.mono { font-family: var(--ps-mono); color: var(--ps-text-mono); font-size: 11.5px; }
+.ps-cell__value.mono.is-mismatch {
+    color: var(--ps-warn);
+    font-weight: 600;
+    text-shadow: 0 0 8px var(--ps-warn-glow);
+}
 .ps-cell__select {
     width: 100%;
     background-color: transparent;
