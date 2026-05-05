@@ -88,7 +88,7 @@ else
                     <tr>
                         <td><code>@file.Name</code></td>
                         <td>@FormatFileSize(file.Length)</td>
-                        <td>@file.LastWriteTimeUtc.ToPacificString("yyyy-MM-dd HH:mm")</td>
+                        <td>@file.LastWriteTimeUtc.ToLocalString("yyyy-MM-dd HH:mm")</td>
                         <td>
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-primary" @onclick="() => PreviewIdleContent(file.Name)" title="Preview">

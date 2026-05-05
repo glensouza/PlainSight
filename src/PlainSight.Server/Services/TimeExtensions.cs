@@ -2,36 +2,41 @@ namespace PlainSight.Server.Services;
 
 public static class TimeExtensions
 {
-    private static readonly TimeZoneInfo PacificTimeZone = GetPacificTimeZone();
+    private static TimeZoneInfo localTimeZone = TimeZoneInfo.Local;
 
-    private static TimeZoneInfo GetPacificTimeZone()
+    public static void Configure(IConfiguration configuration)
     {
+        string? tzId = configuration["SystemTimeZone"];
+        if (string.IsNullOrEmpty(tzId))
+        {
+            localTimeZone = TimeZoneInfo.Local;
+            return;
+        }
+
         try
         {
-            // Windows uses "Pacific Standard Time"
-            // Linux uses "America/Los_Angeles"
-            return TimeZoneInfo.FindSystemTimeZoneById(OperatingSystem.IsWindows() 
-                ? "Pacific Standard Time" 
-                : "America/Los_Angeles");
+            localTimeZone = TimeZoneInfo.FindSystemTimeZoneById(tzId);
         }
         catch
         {
-            // Fallback to UTC if timezone is not found
-            return TimeZoneInfo.Utc;
+            localTimeZone = TimeZoneInfo.Local;
         }
     }
 
-    public static DateTime ToPacific(this DateTime utcDateTime)
+    public static DateTime ToLocal(this DateTime utcDateTime)
     {
         if (utcDateTime.Kind == DateTimeKind.Unspecified)
         {
             utcDateTime = DateTime.SpecifyKind(utcDateTime, DateTimeKind.Utc);
         }
-        return TimeZoneInfo.ConvertTimeFromUtc(utcDateTime, PacificTimeZone);
+        
+        return TimeZoneInfo.ConvertTimeFromUtc(utcDateTime, localTimeZone);
     }
 
-    public static string ToPacificString(this DateTime utcDateTime, string format = "yyyy-MM-dd HH:mm:ss")
+    public static string ToLocalString(this DateTime utcDateTime, string format = "yyyy-MM-dd HH:mm:ss")
     {
-        return utcDateTime.ToPacific().ToString(format);
+        return utcDateTime.ToLocal().ToString(format);
     }
+
+    public static string GetTimeZoneName() => localTimeZone.DisplayName;
 }

@@ -120,7 +120,7 @@ else
                 <div class="ps-tile__telemetry">
                     <div class="ps-cell">
                         <div class="ps-cell__label">LAST SEEN</div>
-                        <div class="ps-cell__value" title="@device.LastSeen.ToPacificString()">
+                        <div class="ps-cell__value" title="@device.LastSeen.ToLocalString()">
                             @GetTimeSince(device.LastSeen)
                         </div>
                     </div>
@@ -231,12 +231,12 @@ else
                     {
                         <div class="text-center mb-3 position-relative">
                             <img src="@selectedScreenshot.Url?t=@previewCacheBust"
-                                 alt="Screenshot @selectedScreenshot.CapturedAt.ToPacificString()"
+                                 alt="Screenshot @selectedScreenshot.CapturedAt.ToLocalString()"
                                  class="img-fluid rounded"
                                  style="max-height:60vh;" />
                             <div class="mt-2 d-flex align-items-center justify-content-center gap-3">
                                 <div class="text-muted small">
-                                    <i class="bi bi-clock me-1"></i> @selectedScreenshot.CapturedAt.ToPacificString()
+                                    <i class="bi bi-clock me-1"></i> @selectedScreenshot.CapturedAt.ToLocalString()
                                 </div>
                                 <button class="btn btn-sm btn-outline-danger" 
                                         @onclick="() => DeleteScreenshot(selectedScreenshot)"

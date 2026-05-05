@@ -201,7 +201,7 @@ else
                         <td><code>@item.FileName</code></td>
                         <td>@item.DurationSeconds s</td>
                         <td>@FormatFileSize(item.FileSizeBytes)</td>
-                        <td>@item.UploadedAt.ToPacificString("yyyy-MM-dd HH:mm")</td>
+                        <td>@item.UploadedAt.ToLocalString("yyyy-MM-dd HH:mm")</td>
                         <td>
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-primary" @onclick="() => PreviewContent(item)" title="Preview">

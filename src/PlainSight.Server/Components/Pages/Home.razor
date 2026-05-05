@@ -4,13 +4,20 @@
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject NavigationManager Navigation
 @inject ILogger<Home> Logger
+@using PlainSight.Server.Services
 
 <PageTitle>PlainSight — Overview</PageTitle>
 
 <div class="page-header d-flex align-items-center justify-content-between">
     <div>
         <h1>Overview</h1>
-        <p class="text-muted mb-0">PlainSight digital signage control panel</p>
+        <p class="text-muted mb-0">
+            PlainSight digital signage control panel
+            <span class="badge bg-light text-dark border ms-2">
+                <i class="bi bi-clock me-1"></i>
+                @DateTime.UtcNow.ToLocal().ToString("HH:mm") (@TimeExtensions.GetTimeZoneName())
+            </span>
+        </p>
     </div>
     <span class="badge text-bg-success px-3 py-2">
         <i class="bi bi-broadcast me-1"></i> Live

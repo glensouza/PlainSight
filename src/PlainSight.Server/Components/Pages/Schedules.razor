@@ -487,7 +487,7 @@ else
 
     private static string GetDisplayTime()
     {
-        return DateTime.UtcNow.ToPacific().ToString("HH:mm");
+        return DateTime.UtcNow.ToLocal().ToString("HH:mm");
     }
 
     private static List<string> GetSelectedDays(DayOfWeekFlags days)

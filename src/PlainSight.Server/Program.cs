@@ -91,7 +91,8 @@ builder.Services.AddHttpContextAccessor();
 
 WebApplication app = builder.Build();
 
-// Migrate database and seed default admin user
+TimeExtensions.Configure(app.Configuration);
+
 using (IServiceScope scope = app.Services.CreateScope())
 {
     PlainSightDbContext dbContext = scope.ServiceProvider.GetRequiredService<PlainSightDbContext>();
