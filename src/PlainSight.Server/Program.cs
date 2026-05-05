@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Api;
 using PlainSight.Server.Components;
@@ -165,8 +166,8 @@ app.MapPost("/auth/logout", async (HttpContext ctx) =>
 app.MapDefaultEndpoints();
 
 // Register Minimal APIs
-app.MapOpenApi().RequireAuthorization();
-app.MapScalarApiReference().RequireAuthorization();
+app.MapOpenApi().RequireAuthorization(new AuthorizeAttribute { Roles = "Admin" });
+app.MapScalarApiReference().RequireAuthorization(new AuthorizeAttribute { Roles = "Admin" });
 
 app.MapDeviceApi();
 app.MapContentApi();
