@@ -3,7 +3,7 @@ using PlainSight.Shared.Models;
 
 namespace PlainSight.Player.Services;
 
-internal sealed class LogBufferProvider(LogBuffer buffer, LogLevel minimumLevel) : ILoggerProvider
+internal sealed class LogBufferProvider(LogBuffer buffer, LogConfig logConfig) : ILoggerProvider
 {
     private static readonly string[] FilteredPrefixes =
     [
@@ -20,17 +20,17 @@ internal sealed class LogBufferProvider(LogBuffer buffer, LogLevel minimumLevel)
             }
         }
 
-        return new BufferedLogger(buffer, minimumLevel, categoryName);
+        return new BufferedLogger(buffer, logConfig, categoryName);
     }
 
     public void Dispose() { }
 }
 
-file sealed class BufferedLogger(LogBuffer buffer, LogLevel minimumLevel, string categoryName) : ILogger
+file sealed class BufferedLogger(LogBuffer buffer, LogConfig logConfig, string categoryName) : ILogger
 {
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-    public bool IsEnabled(LogLevel logLevel) => logLevel >= minimumLevel;
+    public bool IsEnabled(LogLevel logLevel) => (int)logLevel >= logConfig.MinimumLevel;
 
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
     {

@@ -18,4 +18,16 @@ public class HeartbeatResponse
     /// Only populated when LiveMode is true.
     /// </summary>
     public string? NdiSourceName { get; set; }
+
+    /// <summary>
+    /// Minimum log level the player should buffer and ship (maps to <see cref="Microsoft.Extensions.Logging.LogLevel"/>).
+    /// Null means no change.
+    /// </summary>
+    public int? LogMinLevel { get; set; }
+
+    /// <summary>
+    /// How often (in seconds) the player should flush buffered logs to the server.
+    /// Null means no change.
+    /// </summary>
+    public int? LogShipIntervalSeconds { get; set; }
 }

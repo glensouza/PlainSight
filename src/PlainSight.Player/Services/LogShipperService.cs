@@ -6,18 +6,19 @@ internal sealed class LogShipperService(
     HttpClient http,
     HeartbeatService heartbeat,
     LogBuffer buffer,
+    LogConfig logConfig,
     ILogger<LogShipperService> logger) : BackgroundService
 {
     private readonly string deviceId = Environment.MachineName;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using PeriodicTimer timer = new(TimeSpan.FromSeconds(60));
-
         try
         {
-            while (await timer.WaitForNextTickAsync(stoppingToken))
+            while (true)
             {
+                int interval = Math.Clamp(logConfig.ShipIntervalSeconds, 10, 3600);
+                await Task.Delay(TimeSpan.FromSeconds(interval), stoppingToken);
                 await this.ShipLogsAsync(stoppingToken);
             }
         }

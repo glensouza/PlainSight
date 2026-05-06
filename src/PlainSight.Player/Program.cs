@@ -5,8 +5,10 @@ using PlainSight.Player.Services;
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 LogBuffer logBuffer = new();
+LogConfig logConfig = new();
 builder.Services.AddSingleton(logBuffer);
-builder.Logging.AddProvider(new LogBufferProvider(logBuffer, LogLevel.Warning));
+builder.Services.AddSingleton(logConfig);
+builder.Logging.AddProvider(new LogBufferProvider(logBuffer, logConfig));
 
 // Aspire service discovery, OpenTelemetry, health checks
 builder.AddServiceDefaults();

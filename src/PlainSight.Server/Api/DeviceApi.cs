@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PlainSight.Server.Data;
 using PlainSight.Server.Services;
 using PlainSight.Shared.Models;
@@ -136,6 +137,9 @@ public static class DeviceApi
                 }
 
                 // Prepare response
+                int logMinLevel = configuration.GetValue("Logging:PlayerMinLevel", (int)LogLevel.Warning);
+                int logShipInterval = configuration.GetValue("Logging:PlayerShipIntervalSeconds", 60);
+
                 HeartbeatResponse response = new()
                 {
                     // Command Flags
@@ -156,7 +160,9 @@ public static class DeviceApi
                         })
                         .ToList(),
                     LiveMode = liveMode,
-                    NdiSourceName = liveSourceName
+                    NdiSourceName = liveSourceName,
+                    LogMinLevel = logMinLevel,
+                    LogShipIntervalSeconds = logShipInterval
                 };
 
                 // Clear the request flag in the database AFTER we have captured the value for the response.
