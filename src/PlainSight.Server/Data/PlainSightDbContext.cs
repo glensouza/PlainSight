@@ -112,11 +112,13 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.Timestamp);
-            entity.HasIndex(e => new { e.Category, e.Timestamp });
+            entity.HasIndex(e => new { e.Category, e.LevelOrder, e.Timestamp });
             entity.HasIndex(e => new { e.SourceId, e.Timestamp });
             entity.Property(e => e.SourceId).HasMaxLength(200);
+            entity.Property(e => e.CategoryName).HasMaxLength(200);
             entity.Property(e => e.Level).HasMaxLength(50);
             entity.Property(e => e.Message).HasMaxLength(2000);
+            entity.Property(e => e.Exception).HasMaxLength(8000);
         });
     }
 }

@@ -211,14 +211,20 @@ public static class DeviceApi
 
             List<LogEntry> entries = batch.Entries
                 .Take(500)
-                .Select(e => new LogEntry
+                .Select(e =>
                 {
-                    Category = LogEntryCategory.Device,
-                    SourceId = deviceId,
-                    Level = e.Level,
-                    Message = e.Message.Length > 2000 ? e.Message[..2000] : e.Message,
-                    Exception = e.Exception,
-                    Timestamp = e.Timestamp
+                    string? exceptionText = e.Exception;
+                    return new LogEntry
+                    {
+                        Category = LogEntryCategory.Device,
+                        SourceId = deviceId,
+                        CategoryName = e.CategoryName != null && e.CategoryName.Length > 200 ? e.CategoryName[..200] : e.CategoryName,
+                        Level = e.Level,
+                        LevelOrder = Enum.TryParse<LogLevel>(e.Level, out LogLevel lvl) ? (int)lvl : (int)LogLevel.Information,
+                        Message = e.Message.Length > 2000 ? e.Message[..2000] : e.Message,
+                        Exception = exceptionText != null && exceptionText.Length > 8000 ? exceptionText[..8000] : exceptionText,
+                        Timestamp = e.Timestamp
+                    };
                 })
                 .ToList();
 

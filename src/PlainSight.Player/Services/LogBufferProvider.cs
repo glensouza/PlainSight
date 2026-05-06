@@ -20,13 +20,13 @@ internal sealed class LogBufferProvider(LogBuffer buffer, LogLevel minimumLevel)
             }
         }
 
-        return new BufferedLogger(buffer, minimumLevel);
+        return new BufferedLogger(buffer, minimumLevel, categoryName);
     }
 
     public void Dispose() { }
 }
 
-file sealed class BufferedLogger(LogBuffer buffer, LogLevel minimumLevel) : ILogger
+file sealed class BufferedLogger(LogBuffer buffer, LogLevel minimumLevel, string categoryName) : ILogger
 {
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
@@ -39,11 +39,14 @@ file sealed class BufferedLogger(LogBuffer buffer, LogLevel minimumLevel) : ILog
             return;
         }
 
+        string message = formatter(state, exception);
+        string? exceptionText = exception?.ToString();
         buffer.Add(new DeviceLogEntryDto
         {
             Level = logLevel.ToString(),
-            Message = formatter(state, exception),
-            Exception = exception?.ToString(),
+            CategoryName = categoryName.Length > 200 ? categoryName[..200] : categoryName,
+            Message = message.Length > 2000 ? message[..2000] : message,
+            Exception = exceptionText != null && exceptionText.Length > 8000 ? exceptionText[..8000] : exceptionText,
             Timestamp = DateTime.UtcNow
         });
     }

@@ -38,7 +38,7 @@ public sealed class DbLoggerProvider : ILoggerProvider, IHostedService
             }
         }
 
-        return new DbLogger(this.minimumLevel, this.channel.Writer);
+        return new DbLogger(this.minimumLevel, this.channel.Writer, categoryName);
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -115,7 +115,7 @@ public sealed class DbLoggerProvider : ILoggerProvider, IHostedService
     public void Dispose() => this.cts.Dispose();
 }
 
-file sealed class DbLogger(LogLevel minimumLevel, ChannelWriter<LogEntry> writer) : ILogger
+file sealed class DbLogger(LogLevel minimumLevel, ChannelWriter<LogEntry> writer, string categoryName) : ILogger
 {
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
@@ -129,13 +129,16 @@ file sealed class DbLogger(LogLevel minimumLevel, ChannelWriter<LogEntry> writer
         }
 
         string message = formatter(state, exception);
+        string? exceptionText = exception?.ToString();
         LogEntry entry = new()
         {
             Category = LogEntryCategory.Server,
             SourceId = "Server",
+            CategoryName = categoryName.Length > 200 ? categoryName[..200] : categoryName,
             Level = logLevel.ToString(),
+            LevelOrder = (int)logLevel,
             Message = message.Length > 2000 ? message[..2000] : message,
-            Exception = exception?.ToString(),
+            Exception = exceptionText != null && exceptionText.Length > 8000 ? exceptionText[..8000] : exceptionText,
             Timestamp = DateTime.UtcNow
         };
 
