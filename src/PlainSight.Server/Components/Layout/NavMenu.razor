@@ -1,3 +1,5 @@
+@inject PlainSight.Server.Services.VersionService VersionService
+
 <div class="sidebar-shell">
     <div class="sidebar-brand">
         <div class="sidebar-brand-mark">
@@ -5,7 +7,7 @@
         </div>
         <div>
             <div class="sidebar-brand-name">PlainSight</div>
-            <div class="sidebar-brand-sub">v2.4.1 · NOC</div>
+            <div class="sidebar-brand-sub">@VersionService.GetServerVersion() · NOC</div>
         </div>
     </div>
 

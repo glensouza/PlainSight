@@ -1,13 +1,25 @@
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Data;
 using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Services;
 
-public class VersionService(PlainSightDbContext context, ILogger<VersionService> logger)
+public class VersionService(IDbContextFactory<PlainSightDbContext> dbFactory, ILogger<VersionService> logger)
 {
+    public string GetServerVersion()
+    {
+        AssemblyInformationalVersionAttribute? attribute = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>();
+
+        string version = attribute?.InformationalVersion ?? "1.0.0";
+
+        return $"v{version}";
+    }
+
     public async Task<string> GetTargetVersionAsync(string deviceGroup, CancellationToken cancellationToken = default)
     {
+        await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(cancellationToken);
         List<DeviceGroupVersion> assignments = await context.DeviceGroupVersions
             .Where(g => g.GroupName == deviceGroup || g.GroupName == "Default")
             .ToListAsync(cancellationToken);

@@ -123,7 +123,19 @@ else
                     </div>
                     <div class="ps-cell">
                         <div class="ps-cell__label">VERSION</div>
-                        <div class="ps-cell__value mono">@device.CurrentVersion</div>
+                        @{
+                            string targetVersion = GetTargetVersionForGroup(device.Group);
+                            bool isMismatch = device.CurrentVersion != targetVersion;
+                        }
+                        <div class="ps-cell__value mono @(isMismatch ? "is-mismatch" : "")"
+                             title="@(isMismatch ? $"Target: {targetVersion}" : "")"
+                             aria-label="@(isMismatch ? $"Version {device.CurrentVersion}, target: {targetVersion}" : device.CurrentVersion)">
+                            @if (isMismatch)
+                            {
+                                <i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>
+                            }
+                            @device.CurrentVersion
+                        </div>
                     </div>
                     <div class="ps-cell">
                         <div class="ps-cell__label">GROUP</div>
@@ -464,6 +476,16 @@ else
     private string? bulkResultMessage;
     private bool bulkResultIsSuccess;
     private string statusFilter = "all";
+    private Dictionary<string, string> groupTargetVersions = [];
+
+    private string GetTargetVersionForGroup(string groupName)
+    {
+        if (groupTargetVersions.TryGetValue(groupName, out string? version))
+        {
+            return version;
+        }
+        return groupTargetVersions.GetValueOrDefault("Default", "1.0.0");
+    }
 
     private int OnlineCount => devices?.Count(d => GetStatusKey(d.LastSeen) == "online") ?? 0;
     private int WarnCount => devices?.Count(d => GetStatusKey(d.LastSeen) == "warn") ?? 0;
@@ -606,6 +628,8 @@ else
                 .Include(d => d.AssignedNdiSource)
                 .OrderByDescending(d => d.LastSeen)
                 .ToListAsync();
+            List<DeviceGroupVersion> targets = await context.DeviceGroupVersions.ToListAsync();
+            groupTargetVersions = targets.ToDictionary(t => t.GroupName, t => t.TargetVersion);
         }
         catch (Exception ex)
         {
