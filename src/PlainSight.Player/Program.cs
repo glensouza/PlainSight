@@ -64,7 +64,7 @@ builder.Services.AddSingleton(sp =>
 
 builder.Services.AddHostedService<KioskService>();
 builder.Services.AddHostedService<PlayerWorker>();
-builder.Services.AddHostedService<LogShipperService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<LogShipperService>());
 
 // Ensure storage directories exist
 string[] storagePaths = [contentPath, cachePath, idleSourcePath, idleCachePath];

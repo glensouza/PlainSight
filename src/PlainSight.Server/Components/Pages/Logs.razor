@@ -21,7 +21,7 @@
     <div class="card-body py-2">
         <div class="row g-2 align-items-center">
             <div class="col-auto">
-                <select class="form-select form-select-sm" @bind="filterCategory" @bind:after="ReloadAsync">
+                <select class="form-select form-select-sm" @bind="filterCategory" @bind:after="ResetAndReloadAsync">
                     <option value="">All sources</option>
                     <option value="Server">Server</option>
                     <option value="Device">Devices</option>
@@ -30,7 +30,7 @@
             @if (filterCategory == "Device")
             {
                 <div class="col-auto">
-                    <select class="form-select form-select-sm" @bind="filterSourceId" @bind:after="ReloadAsync">
+                    <select class="form-select form-select-sm" @bind="filterSourceId" @bind:after="ResetAndReloadAsync">
                         <option value="">All devices</option>
                         @foreach (string deviceId in deviceIds)
                         {
@@ -40,7 +40,7 @@
                 </div>
             }
             <div class="col-auto">
-                <select class="form-select form-select-sm" @bind="filterLevel" @bind:after="ReloadAsync">
+                <select class="form-select form-select-sm" @bind="filterLevel" @bind:after="ResetAndReloadAsync">
                     <option value="">All levels</option>
                     <option value="Warning">Warning+</option>
                     <option value="Error">Error+</option>
@@ -89,7 +89,7 @@ else
             <tbody>
                 @foreach (LogEntry entry in entries)
                 {
-                    <tr @onclick="() => ToggleException(entry.Id)" style="cursor:pointer">
+                    <tr @onclick="() => ToggleException(entry.Id)" @onkeydown="e => HandleRowKeyDown(e, entry.Id)" tabindex="0" role="button" style="cursor:pointer">
                         <td><code class="small">@entry.Timestamp.ToLocalString("yyyy-MM-dd HH:mm:ss")</code></td>
                         <td>
                             <span class="badge @(entry.Category == LogEntryCategory.Server ? "bg-secondary" : "bg-primary")">
@@ -122,7 +122,7 @@ else
                 <i class="bi bi-chevron-left"></i>
             </button>
             <span class="small">Page @(currentPage + 1)</span>
-            <button class="btn btn-sm btn-outline-secondary ms-1" @onclick="NextPage" disabled="@(entries.Count < PageSize)">
+            <button class="btn btn-sm btn-outline-secondary ms-1" @onclick="NextPage" disabled="@((currentPage + 1) * PageSize >= totalCount)">
                 <i class="bi bi-chevron-right"></i>
             </button>
         </div>
@@ -190,6 +190,12 @@ else
         }
     }
 
+    private async Task ResetAndReloadAsync()
+    {
+        this.currentPage = 0;
+        await this.ReloadAsync();
+    }
+
     private async Task ReloadAsync()
     {
         this.loadError = null;
@@ -254,6 +260,14 @@ else
         if (!this.expandedIds.Add(id))
         {
             this.expandedIds.Remove(id);
+        }
+    }
+
+    private void HandleRowKeyDown(KeyboardEventArgs e, int id)
+    {
+        if (e.Key is "Enter" or " ")
+        {
+            this.ToggleException(id);
         }
     }
 

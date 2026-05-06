@@ -27,6 +27,12 @@ internal sealed class LogShipperService(
         }
     }
 
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await base.StopAsync(cancellationToken);
+        await this.ShipLogsAsync(cancellationToken);
+    }
+
     private async Task ShipLogsAsync(CancellationToken ct)
     {
         List<DeviceLogEntryDto> entries = buffer.DrainAll();
@@ -40,6 +46,7 @@ internal sealed class LogShipperService(
             string? apiKey = heartbeat.GetApiKey();
             if (string.IsNullOrEmpty(apiKey))
             {
+                buffer.Requeue(entries);
                 return;
             }
 
@@ -53,15 +60,17 @@ internal sealed class LogShipperService(
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning("Log ship failed: {Status}", response.StatusCode);
+                buffer.Requeue(entries);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            /* expected during shutdown */
+            buffer.Requeue(entries);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Error shipping logs to server");
+            buffer.Requeue(entries);
         }
     }
 }

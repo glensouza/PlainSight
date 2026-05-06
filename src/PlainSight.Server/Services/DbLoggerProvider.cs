@@ -58,6 +58,17 @@ public sealed class DbLoggerProvider : ILoggerProvider, IHostedService
         {
             /* expected during shutdown */
         }
+
+        List<LogEntry> remaining = [];
+        while (remaining.Count < 500 && this.channel.Reader.TryRead(out LogEntry? entry))
+        {
+            remaining.Add(entry);
+        }
+
+        if (remaining.Count > 0)
+        {
+            await this.PersistAsync(remaining, CancellationToken.None);
+        }
     }
 
     private async Task DrainAsync(CancellationToken ct)
@@ -117,12 +128,13 @@ file sealed class DbLogger(LogLevel minimumLevel, ChannelWriter<LogEntry> writer
             return;
         }
 
+        string message = formatter(state, exception);
         LogEntry entry = new()
         {
             Category = LogEntryCategory.Server,
             SourceId = "Server",
             Level = logLevel.ToString(),
-            Message = formatter(state, exception),
+            Message = message.Length > 2000 ? message[..2000] : message,
             Exception = exception?.ToString(),
             Timestamp = DateTime.UtcNow
         };

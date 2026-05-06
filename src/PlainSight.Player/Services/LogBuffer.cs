@@ -20,4 +20,12 @@ internal sealed class LogBuffer
 
         return result;
     }
+
+    public void Requeue(IEnumerable<DeviceLogEntryDto> entries)
+    {
+        foreach (DeviceLogEntryDto entry in entries)
+        {
+            this.channel.Writer.TryWrite(entry);
+        }
+    }
 }
