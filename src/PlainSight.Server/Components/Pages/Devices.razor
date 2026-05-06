@@ -5,7 +5,6 @@
 @inject ILogger<Devices> Logger
 @inject IHttpClientFactory HttpClientFactory
 @inject ScreenshotNotificationService ScreenshotNotificationService
-@inject PlainSight.Server.Services.VersionService VersionService
 @implements IAsyncDisposable
 
 <PageTitle>Devices — PlainSight</PageTitle>
@@ -128,7 +127,13 @@ else
                             string targetVersion = GetTargetVersionForGroup(device.Group);
                             bool isMismatch = device.CurrentVersion != targetVersion;
                         }
-                        <div class="ps-cell__value mono @(isMismatch ? "is-mismatch" : "")" title="@(isMismatch ? $"Target: {targetVersion}" : "")">
+                        <div class="ps-cell__value mono @(isMismatch ? "is-mismatch" : "")"
+                             title="@(isMismatch ? $"Target: {targetVersion}" : "")"
+                             aria-label="@(isMismatch ? $"Version {device.CurrentVersion}, target: {targetVersion}" : device.CurrentVersion)">
+                            @if (isMismatch)
+                            {
+                                <i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>
+                            }
                             @device.CurrentVersion
                         </div>
                     </div>
@@ -623,6 +628,8 @@ else
                 .Include(d => d.AssignedNdiSource)
                 .OrderByDescending(d => d.LastSeen)
                 .ToListAsync();
+            List<DeviceGroupVersion> targets = await context.DeviceGroupVersions.ToListAsync();
+            groupTargetVersions = targets.ToDictionary(t => t.GroupName, t => t.TargetVersion);
         }
         catch (Exception ex)
         {
@@ -736,10 +743,6 @@ else
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             playerVersions = await context.PlayerVersions.OrderByDescending(v => v.VersionNumber).ToListAsync();
-
-            // Pre-load group targets for quick lookup
-            List<DeviceGroupVersion> targets = await context.DeviceGroupVersions.ToListAsync();
-            groupTargetVersions = targets.ToDictionary(t => t.GroupName, t => t.TargetVersion);
         }
         catch (Exception ex)
         {

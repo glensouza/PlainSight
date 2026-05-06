@@ -5,7 +5,7 @@ using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Services;
 
-public class VersionService(PlainSightDbContext context, ILogger<VersionService> logger)
+public class VersionService(IDbContextFactory<PlainSightDbContext> dbFactory, ILogger<VersionService> logger)
 {
     public string GetServerVersion()
     {
@@ -14,12 +14,12 @@ public class VersionService(PlainSightDbContext context, ILogger<VersionService>
 
         string version = attribute?.InformationalVersion ?? "1.0.0";
 
-        // If it's a long version string from git (e.g. 1.0.0+abc123), keep it as is or clean it up.
         return $"v{version}";
     }
 
     public async Task<string> GetTargetVersionAsync(string deviceGroup, CancellationToken cancellationToken = default)
     {
+        await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(cancellationToken);
         List<DeviceGroupVersion> assignments = await context.DeviceGroupVersions
             .Where(g => g.GroupName == deviceGroup || g.GroupName == "Default")
             .ToListAsync(cancellationToken);
