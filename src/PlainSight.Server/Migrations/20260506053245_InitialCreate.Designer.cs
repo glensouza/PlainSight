@@ -12,7 +12,7 @@ using PlainSight.Server.Data;
 namespace PlainSight.Server.Migrations
 {
     [DbContext(typeof(PlainSightDbContext))]
-    [Migration("20260505192403_InitialCreate")]
+    [Migration("20260506053245_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -252,6 +252,57 @@ namespace PlainSight.Server.Migrations
                     b.HasIndex("DeviceId", "CapturedAt");
 
                     b.ToTable("DeviceScreenshots");
+                });
+
+            modelBuilder.Entity("PlainSight.Shared.Models.LogEntry", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Category")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CategoryName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Exception")
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int>("LevelOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("SourceId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Timestamp");
+
+                    b.HasIndex("SourceId", "Timestamp");
+
+                    b.HasIndex("Category", "LevelOrder", "Timestamp");
+
+                    b.ToTable("LogEntries");
                 });
 
             modelBuilder.Entity("PlainSight.Shared.Models.NdiSource", b =>

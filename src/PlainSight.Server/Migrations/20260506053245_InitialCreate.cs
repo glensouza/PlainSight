@@ -80,6 +80,26 @@ namespace PlainSight.Server.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "LogEntries",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Category = table.Column<int>(type: "integer", nullable: false),
+                    SourceId = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    CategoryName = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                    Level = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    LevelOrder = table.Column<int>(type: "integer", nullable: false),
+                    Message = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: false),
+                    Exception = table.Column<string>(type: "character varying(8000)", maxLength: 8000, nullable: true),
+                    Timestamp = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_LogEntries", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "NdiSources",
                 columns: table => new
                 {
@@ -322,6 +342,21 @@ namespace PlainSight.Server.Migrations
                 columns: new[] { "DeviceId", "CapturedAt" });
 
             migrationBuilder.CreateIndex(
+                name: "IX_LogEntries_Category_LevelOrder_Timestamp",
+                table: "LogEntries",
+                columns: new[] { "Category", "LevelOrder", "Timestamp" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_LogEntries_SourceId_Timestamp",
+                table: "LogEntries",
+                columns: new[] { "SourceId", "Timestamp" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_LogEntries_Timestamp",
+                table: "LogEntries",
+                column: "Timestamp");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_NdiSources_ServiceName",
                 table: "NdiSources",
                 column: "ServiceName",
@@ -362,6 +397,9 @@ namespace PlainSight.Server.Migrations
 
             migrationBuilder.DropTable(
                 name: "DeviceScreenshots");
+
+            migrationBuilder.DropTable(
+                name: "LogEntries");
 
             migrationBuilder.DropTable(
                 name: "PlayerVersions");
