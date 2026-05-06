@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PlainSight.Server.Data;
@@ -11,9 +12,11 @@ using PlainSight.Server.Data;
 namespace PlainSight.Server.Migrations
 {
     [DbContext(typeof(PlainSightDbContext))]
-    partial class PlainSightDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260505063508_AddLogEntry")]
+    partial class AddLogEntry
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -262,21 +265,13 @@ namespace PlainSight.Server.Migrations
                     b.Property<int>("Category")
                         .HasColumnType("integer");
 
-                    b.Property<string>("CategoryName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
                     b.Property<string>("Exception")
-                        .HasMaxLength(8000)
-                        .HasColumnType("character varying(8000)");
+                        .HasColumnType("text");
 
                     b.Property<string>("Level")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
-
-                    b.Property<int>("LevelOrder")
-                        .HasColumnType("integer");
 
                     b.Property<string>("Message")
                         .IsRequired()
@@ -295,9 +290,9 @@ namespace PlainSight.Server.Migrations
 
                     b.HasIndex("Timestamp");
 
-                    b.HasIndex("SourceId", "Timestamp");
+                    b.HasIndex("Category", "Timestamp");
 
-                    b.HasIndex("Category", "LevelOrder", "Timestamp");
+                    b.HasIndex("SourceId", "Timestamp");
 
                     b.ToTable("LogEntries");
                 });

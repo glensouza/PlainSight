@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PlainSight.Server.Data;
 using PlainSight.Server.Services;
 using PlainSight.Shared.Models;
@@ -136,6 +137,9 @@ public static class DeviceApi
                 }
 
                 // Prepare response
+                int logMinLevel = configuration.GetValue("Logging:PlayerMinLevel", (int)LogLevel.Warning);
+                int logShipInterval = configuration.GetValue("Logging:PlayerShipIntervalSeconds", 60);
+
                 HeartbeatResponse response = new()
                 {
                     // Command Flags
@@ -156,7 +160,9 @@ public static class DeviceApi
                         })
                         .ToList(),
                     LiveMode = liveMode,
-                    NdiSourceName = liveSourceName
+                    NdiSourceName = liveSourceName,
+                    LogMinLevel = logMinLevel,
+                    LogShipIntervalSeconds = logShipInterval
                 };
 
                 // Clear the request flag in the database AFTER we have captured the value for the response.
@@ -174,6 +180,64 @@ public static class DeviceApi
                 logger.LogError(ex, "Error processing heartbeat from device {DeviceId}", SanitizeForLog(data.DeviceId));
                 return Results.Problem("Internal server error", statusCode: 500);
             }
+        });
+
+        group.MapPost("/{deviceId}/logs", async (
+            string deviceId,
+            DeviceLogBatchDto batch,
+            HttpContext httpContext,
+            PlainSightDbContext context,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            ILogger logger = loggerFactory.CreateLogger("DeviceApi");
+
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId, ct);
+            if (device == null)
+            {
+                return Results.NotFound();
+            }
+
+            if (device.ApiKey == null)
+            {
+                return Results.Unauthorized();
+            }
+
+            string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
+            if (string.IsNullOrEmpty(incomingKey) || !VerifyApiKey(incomingKey, device.ApiKey))
+            {
+                logger.LogWarning("Log batch rejected for device {DeviceId}: invalid or missing API key", SanitizeForLog(deviceId));
+                return Results.Unauthorized();
+            }
+
+            if (batch.Entries == null || batch.Entries.Count == 0)
+            {
+                return Results.Ok();
+            }
+
+            List<LogEntry> entries = batch.Entries
+                .Take(500)
+                .Select(e =>
+                {
+                    string? exceptionText = e.Exception;
+                    return new LogEntry
+                    {
+                        Category = LogEntryCategory.Device,
+                        SourceId = deviceId,
+                        CategoryName = e.CategoryName != null && e.CategoryName.Length > 200 ? e.CategoryName[..200] : e.CategoryName,
+                        Level = e.Level,
+                        LevelOrder = Enum.TryParse<LogLevel>(e.Level, out LogLevel lvl) ? (int)lvl : (int)LogLevel.Information,
+                        Message = e.Message.Length > 2000 ? e.Message[..2000] : e.Message,
+                        Exception = exceptionText != null && exceptionText.Length > 8000 ? exceptionText[..8000] : exceptionText,
+                        Timestamp = e.Timestamp
+                    };
+                })
+                .ToList();
+
+            context.LogEntries.AddRange(entries);
+            await context.SaveChangesAsync(ct);
+
+            return Results.Ok();
         });
 
         group.MapPost("/{deviceId}/screenshot/notify", async (

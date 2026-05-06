@@ -11,6 +11,7 @@ public class PlayerWorker(
     PlaylistService playlist,
     CacheManager cache,
     NdiPlayerService ndi,
+    LogConfig logConfig,
     ILogger<PlayerWorker> logger) : BackgroundService
 {
     private const int FailsafeThreshold = 3;
@@ -57,6 +58,7 @@ public class PlayerWorker(
                     }
 
                     this.ApplyLiveMode(response);
+                    this.ApplyLogConfig(response);
                 }
                 else
                 {
@@ -119,6 +121,19 @@ public class PlayerWorker(
             {
                 ndi.Stop("server cleared live mode");
             }
+        }
+    }
+
+    private void ApplyLogConfig(HeartbeatResponse response)
+    {
+        if (response.LogMinLevel.HasValue)
+        {
+            logConfig.MinimumLevel = Math.Clamp(response.LogMinLevel.Value, (int)LogLevel.Trace, (int)LogLevel.None);
+        }
+
+        if (response.LogShipIntervalSeconds.HasValue)
+        {
+            logConfig.ShipIntervalSeconds = Math.Clamp(response.LogShipIntervalSeconds.Value, 10, 3600);
         }
     }
 

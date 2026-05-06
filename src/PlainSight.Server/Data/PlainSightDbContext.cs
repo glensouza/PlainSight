@@ -18,6 +18,7 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
     public DbSet<ScheduleTargetGroup> ScheduleTargetGroups => this.Set<ScheduleTargetGroup>();
     public DbSet<NdiSource> NdiSources => this.Set<NdiSource>();
     public DbSet<SystemSetting> SystemSettings => this.Set<SystemSetting>();
+    public DbSet<LogEntry> LogEntries => this.Set<LogEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -105,6 +106,19 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
                 .WithMany()
                 .HasForeignKey(e => e.DeviceId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<LogEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Timestamp);
+            entity.HasIndex(e => new { e.Category, e.LevelOrder, e.Timestamp });
+            entity.HasIndex(e => new { e.SourceId, e.Timestamp });
+            entity.Property(e => e.SourceId).HasMaxLength(200);
+            entity.Property(e => e.CategoryName).HasMaxLength(200);
+            entity.Property(e => e.Level).HasMaxLength(50);
+            entity.Property(e => e.Message).HasMaxLength(2000);
+            entity.Property(e => e.Exception).HasMaxLength(8000);
         });
     }
 }

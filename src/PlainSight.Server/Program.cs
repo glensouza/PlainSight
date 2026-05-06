@@ -85,6 +85,9 @@ builder.Services.AddHostedService<NdiDiscoveryService>();
 builder.Services.AddSingleton<ObsDiscoveryService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ObsDiscoveryService>());
 builder.Services.AddSingleton<ScreenshotNotificationService>();
+builder.Services.AddSingleton<DbLoggerProvider>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DbLoggerProvider>());
+builder.Services.AddHostedService<LogRetentionService>();
 
 // Add HttpClient for calling our own API and the players
 builder.Services.AddHttpClient();
@@ -92,6 +95,9 @@ builder.Services.AddHttpClient("player", client => client.Timeout = TimeSpan.Fro
 builder.Services.AddHttpContextAccessor();
 
 WebApplication app = builder.Build();
+
+app.Services.GetRequiredService<ILoggerFactory>()
+    .AddProvider(app.Services.GetRequiredService<DbLoggerProvider>());
 
 TimeExtensions.Configure(app.Configuration);
 

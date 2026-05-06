@@ -4,6 +4,12 @@ using PlainSight.Player.Services;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
+LogBuffer logBuffer = new();
+LogConfig logConfig = new();
+builder.Services.AddSingleton(logBuffer);
+builder.Services.AddSingleton(logConfig);
+builder.Logging.AddProvider(new LogBufferProvider(logBuffer, logConfig));
+
 // Aspire service discovery, OpenTelemetry, health checks
 builder.AddServiceDefaults();
 
@@ -36,6 +42,14 @@ builder.Services.AddHttpClient<ScreenshotUploadService>(client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 }).RemoveAllResilienceHandlers();
 
+#pragma warning disable EXTEXP0001
+builder.Services.AddHttpClient<LogShipperService>(client =>
+{
+    client.BaseAddress = new Uri(serverUrl);
+    client.Timeout = TimeSpan.FromSeconds(15);
+}).RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
+
 builder.Services.AddSingleton<ScreenCaptureService>();
 builder.Services.AddSingleton<NdiPlayerService>();
 
@@ -52,6 +66,7 @@ builder.Services.AddSingleton(sp =>
 
 builder.Services.AddHostedService<KioskService>();
 builder.Services.AddHostedService<PlayerWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<LogShipperService>());
 
 // Ensure storage directories exist
 string[] storagePaths = [contentPath, cachePath, idleSourcePath, idleCachePath];
