@@ -21,7 +21,7 @@
     <div class="card-body py-2">
         <div class="row g-2 align-items-center">
             <div class="col-auto">
-                <select class="form-select form-select-sm" @bind="filterCategory" @bind:after="ResetAndReloadAsync">
+                <select class="form-select form-select-sm" @bind="filterCategory" @bind:after="OnCategoryChangedAsync">
                     <option value="">All sources</option>
                     <option value="Server">Server</option>
                     <option value="Device">Devices</option>
@@ -42,21 +42,47 @@
             <div class="col-auto">
                 <select class="form-select form-select-sm" @bind="filterLevel" @bind:after="ResetAndReloadAsync">
                     <option value="">All levels</option>
+                    <option value="Information">Information+</option>
                     <option value="Warning">Warning+</option>
                     <option value="Error">Error+</option>
                     <option value="Critical">Critical only</option>
                 </select>
             </div>
-            <div class="col-auto ms-auto">
-                <button class="btn btn-sm btn-outline-secondary me-2" @onclick="ReloadAsync">
+            @if (filterCategory == "Server")
+            {
+                <div class="col-auto">
+                    <select class="form-select form-select-sm" @bind="filterCategoryName" @bind:after="ResetAndReloadAsync">
+                        <option value="">All categories</option>
+                        @foreach (string cat in categoryNames)
+                        {
+                            <option value="@cat">@cat</option>
+                        }
+                    </select>
+                </div>
+            }
+            <div class="col-auto">
+                <input type="date" class="form-control form-control-sm" @bind="filterFrom" @bind:after="ResetAndReloadAsync" title="From date" />
+            </div>
+            <div class="col-auto">
+                <input type="date" class="form-control form-control-sm" @bind="filterTo" @bind:after="ResetAndReloadAsync" title="To date" />
+            </div>
+            <div class="col-auto">
+                <input type="search" class="form-control form-control-sm" placeholder="Search message…"
+                       @bind="filterText" @bind:event="oninput" @bind:after="ResetAndReloadAsync" style="min-width:180px" />
+            </div>
+            <div class="col-auto ms-auto d-flex gap-2">
+                <button class="btn btn-sm @(autoRefresh ? "btn-secondary" : "btn-outline-secondary")" @onclick="ToggleAutoRefresh" title="@(autoRefresh ? "Auto-refresh on (15s)" : "Auto-refresh off")">
+                    <i class="bi bi-arrow-repeat"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ReloadAsync">
                     <i class="bi bi-arrow-clockwise"></i> Refresh
                 </button>
-                <button class="btn btn-sm btn-outline-danger" @onclick="ConfirmClearAsync" disabled="@clearing">
+                <button class="btn btn-sm btn-outline-danger" @onclick="() => showClearConfirm = true" disabled="@clearing">
                     @if (clearing)
                     {
                         <span class="spinner-border spinner-border-sm me-1"></span>
                     }
-                    <i class="bi bi-trash"></i> Clear all
+                    <i class="bi bi-trash"></i> Clear
                 </button>
             </div>
         </div>
@@ -81,7 +107,7 @@ else
                 <tr>
                     <th style="width:170px">Timestamp</th>
                     <th style="width:80px">Source</th>
-                    <th style="width:120px">Origin</th>
+                    <th style="width:200px">Category</th>
                     <th style="width:90px">Level</th>
                     <th>Message</th>
                 </tr>
@@ -96,7 +122,7 @@ else
                                 @entry.Category.ToString()
                             </span>
                         </td>
-                        <td><small class="text-muted">@entry.SourceId</small></td>
+                        <td><small class="text-muted">@(entry.CategoryName ?? entry.SourceId)</small></td>
                         <td><span class="badge @LevelBadgeClass(entry.Level)">@entry.Level</span></td>
                         <td>
                             <span class="small">@entry.Message</span>
@@ -132,18 +158,38 @@ else
 @if (showClearConfirm)
 {
     <div class="modal fade show d-block" tabindex="-1" style="background:rgba(0,0,0,0.5)">
-        <div class="modal-dialog modal-sm">
+        <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Clear logs</h5>
                     <button type="button" class="btn-close" @onclick="() => showClearConfirm = false"></button>
                 </div>
                 <div class="modal-body">
-                    <p>Delete all log entries? This cannot be undone.</p>
+                    <p class="mb-3">Choose what to delete — this cannot be undone.</p>
+                    @if (!string.IsNullOrEmpty(filterSourceId))
+                    {
+                        <div class="d-grid mb-2">
+                            <button class="btn btn-outline-warning btn-sm" @onclick="() => ClearScopedAsync(ClearMode.Device)">
+                                <i class="bi bi-person-x"></i> Clear logs for device <strong>@filterSourceId</strong>
+                            </button>
+                        </div>
+                    }
+                    <div class="d-grid mb-2">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">Clear entries older than</span>
+                            <input type="number" class="form-control" @bind="clearOlderThanDays" min="1" max="3650" style="width:70px" />
+                            <span class="input-group-text">days</span>
+                            <button class="btn btn-outline-warning" @onclick="() => ClearScopedAsync(ClearMode.OlderThan)">Delete</button>
+                        </div>
+                    </div>
+                    <div class="d-grid">
+                        <button class="btn btn-danger btn-sm" @onclick="() => ClearScopedAsync(ClearMode.All)">
+                            <i class="bi bi-trash"></i> Delete ALL log entries
+                        </button>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary btn-sm" @onclick="() => showClearConfirm = false">Cancel</button>
-                    <button class="btn btn-danger btn-sm" @onclick="ClearLogsAsync">Delete all</button>
                 </div>
             </div>
         </div>
@@ -153,16 +199,26 @@ else
 @code {
     private const int PageSize = 100;
 
+    private enum ClearMode { All, Device, OlderThan }
+
     private List<LogEntry>? entries;
     private List<string> deviceIds = [];
+    private List<string> categoryNames = [];
     private int totalCount;
     private int currentPage;
     private string filterCategory = string.Empty;
     private string filterSourceId = string.Empty;
+    private string filterCategoryName = string.Empty;
     private string filterLevel = string.Empty;
+    private DateOnly? filterFrom;
+    private DateOnly? filterTo;
+    private string filterText = string.Empty;
+    private int clearOlderThanDays = 30;
     private string? loadError;
     private bool clearing;
     private bool showClearConfirm;
+    private bool autoRefresh;
+    private System.Threading.Timer? refreshTimer;
     private readonly HashSet<int> expandedIds = [];
     private CancellationTokenSource cts = new();
 
@@ -177,17 +233,29 @@ else
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(this.cts.Token);
-            this.deviceIds = await context.LogEntries
-                .Where(e => e.Category == LogEntryCategory.Device)
-                .Select(e => e.SourceId)
-                .Distinct()
+            this.deviceIds = await context.Devices
+                .Select(d => d.DeviceId)
                 .OrderBy(id => id)
+                .ToListAsync(this.cts.Token);
+            this.categoryNames = await context.LogEntries
+                .Where(e => e.Category == LogEntryCategory.Server && e.CategoryName != null)
+                .Select(e => e.CategoryName!)
+                .Distinct()
+                .OrderBy(n => n)
                 .ToListAsync(this.cts.Token);
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to load device IDs for log filter");
+            Logger.LogError(ex, "Failed to load filter lists");
         }
+    }
+
+    private async Task OnCategoryChangedAsync()
+    {
+        this.filterSourceId = string.Empty;
+        this.filterCategoryName = string.Empty;
+        this.currentPage = 0;
+        await this.ReloadAsync();
     }
 
     private async Task ResetAndReloadAsync()
@@ -215,13 +283,41 @@ else
                 query = query.Where(e => e.SourceId == this.filterSourceId);
             }
 
-            query = this.filterLevel switch
+            if (!string.IsNullOrEmpty(this.filterCategoryName))
             {
-                "Warning" => query.Where(e => e.Level == "Warning" || e.Level == "Error" || e.Level == "Critical"),
-                "Error" => query.Where(e => e.Level == "Error" || e.Level == "Critical"),
-                "Critical" => query.Where(e => e.Level == "Critical"),
-                _ => query
+                query = query.Where(e => e.CategoryName == this.filterCategoryName);
+            }
+
+            int? minLevel = this.filterLevel switch
+            {
+                "Information" => (int)LogLevel.Information,
+                "Warning" => (int)LogLevel.Warning,
+                "Error" => (int)LogLevel.Error,
+                "Critical" => (int)LogLevel.Critical,
+                _ => null
             };
+            if (minLevel.HasValue)
+            {
+                query = query.Where(e => e.LevelOrder >= minLevel.Value);
+            }
+
+            if (this.filterFrom.HasValue)
+            {
+                DateTime from = this.filterFrom.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+                query = query.Where(e => e.Timestamp >= from);
+            }
+
+            if (this.filterTo.HasValue)
+            {
+                DateTime to = this.filterTo.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc).AddDays(1);
+                query = query.Where(e => e.Timestamp < to);
+            }
+
+            if (!string.IsNullOrEmpty(this.filterText))
+            {
+                string lower = this.filterText.ToLower();
+                query = query.Where(e => e.Message.ToLower().Contains(lower));
+            }
 
             this.totalCount = await query.CountAsync(this.cts.Token);
             this.entries = await query
@@ -271,16 +367,47 @@ else
         }
     }
 
-    private void ConfirmClearAsync() => this.showClearConfirm = true;
+    private void ToggleAutoRefresh()
+    {
+        this.autoRefresh = !this.autoRefresh;
+        if (this.autoRefresh)
+        {
+            this.refreshTimer = new System.Threading.Timer(
+                _ => this.InvokeAsync(this.ReloadAsync),
+                null,
+                TimeSpan.FromSeconds(15),
+                TimeSpan.FromSeconds(15));
+        }
+        else
+        {
+            this.refreshTimer?.Dispose();
+            this.refreshTimer = null;
+        }
+    }
 
-    private async Task ClearLogsAsync()
+    private async Task ClearScopedAsync(ClearMode mode)
     {
         this.showClearConfirm = false;
         this.clearing = true;
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(this.cts.Token);
-            await context.LogEntries.ExecuteDeleteAsync(this.cts.Token);
+
+            if (mode == ClearMode.Device && !string.IsNullOrEmpty(this.filterSourceId))
+            {
+                string deviceId = this.filterSourceId;
+                await context.LogEntries.Where(e => e.SourceId == deviceId).ExecuteDeleteAsync(this.cts.Token);
+            }
+            else if (mode == ClearMode.OlderThan)
+            {
+                DateTime cutoff = DateTime.UtcNow.AddDays(-this.clearOlderThanDays);
+                await context.LogEntries.Where(e => e.Timestamp < cutoff).ExecuteDeleteAsync(this.cts.Token);
+            }
+            else
+            {
+                await context.LogEntries.ExecuteDeleteAsync(this.cts.Token);
+            }
+
             this.currentPage = 0;
             this.expandedIds.Clear();
             await this.LoadDeviceIdsAsync();
@@ -308,6 +435,7 @@ else
 
     public void Dispose()
     {
+        this.refreshTimer?.Dispose();
         this.cts.Cancel();
         this.cts.Dispose();
     }
