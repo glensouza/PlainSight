@@ -87,6 +87,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<ObsDiscoveryServic
 builder.Services.AddSingleton<ScreenshotNotificationService>();
 builder.Services.AddSingleton<DbLoggerProvider>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DbLoggerProvider>());
+builder.Services.AddHostedService<LogRetentionService>();
 
 // Add HttpClient for calling our own API and the players
 builder.Services.AddHttpClient();
