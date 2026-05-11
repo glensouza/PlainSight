@@ -98,12 +98,14 @@ builder.Services.AddHttpContextAccessor();
 // Configure Forwarded Headers for reverse proxy support
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
     options.KnownNetworks.Clear();
     options.KnownProxies.Clear();
 });
 
 WebApplication app = builder.Build();
+
+app.UseForwardedHeaders();
 
 app.Services.GetRequiredService<ILoggerFactory>()
     .AddProvider(app.Services.GetRequiredService<DbLoggerProvider>());
@@ -157,7 +159,6 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseForwardedHeaders();
 app.UseHttpsRedirection();
 
 app.UseAuthentication();
