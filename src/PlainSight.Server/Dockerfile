@@ -33,17 +33,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     chromium \
     fonts-liberation \
-    libasound2t64 \
-    libatk-bridge2.0-0t64 \
-    libatk1.0-0t64 \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
     libcairo2 \
-    libcups2t64 \
+    libcups2 \
     libdbus-1-3 \
     libdrm2 \
     libexpat1 \
     libgbm1 \
-    libglib2.0-0t64 \
-    libgtk-3-0t64 \
+    libglib2.0-0 \
+    libgtk-3-0 \
     libnspr4 \
     libnss3 \
     libpango-1.0-0 \
@@ -59,6 +59,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxtst6 \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
+
+# Verify chromium installation path
+RUN which chromium || which chromium-browser || echo "Chromium not found in PATH"
 
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 

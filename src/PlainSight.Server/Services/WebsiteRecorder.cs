@@ -35,12 +35,37 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
             return null;
         }
 
-        return Array.Find(LinuxCandidates, File.Exists);
+        foreach (string candidate in LinuxCandidates)
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     public async Task ConvertUrlToVideoAsync(string url, int durationSec, string outputPath, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Starting screencast render: {Url} ({Duration}s) -> {OutputPath}", url, durationSec, outputPath);
+        
+        // Log environment details for diagnostics
+        if (OperatingSystem.IsLinux())
+        {
+            try
+            {
+                string osRelease = File.Exists("/etc/os-release") ? File.ReadAllText("/etc/os-release") : "unknown";
+                logger.LogDebug("Running on Linux. /etc/os-release: {OS}", osRelease);
+
+                string[] found = Directory.GetFiles("/usr/bin", "*chrom*", SearchOption.TopDirectoryOnly);
+                logger.LogDebug("Chromium-related binaries found in /usr/bin: {Files}", string.Join(", ", found));
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to log environment details");
+            }
+        }
 
         await this.EnsureChromiumAsync(cancellationToken);
 
