@@ -328,6 +328,7 @@
 }
 .ps-action .bi { font-size: 13px; }
 .ps-action--warn:hover:not(:disabled) { color: var(--ps-warn); }
+.ps-action--danger:hover:not(:disabled) { color: var(--bs-danger); }
 
 .ps-cell--interactive {
     cursor: pointer;

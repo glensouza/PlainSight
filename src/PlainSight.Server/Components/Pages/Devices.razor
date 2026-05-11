@@ -213,6 +213,12 @@ else
                         }
                         <span>Reset Key</span>
                     </button>
+                    <button class="ps-action ps-action--danger"
+                            @onclick="() => PromptDeleteDevice(device)"
+                            title="Delete device">
+                        <i class="bi bi-trash"></i>
+                        <span>Delete</span>
+                    </button>
                 </footer>
             </div>
         }
@@ -369,6 +375,43 @@ else
     </div>
 }
 
+@if (deleteConfirmMessage != null)
+{
+    <div class="modal fade show d-block"
+         tabindex="-1"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="delete-confirm-title"
+         style="background:rgba(4,8,14,0.7);">
+        <div class="modal-dialog modal-dialog-centered" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 id="delete-confirm-title" class="modal-title text-danger">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i> Confirm Delete
+                    </h5>
+                </div>
+                <div class="modal-body">
+                    @deleteConfirmMessage
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CancelDelete" disabled="@isDeleting">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ExecuteDeleteAsync" disabled="@isDeleting">
+                        @if (isDeleting)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-trash me-1"></i>
+                        }
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @if (selectedDeviceIds.Count > 0)
 {
     <div class="bulk-action-bar">
@@ -444,6 +487,13 @@ else
                     Assign Version
                 </button>
             </div>
+
+            <span class="bulk-action-bar__sep d-none d-md-inline">|</span>
+
+            <button class="btn btn-sm btn-danger" @onclick="PromptBulkDelete">
+                <i class="bi bi-trash"></i>
+                Delete (@selectedDeviceIds.Count)
+            </button>
         </div>
     </div>
 }
@@ -477,6 +527,9 @@ else
     private bool bulkResultIsSuccess;
     private string statusFilter = "all";
     private Dictionary<string, string> groupTargetVersions = [];
+    private string? deleteConfirmMessage;
+    private Func<Task>? deleteConfirmAction;
+    private bool isDeleting;
 
     private string GetTargetVersionForGroup(string groupName)
     {
@@ -1170,6 +1223,120 @@ else
     private void HandleModalKeyDown(KeyboardEventArgs e)
     {
         if (e.Key == "Escape") CloseHistory();
+    }
+
+    private void PromptDeleteDevice(Device device)
+    {
+        this.deleteConfirmMessage = $"Delete \"{device.Name}\"? All screenshot history will also be removed. This cannot be undone.";
+        this.deleteConfirmAction = () => this.DeleteDeviceAsync(device.DeviceId);
+    }
+
+    private void PromptBulkDelete()
+    {
+        int count = this.selectedDeviceIds.Count;
+        this.deleteConfirmMessage = $"Delete {count} device(s)? All screenshot history will also be removed. This cannot be undone.";
+        this.deleteConfirmAction = this.BulkDeleteAsync;
+    }
+
+    private void CancelDelete()
+    {
+        this.deleteConfirmMessage = null;
+        this.deleteConfirmAction = null;
+    }
+
+    private async Task ExecuteDeleteAsync()
+    {
+        if (this.deleteConfirmAction == null)
+        {
+            return;
+        }
+
+        this.isDeleting = true;
+        try
+        {
+            await this.deleteConfirmAction();
+        }
+        catch (Exception ex)
+        {
+            this.Logger.LogError(ex, "Error executing delete action");
+        }
+        finally
+        {
+            this.isDeleting = false;
+            this.deleteConfirmMessage = null;
+            this.deleteConfirmAction = null;
+            this.StateHasChanged();
+        }
+    }
+
+    private async Task DeleteDeviceAsync(string deviceId)
+    {
+        await using PlainSightDbContext context = await this.DbFactory.CreateDbContextAsync();
+        Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+        if (device == null)
+        {
+            return;
+        }
+
+        List<string> filePaths = await context.DeviceScreenshots
+            .Where(s => s.DeviceId == device.Id)
+            .Select(s => s.FilePath)
+            .ToListAsync();
+
+        foreach (string path in filePaths)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (Exception ex)
+            {
+                this.Logger.LogWarning(ex, "Failed to delete screenshot file {Path}", path);
+            }
+        }
+
+        context.Devices.Remove(device);
+        await context.SaveChangesAsync();
+        await this.LoadDevices();
+    }
+
+    private async Task BulkDeleteAsync()
+    {
+        HashSet<string> ids = [..this.selectedDeviceIds];
+        await using PlainSightDbContext context = await this.DbFactory.CreateDbContextAsync();
+
+        List<Device> toDelete = await context.Devices
+            .Where(d => ids.Contains(d.DeviceId))
+            .ToListAsync();
+
+        List<int> devicePks = toDelete.Select(d => d.Id).ToList();
+        List<string> filePaths = await context.DeviceScreenshots
+            .Where(s => devicePks.Contains(s.DeviceId))
+            .Select(s => s.FilePath)
+            .ToListAsync();
+
+        foreach (string path in filePaths)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (Exception ex)
+            {
+                this.Logger.LogWarning(ex, "Failed to delete screenshot file {Path}", path);
+            }
+        }
+
+        context.Devices.RemoveRange(toDelete);
+        await context.SaveChangesAsync();
+        this.selectedDeviceIds.Clear();
+        await this.LoadDevices();
     }
 
     private static bool IsDeviceOnline(DateTime lastSeen) => (DateTime.UtcNow - lastSeen).TotalSeconds < 60;
