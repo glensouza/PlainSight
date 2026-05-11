@@ -1,0 +1,61 @@
+name: Bump Minor Version on PR
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, reopened ]
+
+# Only one bump can run at a time; cancel stale reruns
+concurrency:
+  group: bump-minor-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  bump-minor:
+    runs-on: self-hosted
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout PR branch
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Bump minor version
+      run: |
+        set -euo pipefail
+        git fetch origin main
+
+        MAIN_VERSION=$(git show origin/main:version.txt | tr -d '[:space:]')
+        CURRENT=$(cat version.txt | tr -d '[:space:]')
+
+        MAIN_MAJOR=$(printf '%s' "${MAIN_VERSION}" | cut -d. -f1)
+        MAIN_MINOR=$(printf '%s' "${MAIN_VERSION}" | cut -d. -f2)
+        CURR_MAJOR=$(printf '%s' "${CURRENT}" | cut -d. -f1)
+        CURR_MINOR=$(printf '%s' "${CURRENT}" | cut -d. -f2)
+
+        # Skip if the branch already carries a version strictly ahead of main
+        if [ "${CURR_MAJOR}" -gt "${MAIN_MAJOR}" ]; then
+          echo "Major version already ahead of main (main: ${MAIN_VERSION}, branch: ${CURRENT}), skipping"
+          exit 0
+        fi
+        if [ "${CURR_MAJOR}" -eq "${MAIN_MAJOR}" ] && [ "${CURR_MINOR}" -gt "${MAIN_MINOR}" ]; then
+          echo "Minor version already ahead of main (main: ${MAIN_VERSION}, branch: ${CURRENT}), skipping"
+          exit 0
+        fi
+
+        # Always bump relative to main so concurrent PRs don't collide on the same number
+        NEW_MINOR=$((MAIN_MINOR + 1))
+        NEW_VERSION="${MAIN_MAJOR}.${NEW_MINOR}"
+
+        printf '%s\n' "${NEW_VERSION}" > version.txt
+
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add version.txt
+        git commit -m "chore: bump minor version to ${NEW_VERSION}"
+        git push
+
+        echo "Bumped version from ${CURRENT} to ${NEW_VERSION}"

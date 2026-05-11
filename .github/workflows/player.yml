@@ -41,8 +41,12 @@ jobs:
         PREV_MAJOR_MINOR=""
         PREV_PATCH=-1
         if [ -f "${STATE_FILE}" ]; then
-          PREV_MAJOR_MINOR=$(grep "^MAJOR_MINOR=" "${STATE_FILE}" | cut -d= -f2 | head -1 || echo "")
-          PREV_PATCH=$(grep "^PATCH=" "${STATE_FILE}" | cut -d= -f2 | head -1 || echo "-1")
+          while IFS='=' read -r key value; do
+            case "${key}" in
+              MAJOR_MINOR) PREV_MAJOR_MINOR="${value}" ;;
+              PATCH)       PREV_PATCH="${value}" ;;
+            esac
+          done < "${STATE_FILE}"
         fi
 
         if [ "${MAJOR_MINOR}" = "${PREV_MAJOR_MINOR}" ]; then

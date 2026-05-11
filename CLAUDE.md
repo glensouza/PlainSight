@@ -115,7 +115,9 @@ Version format is `MAJOR.MINOR.PATCH` (e.g., `1.0.3`).
 
 Each state file stores `MAJOR_MINOR=x.y` and `PATCH=n`. On each run the CI reads the file, increments `PATCH` if `MAJOR_MINOR` matches, or resets `PATCH` to `0` if it changed.
 
-**To bump the version:** edit `version.txt`, commit, and push. Both workflows will start their patch counter at `0` for the new `MAJOR.MINOR` on their next run.
+**Automatic minor bump on PR (`bump-minor.yml`):** when any PR targeting `main` is opened or reopened, the workflow increments the minor version in `version.txt` on the PR branch (relative to `main`'s current version) and commits it back. Both server and player workflows include `version.txt` in their `paths:` triggers, so merging the PR to `main` automatically kicks off a build for each with patch `0` for the new `MAJOR.MINOR`.
+
+**To manually bump the version:** edit `version.txt`, commit, and push to `main` (or include it in a PR). Both CI workflows will reset patch to `0` on their next run.
 
 **To manually seed or reset a counter** (e.g., after re-imaging the runner): edit the state file directly on the runner, e.g.:
 ```bash
