@@ -157,7 +157,7 @@
 {
     <p><em>Loading content library...</em></p>
 }
-else if (!contentItems.Any())
+else if (contentItems.Count == 0)
 {
     <div class="alert alert-info">
         <i class="bi bi-info-circle"></i> No content uploaded yet. Upload videos or images, or render websites to get started.
@@ -764,12 +764,12 @@ else
         isPolling = true;
         try
         {
-            while (renderJobs.Any(j => j.Status is "Queued" or "Processing") && !cts.IsCancellationRequested)
+            while (renderJobs.Count(j => j.Status is "Queued" or "Processing") != 0 && !cts.IsCancellationRequested)
             {
                 await Task.Delay(2000, cts.Token);
 
                 bool anyFinished = false;
-                foreach (RenderJobState jobState in renderJobs.Where(j => j.Status is "Queued" or "Processing").ToList())
+                foreach (RenderJobState jobState in renderJobs.Where(static j => j.Status is "Queued" or "Processing").ToList())
                 {
                     RenderJob? job = RenderQueue.GetJob(jobState.JobId);
                     if (job == null)

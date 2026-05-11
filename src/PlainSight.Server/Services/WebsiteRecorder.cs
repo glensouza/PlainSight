@@ -10,9 +10,33 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
     private const int FrameRate = 10;
     private const int JpegQuality = 80;
 
-    private readonly string? executablePath = Environment.GetEnvironmentVariable("PUPPETEER_EXECUTABLE_PATH");
+    private static readonly string[] LinuxCandidates =
+    [
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable"
+    ];
+
+    private readonly string? executablePath = ResolveChromiumPath();
     private readonly SemaphoreSlim downloadLock = new(1, 1);
-    private volatile bool chromiumReady;
+    private bool chromiumReady;
+
+    private static string? ResolveChromiumPath()
+    {
+        string? envPath = Environment.GetEnvironmentVariable("PUPPETEER_EXECUTABLE_PATH");
+        if (!string.IsNullOrEmpty(envPath) && File.Exists(envPath))
+        {
+            return envPath;
+        }
+
+        if (!OperatingSystem.IsLinux())
+        {
+            return null;
+        }
+
+        return Array.Find(LinuxCandidates, File.Exists);
+    }
 
     public async Task ConvertUrlToVideoAsync(string url, int durationSec, string outputPath, CancellationToken cancellationToken = default)
     {
@@ -66,7 +90,7 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
                                                  """, durationSec);
 
         byte[]? latestFrame = null;
-        object frameLock = new();
+        Lock frameLock = new();
         int frameCount = 0;
 
         CDPSession cdpSession = (CDPSession)page.Client;
@@ -215,7 +239,13 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
     private async Task EnsureChromiumAsync(CancellationToken cancellationToken)
     {
         if (this.chromiumReady || !string.IsNullOrEmpty(this.executablePath))
+        {
+            if (!string.IsNullOrEmpty(this.executablePath))
+            {
+                logger.LogDebug("Using system Chromium at {Path}", this.executablePath);
+            }
             return;
+        }
 
         await this.downloadLock.WaitAsync(cancellationToken);
         try
