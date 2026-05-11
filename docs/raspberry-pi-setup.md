@@ -53,8 +53,14 @@ The automated script handles all configuration steps.
 #### Step 3: Run Installation Script
 
 ```bash
-# Download and run the installer
-curl -sSL https://raw.githubusercontent.com/glensouza/PlainSight/main/deployment/raspberry-pi/install.sh | bash
+# Download the installer
+curl -sSL https://raw.githubusercontent.com/glensouza/PlainSight/main/deployment/raspberry-pi/install.sh -o install.sh
+
+# Make it executable
+chmod +x install.sh
+
+# Run the installer
+./install.sh
 ```
 
 The script will:
