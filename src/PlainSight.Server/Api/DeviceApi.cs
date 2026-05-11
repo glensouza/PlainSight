@@ -32,11 +32,20 @@ public static class DeviceApi
 
     public static void MapDeviceApi(this IEndpointRouteBuilder routes)
     {
-        RouteGroupBuilder group = routes.MapGroup("/api/device");
+        RouteGroupBuilder group = routes.MapGroup("/api/device")
+            .WithGroupName("Device API")
+            .DisableAntiforgery();
 
         group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ScheduleService scheduleService, ObsDiscoveryService obsService, IConfiguration configuration, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             ILogger logger = loggerFactory.CreateLogger("DeviceApi");
+            
+            if (data == null || string.IsNullOrEmpty(data.DeviceId))
+            {
+                logger.LogWarning("Heartbeat rejected: missing data or DeviceId");
+                return Results.BadRequest("Missing DeviceId");
+            }
+
             try
             {
                 Device? device = await context.Devices
