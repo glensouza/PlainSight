@@ -249,6 +249,9 @@ systemctl --user daemon-reload
 systemctl --user enable plainsight.service
 # Allow the player user service to start at boot without waiting for interactive login
 sudo loginctl enable-linger pi
+# Grant passwordless sudo so remote management tools can run privileged commands
+echo 'pi ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/010_pi-nopasswd > /dev/null
+sudo chmod 440 /etc/sudoers.d/010_pi-nopasswd
 
 echo ""
 echo "================================================"
