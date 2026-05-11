@@ -79,10 +79,20 @@ jobs:
         BINARY_PATH="${UPDATES_PATH}/${FILE_NAME}"
 
         # Compute SHA-256 (lowercase hex, no filename suffix)
-        SHA256=$(sha256sum "${BINARY_PATH}" | awk '{ print $1 }')
+        # Use shasum -a 256 for macOS compatibility
+        if command -v sha256sum >/dev/null 2>&1; then
+          SHA256=$(sha256sum "${BINARY_PATH}" | awk '{ print $1 }')
+        else
+          SHA256=$(shasum -a 256 "${BINARY_PATH}" | awk '{ print $1 }')
+        fi
 
         # Compute file size in bytes
-        SIZE_BYTES=$(stat --format='%s' "${BINARY_PATH}")
+        # Use stat -f %z for macOS compatibility
+        if stat --version >/dev/null 2>&1; then
+          SIZE_BYTES=$(stat --format='%s' "${BINARY_PATH}")
+        else
+          SIZE_BYTES=$(stat -f %z "${BINARY_PATH}")
+        fi
 
         # ISO-8601 UTC timestamp
         SIGNED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
