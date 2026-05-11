@@ -251,7 +251,9 @@ else
                         <div class="col-12">
                             <hr class="my-1" />
                             <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="autoSsEnabled" @bind="formModel.AutoScreenshotEnabled" />
+                                <input class="form-check-input" type="checkbox" id="autoSsEnabled"
+                                       checked="@formModel.AutoScreenshotEnabled"
+                                       @onchange="OnAutoScreenshotToggled" />
                                 <label class="form-check-label fw-bold" for="autoSsEnabled">Auto-screenshot on content change</label>
                             </div>
                         </div>
@@ -372,6 +374,16 @@ else
         showGroupDropdown = false;
     }
 
+    private void OnAutoScreenshotToggled(ChangeEventArgs e)
+    {
+        formModel.AutoScreenshotEnabled = (bool)e.Value!;
+        if (formModel.AutoScreenshotEnabled)
+        {
+            if (formModel.ScreenshotBurstCount < 1) { formModel.ScreenshotBurstCount = 3; }
+            if (formModel.ScreenshotBurstIntervalSeconds < 1) { formModel.ScreenshotBurstIntervalSeconds = 10; }
+        }
+    }
+
     private void ToggleGroupDropdown() => showGroupDropdown = !showGroupDropdown;
 
     private void ToggleGroup(string groupName)
@@ -393,6 +405,11 @@ else
     private async Task SaveSchedule()
     {
         saving = true;
+        if (formModel.AutoScreenshotEnabled)
+        {
+            formModel.ScreenshotBurstCount = Math.Max(1, formModel.ScreenshotBurstCount);
+            formModel.ScreenshotBurstIntervalSeconds = Math.Max(1, formModel.ScreenshotBurstIntervalSeconds);
+        }
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();

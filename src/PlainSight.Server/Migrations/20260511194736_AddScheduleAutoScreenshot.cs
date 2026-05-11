@@ -22,14 +22,14 @@ namespace PlainSight.Server.Migrations
                 table: "Schedules",
                 type: "integer",
                 nullable: false,
-                defaultValue: 0);
+                defaultValue: 3);
 
             migrationBuilder.AddColumn<int>(
                 name: "ScreenshotBurstIntervalSeconds",
                 table: "Schedules",
                 type: "integer",
                 nullable: false,
-                defaultValue: 0);
+                defaultValue: 10);
         }
 
         /// <inheritdoc />

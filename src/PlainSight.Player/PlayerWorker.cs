@@ -16,6 +16,7 @@ public class PlayerWorker(
 {
     private const int FailsafeThreshold = 3;
     private int consecutiveHeartbeatFailures;
+    private CancellationTokenSource? burstCts;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -50,8 +51,11 @@ public class PlayerWorker(
                     if (response.ScreenshotBurstCount is > 0)
                     {
                         int count = response.ScreenshotBurstCount.Value;
-                        int intervalSeconds = response.ScreenshotBurstIntervalSeconds ?? 10;
-                        _ = this.ProcessScreenshotBurstAsync(count, intervalSeconds, stoppingToken);
+                        int intervalSeconds = Math.Max(1, response.ScreenshotBurstIntervalSeconds ?? 10);
+                        this.burstCts?.Cancel();
+                        this.burstCts?.Dispose();
+                        this.burstCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                        _ = this.ProcessScreenshotBurstAsync(count, intervalSeconds, this.burstCts.Token);
                     }
 
                     if (response.PlaylistItems != null)

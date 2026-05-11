@@ -154,8 +154,8 @@ public static class DeviceApi
                 bool contentChanged = !string.IsNullOrEmpty(data.CurrentFileName)
                     && data.CurrentFileName != previouslyPlaying;
                 bool burstEnabled = contentChanged && (activeSchedule?.AutoScreenshotEnabled ?? false);
-                int? burstCount = burstEnabled ? activeSchedule!.ScreenshotBurstCount : null;
-                int? burstInterval = burstEnabled ? activeSchedule!.ScreenshotBurstIntervalSeconds : null;
+                int? burstCount = burstEnabled ? Math.Max(1, activeSchedule!.ScreenshotBurstCount) : null;
+                int? burstInterval = burstEnabled ? Math.Max(1, activeSchedule!.ScreenshotBurstIntervalSeconds) : null;
 
                 // Prepare response
                 int logMinLevel = configuration.GetValue("Logging:PlayerMinLevel", (int)LogLevel.Warning);
