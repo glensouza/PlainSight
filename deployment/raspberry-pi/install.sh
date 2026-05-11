@@ -164,7 +164,8 @@ EOF
 chmod +x ~/.config/labwc/autostart
 
 # 7. Enable services
-echo "Enabling systemd services..."
+echo "Configuring boot target and enabling services..."
+sudo systemctl set-default graphical.target
 sudo systemctl daemon-reload
 sudo systemctl enable mnt-plainsight.automount
 sudo systemctl enable plainsight.service
