@@ -3,23 +3,21 @@ name: Player CI/CD
 on:
   push:
     branches: [ main ]
-    tags: [ 'v*' ]
     paths:
       - 'src/PlainSight.Shared/**'
       - 'src/PlainSight.Player/**'
       - '.github/workflows/player.yml'
   workflow_dispatch:
 
+# Ensure only one build runs at a time
+concurrency:
+  group: build-player
+  cancel-in-progress: true
+
 jobs:
   build-player:
-    # One-time keypair generation (maintainer, offline):
-    #   openssl ecparam -name prime256v1 -genkey -noout -out signing.key
-    #   openssl pkcs8 -topk8 -nocrypt -in signing.key -out signing.pkcs8
-    #   openssl ec -in signing.key -pubout -out release-signing.pub
-    # Add the contents of signing.pkcs8 as the secret PLAINSIGHT_SIGNING_KEY.
-    # Commit release-signing.pub to src/PlainSight.Server/Keys/.
     runs-on: self-hosted
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     permissions:
       contents: write
 
@@ -31,6 +29,12 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
+
+    - name: Set Version
+      run: |
+        VERSION="1.0.${{ github.run_number }}"
+        echo "VERSION=${VERSION}" >> $GITHUB_ENV
+        echo "FILE_NAME=plainsight-player-${VERSION}" >> $GITHUB_ENV
 
     - name: Restore dependencies
       run: dotnet restore
@@ -46,13 +50,6 @@ jobs:
           -p:DebugSymbols=false \
           -o ./publish/player
 
-    - name: Create artifact archives
-      run: |
-        set -euo pipefail
-        cd ./publish/player
-        tar -czf ../plainsight-player-${{ github.ref_name }}.tar.gz *
-        cd ../..
-
     - name: Validate UPDATES_PATH
       run: |
         set -euo pipefail
@@ -63,33 +60,22 @@ jobs:
 
     - name: Copy binary to share
       env:
-        REF_NAME: ${{ github.ref_name }}
         UPDATES_PATH_RAW: ${{ vars.UPDATES_PATH }}
       run: |
         set -euo pipefail
-        # Strip leading 'v' from the tag name to get a bare semver (e.g. v1.2.0 → 1.2.0)
-        REF_NAME_VAR="$REF_NAME"
-        VERSION="${REF_NAME_VAR#v}"
         UPDATES_PATH="$UPDATES_PATH_RAW"
-        FILE_NAME="plainsight-player-${VERSION}"
         SRC_BINARY="./publish/player/PlainSight.Player"
         # Write to a .tmp file first, then rename for an atomic replacement on a local FS
         cp "${SRC_BINARY}" "${UPDATES_PATH}/${FILE_NAME}.tmp"
         mv "${UPDATES_PATH}/${FILE_NAME}.tmp" "${UPDATES_PATH}/${FILE_NAME}"
-        echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
-        echo "FILE_NAME=${FILE_NAME}" >> "$GITHUB_ENV"
         echo "UPDATES_PATH=${UPDATES_PATH}" >> "$GITHUB_ENV"
 
     - name: Build and sign manifest
       env:
         PLAINSIGHT_SIGNING_KEY: ${{ secrets.PLAINSIGHT_SIGNING_KEY }}
-        REF_NAME: ${{ github.ref_name }}
         REPOSITORY: ${{ github.repository }}
       run: |
         set -euo pipefail
-        VERSION="${VERSION}"
-        FILE_NAME="${FILE_NAME}"
-        UPDATES_PATH="${UPDATES_PATH}"
         BINARY_PATH="${UPDATES_PATH}/${FILE_NAME}"
 
         # Compute SHA-256 (lowercase hex, no filename suffix)
@@ -101,12 +87,9 @@ jobs:
         # ISO-8601 UTC timestamp
         SIGNED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-        RELEASE_URL="https://github.com/${REPOSITORY}/releases/tag/${REF_NAME}"
+        RELEASE_URL="https://github.com/${REPOSITORY}/actions/runs/${{ github.run_id }}"
 
         # Build canonical JSON (sorted keys, compact) — this is what gets signed.
-        # The 'signature' field is intentionally absent here; verifiers must
-        # re-canonicalise the on-disk manifest minus 'signature' to reproduce
-        # the exact byte sequence that was signed.
         CANONICAL_JSON=$(jq \
           --sort-keys \
           --compact-output \
@@ -117,7 +100,7 @@ jobs:
           --arg sha256 "${SHA256}" \
           --arg signedAt "${SIGNED_AT}" \
           --arg releaseUrl "${RELEASE_URL}" \
-          --arg notes "" \
+          --arg notes "Build from ${{ github.sha }}" \
           '{
             "fileName": $fileName,
             "notes": $notes,
@@ -129,15 +112,11 @@ jobs:
           }')
 
         # Sign the canonical JSON with ECDSA-SHA256.
-        # The key is fed via process substitution to avoid writing it to disk.
-        # We deliberately do NOT echo PLAINSIGHT_SIGNING_KEY anywhere in this script.
         SIG_B64=$(printf '%s' "${CANONICAL_JSON}" \
           | openssl dgst -sha256 -sign <(printf '%s' "${PLAINSIGHT_SIGNING_KEY}") \
           | base64 -w 0)
 
         # Append the 'signature' field to produce the final on-disk manifest.
-        # This manifest is NOT canonical (extra field); verifiers must strip
-        # 'signature' and re-sort before verifying — see ManifestReconciler.
         FINAL_MANIFEST=$(printf '%s' "${CANONICAL_JSON}" \
           | jq --compact-output --arg sig "${SIG_B64}" '. + {"signature": $sig}')
 
@@ -147,11 +126,3 @@ jobs:
 
         echo "MANIFEST_PATH=${MANIFEST_PATH}" >> "$GITHUB_ENV"
         echo "Manifest written to ${MANIFEST_PATH}"
-
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v2
-      with:
-        files: |
-          ./publish/plainsight-player-${{ github.ref_name }}.tar.gz
-          ${{ env.MANIFEST_PATH }}
-        generate_release_notes: true
