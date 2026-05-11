@@ -163,3 +163,18 @@ jobs:
 
         echo "MANIFEST_PATH=${MANIFEST_PATH}" >> "$GITHUB_ENV"
         echo "Manifest written to ${MANIFEST_PATH}"
+
+    - name: Prune old player binaries (keep 3 newest)
+      env:
+        UPDATES_PATH_RAW: ${{ vars.UPDATES_PATH }}
+      run: |
+        set -euo pipefail
+        UPDATES_PATH="$UPDATES_PATH_RAW"
+        # List binary files (no extension), newest first; delete anything beyond the 3rd
+        ls -t "${UPDATES_PATH}"/plainsight-player-* 2>/dev/null \
+          | grep -v '\.json$' \
+          | tail -n +4 \
+          | while IFS= read -r old; do
+              rm -f "${old}" "${old}.json"
+              echo "Pruned: $(basename "${old}")"
+            done

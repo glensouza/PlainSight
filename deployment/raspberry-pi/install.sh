@@ -100,7 +100,7 @@ After=network-online.target
 What=//${SMB_HOST}/${SMB_PATH}
 Where=/mnt/plainsight
 Type=cifs
-Options=credentials=/etc/samba/plainsight-credentials,ro,vers=3.0
+Options=credentials=/etc/samba/plainsight-credentials,rw,vers=3.0
 
 [Install]
 WantedBy=multi-user.target

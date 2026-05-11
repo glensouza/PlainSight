@@ -149,7 +149,7 @@ After=network-online.target
 What=//SERVER_IP/signage
 Where=/mnt/signage
 Type=cifs
-Options=username=pi,password=secure,ro,vers=3.0
+Options=username=pi,password=secure,rw,vers=3.0
 
 [Install]
 WantedBy=multi-user.target
