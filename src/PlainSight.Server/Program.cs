@@ -200,6 +200,7 @@ app.MapScalarApiReference().RequireAuthorization(new AuthorizeAttribute { Roles 
 
 app.MapDeviceApi();
 app.MapContentApi();
+app.MapUpdateApi();
 
 // Ensure storage directories exist
 using (IServiceScope scope = app.Services.CreateScope())
