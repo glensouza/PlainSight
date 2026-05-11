@@ -8,7 +8,6 @@ on:
       - 'src/PlainSight.Server/**'
       - 'docker-compose.yml'
       - '.github/workflows/server.yml'
-      - 'docs/**'
   workflow_dispatch:
 
 env:
