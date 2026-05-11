@@ -247,6 +247,27 @@ else
                             <label class="form-label fw-bold">End Time</label>
                             <input type="time" class="form-control" @bind="formModel.EndTime" />
                         </div>
+
+                        <div class="col-12">
+                            <hr class="my-1" />
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="autoSsEnabled"
+                                       checked="@formModel.AutoScreenshotEnabled"
+                                       @onchange="OnAutoScreenshotToggled" />
+                                <label class="form-check-label fw-bold" for="autoSsEnabled">Auto-screenshot on content change</label>
+                            </div>
+                        </div>
+                        @if (formModel.AutoScreenshotEnabled)
+                        {
+                            <div class="col-md-6">
+                                <label class="form-label">Number of shots</label>
+                                <input type="number" class="form-control" min="1" max="20" @bind="formModel.ScreenshotBurstCount" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Seconds between shots</label>
+                                <input type="number" class="form-control" min="1" max="300" @bind="formModel.ScreenshotBurstIntervalSeconds" />
+                            </div>
+                        }
                     </div>
                 </div>
                 <div class="modal-footer border-0 p-4 pt-0">
@@ -339,7 +360,10 @@ else
             StartTime = s.StartTime,
             EndTime = s.EndTime,
             Priority = s.Priority,
-            IsActive = s.IsActive
+            IsActive = s.IsActive,
+            AutoScreenshotEnabled = s.AutoScreenshotEnabled,
+            ScreenshotBurstCount = s.ScreenshotBurstCount,
+            ScreenshotBurstIntervalSeconds = s.ScreenshotBurstIntervalSeconds
         };
         showForm = true;
     }
@@ -348,6 +372,16 @@ else
     {
         showForm = false;
         showGroupDropdown = false;
+    }
+
+    private void OnAutoScreenshotToggled(ChangeEventArgs e)
+    {
+        formModel.AutoScreenshotEnabled = (bool)e.Value!;
+        if (formModel.AutoScreenshotEnabled)
+        {
+            if (formModel.ScreenshotBurstCount < 1) { formModel.ScreenshotBurstCount = 3; }
+            if (formModel.ScreenshotBurstIntervalSeconds < 1) { formModel.ScreenshotBurstIntervalSeconds = 10; }
+        }
     }
 
     private void ToggleGroupDropdown() => showGroupDropdown = !showGroupDropdown;
@@ -371,6 +405,11 @@ else
     private async Task SaveSchedule()
     {
         saving = true;
+        if (formModel.AutoScreenshotEnabled)
+        {
+            formModel.ScreenshotBurstCount = Math.Max(1, formModel.ScreenshotBurstCount);
+            formModel.ScreenshotBurstIntervalSeconds = Math.Max(1, formModel.ScreenshotBurstIntervalSeconds);
+        }
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
@@ -395,6 +434,9 @@ else
                 entity.EndTime = formModel.EndTime;
                 entity.Priority = formModel.Priority;
                 entity.IsActive = formModel.IsActive;
+                entity.AutoScreenshotEnabled = formModel.AutoScreenshotEnabled;
+                entity.ScreenshotBurstCount = formModel.ScreenshotBurstCount;
+                entity.ScreenshotBurstIntervalSeconds = formModel.ScreenshotBurstIntervalSeconds;
                 entity.UpdatedAt = DateTime.UtcNow;
 
                 // Sync groups
@@ -413,6 +455,9 @@ else
                     EndTime = formModel.EndTime,
                     Priority = formModel.Priority,
                     IsActive = formModel.IsActive,
+                    AutoScreenshotEnabled = formModel.AutoScreenshotEnabled,
+                    ScreenshotBurstCount = formModel.ScreenshotBurstCount,
+                    ScreenshotBurstIntervalSeconds = formModel.ScreenshotBurstIntervalSeconds,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow,
                     TargetGroups = formModel.TargetGroups.Select(g => new ScheduleTargetGroup { GroupName = g }).ToList()
@@ -521,5 +566,8 @@ else
         public TimeOnly EndTime { get; set; } = new(23, 59, 59);
         public int Priority { get; set; } = 1;
         public bool IsActive { get; init; } = true;
+        public bool AutoScreenshotEnabled { get; set; }
+        public int ScreenshotBurstCount { get; set; } = 3;
+        public int ScreenshotBurstIntervalSeconds { get; set; } = 10;
     }
 }

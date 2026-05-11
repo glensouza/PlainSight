@@ -94,6 +94,7 @@ public static class DeviceApi
                 }
 
                 // Update Status
+                string? previouslyPlaying = device.CurrentlyPlaying;
                 device.LastSeen = DateTime.UtcNow;
                 device.CurrentVersion = data.AppVersion;
                 device.CurrentlyPlaying = data.CurrentFileName;
@@ -106,8 +107,9 @@ public static class DeviceApi
                 PlayerVersion? versionRecord = await context.PlayerVersions
                     .FirstOrDefaultAsync(v => v.VersionNumber == targetVersion, ct);
 
-                // Get scheduled playlist
-                Playlist? activePlaylist = await scheduleService.GetActivePlaylistAsync(device.Group, ct);
+                // Get active schedule and extract its playlist
+                Schedule? activeSchedule = await scheduleService.GetActiveScheduleAsync(device.Group, ct);
+                Playlist? activePlaylist = activeSchedule?.Playlist;
 
                 // Resolve live mode: explicit override wins, otherwise auto-switch.
                 int sourceStaleness = configuration.GetValue("Ndi:StalenessSeconds", 60);
@@ -148,6 +150,13 @@ public static class DeviceApi
                     }
                 }
 
+                // Detect content change for auto-screenshot burst (per-schedule setting)
+                bool contentChanged = !string.IsNullOrEmpty(data.CurrentFileName)
+                    && data.CurrentFileName != previouslyPlaying;
+                bool burstEnabled = contentChanged && (activeSchedule?.AutoScreenshotEnabled ?? false);
+                int? burstCount = burstEnabled ? Math.Max(1, activeSchedule!.ScreenshotBurstCount) : null;
+                int? burstInterval = burstEnabled ? Math.Max(1, activeSchedule!.ScreenshotBurstIntervalSeconds) : null;
+
                 // Prepare response
                 int logMinLevel = configuration.GetValue("Logging:PlayerMinLevel", (int)LogLevel.Warning);
                 int logShipInterval = configuration.GetValue("Logging:PlayerShipIntervalSeconds", 60);
@@ -174,7 +183,9 @@ public static class DeviceApi
                     LiveMode = liveMode,
                     NdiSourceName = liveSourceName,
                     LogMinLevel = logMinLevel,
-                    LogShipIntervalSeconds = logShipInterval
+                    LogShipIntervalSeconds = logShipInterval,
+                    ScreenshotBurstCount = burstCount,
+                    ScreenshotBurstIntervalSeconds = burstInterval
                 };
 
                 // Clear the request flag in the database AFTER we have captured the value for the response.

@@ -30,4 +30,14 @@ public class HeartbeatResponse
     /// Null means no change.
     /// </summary>
     public int? LogShipIntervalSeconds { get; set; }
+
+    /// <summary>
+    /// Number of screenshots to capture after a content-change event. Null or 0 means no burst.
+    /// </summary>
+    public int? ScreenshotBurstCount { get; set; }
+
+    /// <summary>
+    /// Seconds between each screenshot in the burst triggered by a content-change event.
+    /// </summary>
+    public int? ScreenshotBurstIntervalSeconds { get; set; }
 }
