@@ -369,7 +369,7 @@ public class ObsDiscoveryService(
 
         if (this.IsLiveActive())
         {
-            await this.TouchNdiSourceAsync(ndiSourceName, cancellationToken);
+            await this.TouchNdiSourceAsync(ndiSourceName ?? this.resolvedNdiOutputName, cancellationToken);
         }
     }
 
@@ -523,7 +523,7 @@ public class ObsDiscoveryService(
 
         if (this.IsLiveActive())
         {
-            await this.TouchNdiSourceAsync(ndiSourceName, cancellationToken);
+            await this.TouchNdiSourceAsync(ndiSourceName ?? this.resolvedNdiOutputName, cancellationToken);
         }
     }
 
@@ -533,6 +533,14 @@ public class ObsDiscoveryService(
         await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         NdiSource? source;
+
+        // Extract IP from WebSocket URL if possible
+        string? obsIp = null;
+        string? url = configuration["OBS:WebSocketUrl"];
+        if (!string.IsNullOrWhiteSpace(url) && Uri.TryCreate(url, UriKind.Absolute, out Uri? uri))
+        {
+            obsIp = uri.Host;
+        }
 
         if (!string.IsNullOrWhiteSpace(sourceName))
         {
@@ -547,24 +555,37 @@ public class ObsDiscoveryService(
                 source = new NdiSource
                 {
                     ServiceName = sourceName,
+                    IpAddress = obsIp,
+                    Port = 5960,
                     FirstSeenUtc = now,
                     LastSeenUtc = now,
                     IsManual = true,
                     IsDefault = !hasDefault
                 };
                 context.NdiSources.Add(source);
-                logger.LogInformation("OBS: auto-created NDI source entry '{SourceName}' (Default: {IsDefault})", sourceName, source.IsDefault);
+                logger.LogInformation("OBS: auto-created NDI source entry '{SourceName}' at {Ip} (Default: {IsDefault})", sourceName, obsIp, source.IsDefault);
             }
             else
             {
                 source.LastSeenUtc = now;
+                if (string.IsNullOrEmpty(source.IpAddress) && obsIp != null)
+                {
+                    source.IpAddress = obsIp;
+                }
             }
         }
         else
         {
             // Fallback: if no specific source named, touch the default source
             source = await context.NdiSources.FirstOrDefaultAsync(s => s.IsDefault, cancellationToken);
-            source?.LastSeenUtc = now;
+            if (source != null)
+            {
+                source.LastSeenUtc = now;
+                if (string.IsNullOrEmpty(source.IpAddress) && obsIp != null)
+                {
+                    source.IpAddress = obsIp;
+                }
+            }
         }
 
         await context.SaveChangesAsync(cancellationToken);
