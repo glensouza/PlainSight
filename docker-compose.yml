@@ -30,6 +30,7 @@ services:
       - ConnectionStrings__plainsightdb=Host=postgres;Database=plainsightdb;Username=plainsight;Password=${POSTGRES_PASSWORD}
       - OBS__WebSocketUrl=${OBS_WEBSOCKET_URL}
       - OBS__WebSocketPassword=${OBS_WEBSOCKET_PASSWORD}
+      - Alerts__Email__Password=${ALERTS_EMAIL_PASSWORD}
     ports:
       - "8080:8080"
     volumes:

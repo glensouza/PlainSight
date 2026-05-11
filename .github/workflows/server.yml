@@ -74,6 +74,7 @@ jobs:
         PGADMIN_DEFAULT_PASSWORD: ${{ secrets.PGADMIN_DEFAULT_PASSWORD }}
         OBS_WEBSOCKET_URL: ${{ secrets.OBS_WEBSOCKET_URL }}
         OBS_WEBSOCKET_PASSWORD: ${{ secrets.OBS_WEBSOCKET_PASSWORD }}
+        ALERTS_EMAIL_PASSWORD: ${{ secrets.ALERTS_EMAIL_PASSWORD }}
       run: |
         # Backup the current 'current' tag to 'previous'
         docker tag ${{ env.IMAGE_NAME }}:current ${{ env.IMAGE_NAME }}:previous || true
