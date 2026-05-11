@@ -9,12 +9,24 @@ public class VersionService(IDbContextFactory<PlainSightDbContext> dbFactory, IL
 {
     public string GetServerVersion()
     {
+        Version? version = Assembly.GetExecutingAssembly().GetName().Version;
+        if (version != null && version is { Major: > 0 })
+        {
+            return $"v{version.Major}.{version.Minor}.{version.Build}";
+        }
+
         AssemblyInformationalVersionAttribute? attribute = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>();
 
-        string version = attribute?.InformationalVersion ?? "1.0.0";
+        string infoVersion = attribute?.InformationalVersion ?? "1.0.0";
+        // Strip the commit hash if it exists (e.g. 1.0.0+abc1234 -> 1.0.0)
+        int plusIndex = infoVersion.IndexOf('+');
+        if (plusIndex > 0)
+        {
+            infoVersion = infoVersion[..plusIndex];
+        }
 
-        return $"v{version}";
+        return $"v{infoVersion}";
     }
 
     public async Task<string> GetTargetVersionAsync(string deviceGroup, CancellationToken cancellationToken = default)

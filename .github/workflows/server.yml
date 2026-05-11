@@ -32,7 +32,9 @@ jobs:
       run: |
         BUILD_TAG="1.0.${{ github.run_number }}"
         echo "BUILD_TAG=${BUILD_TAG}" >> $GITHUB_ENV
-        docker build -t ${{ env.IMAGE_NAME }}:${BUILD_TAG} -f src/PlainSight.Server/Dockerfile .
+        docker build -t ${{ env.IMAGE_NAME }}:${BUILD_TAG} \
+          --build-arg BUILD_VERSION=${BUILD_TAG} \
+          -f src/PlainSight.Server/Dockerfile .
 
     - name: Deploy and Verify
       env:
