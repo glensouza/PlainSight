@@ -22,6 +22,7 @@ services:
   plainsight-server:
     image: plainsight-server:current
     container_name: plainsight-server
+    shm_size: '2gb'
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080

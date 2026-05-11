@@ -273,9 +273,14 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
             "--disable-setuid-sandbox",
             "--disable-dev-shm-usage",
             "--disable-gpu",
-            "--disable-blink-features=AutomationControlled"
+            "--disable-blink-features=AutomationControlled",
+            "--disable-extensions",
+            "--no-first-run",
+            "--disable-background-networking",
+            "--disable-default-apps",
+            "--disable-sync"
         ];
-        return new LaunchOptions()
+        return new LaunchOptions
         {
             Headless = true,
             Args = args,
