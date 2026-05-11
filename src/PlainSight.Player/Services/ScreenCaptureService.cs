@@ -44,7 +44,8 @@ public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
             {
                 FileName = "grim",
                 Arguments = tempFile,
-                UseShellExecute = false
+                UseShellExecute = false,
+                RedirectStandardError = true
             });
 
             if (process == null)
@@ -53,11 +54,13 @@ public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
                 return [];
             }
 
+            string stderr = await process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync();
 
             if (process.ExitCode != 0)
             {
-                logger.LogError("grim exited with code {ExitCode}", process.ExitCode);
+                string detail = string.IsNullOrWhiteSpace(stderr) ? "(no output)" : stderr.Trim();
+                logger.LogError("grim exited with code {ExitCode}: {Detail} — is a display connected and powered on?", process.ExitCode, detail);
                 return [];
             }
 
