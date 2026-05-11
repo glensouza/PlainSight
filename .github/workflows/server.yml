@@ -45,7 +45,7 @@ jobs:
         docker tag ${{ env.IMAGE_NAME }}:${{ env.SHA_TAG }} ${{ env.IMAGE_NAME }}:current
         
         echo "Starting deployment of ${{ env.SHA_TAG }}..."
-        docker compose up -d plainsight-server
+        docker compose up -d
         
         echo "Waiting for health check..."
         MAX_RETRIES=20
