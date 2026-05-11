@@ -167,8 +167,10 @@ EOF
 chmod +x ~/.config/labwc/autostart
 
 # 7. Enable services
-echo "Configuring boot target and enabling services..."
+echo "Configuring boot target, autologin, and enabling services..."
 sudo systemctl set-default graphical.target
+# Enable autologin to CLI as 'pi' user
+sudo raspi-config nonint do_boot_behaviour B2
 sudo systemctl daemon-reload
 sudo systemctl enable mnt-plainsight.automount
 sudo systemctl enable plainsight.service
