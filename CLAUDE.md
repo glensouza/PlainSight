@@ -58,7 +58,8 @@ docker compose up -d
 - `src/PlainSight.AppHost/AppHost.cs` — Aspire wiring; PostgreSQL uses `ContainerLifetime.Persistent`
 - `src/PlainSight.Server/Data/PlainSightDbContext.cs` — EF Core context with `Device`, `ContentItem`, `Playlist`, `PlaylistItem`
 - `src/PlainSight.Server/Program.cs` — Service registration; DB migrations run at startup via `Migrate()`
-- `src/PlainSight.Server/Services/VersionService.cs` — Currently hardcoded to `"1.0.0"`; canary deployment logic is a TODO
+- `src/PlainSight.Server/Services/VersionService.cs` — Reads version from assembly metadata set by CI; canary deployment logic is a TODO
+- `version.txt` — Single source of truth for `MAJOR.MINOR`; edit this file to bump the major or minor version
 
 ### Data flow
 
@@ -98,6 +99,30 @@ All pages in `src/PlainSight.Server/Components/Pages/` use `@rendermode Interact
 |---|---|---|
 | `ServerUrl` | `http://plainsight-server` | PlainSight.Player |
 | `ContentPath` | `/mnt/signage/content` | PlainSight.Player |
+
+### Versioning
+
+Version format is `MAJOR.MINOR.PATCH` (e.g., `1.0.3`).
+
+**`version.txt`** (repo root) contains only the `MAJOR.MINOR` string (e.g., `1.0`). Editing this file and pushing to `main` triggers both workflows and resets the patch counter to `0`.
+
+**Patch counter** is tracked per-workflow in state files on the self-hosted runner:
+
+| Workflow | State file |
+|---|---|
+| Server | `~/.plainsight/server-build-state` |
+| Player | `~/.plainsight/player-build-state` |
+
+Each state file stores `MAJOR_MINOR=x.y` and `PATCH=n`. On each run the CI reads the file, increments `PATCH` if `MAJOR_MINOR` matches, or resets `PATCH` to `0` if it changed.
+
+**To bump the version:** edit `version.txt`, commit, and push. Both workflows will start their patch counter at `0` for the new `MAJOR.MINOR` on their next run.
+
+**To manually seed or reset a counter** (e.g., after re-imaging the runner): edit the state file directly on the runner, e.g.:
+```bash
+mkdir -p ~/.plainsight
+printf 'MAJOR_MINOR=1.1\nPATCH=0\n' > ~/.plainsight/server-build-state
+printf 'MAJOR_MINOR=1.1\nPATCH=0\n' > ~/.plainsight/player-build-state
+```
 
 ## Coding Rules
 

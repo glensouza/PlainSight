@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/PlainSight.Shared/**'
       - 'src/PlainSight.Player/**'
+      - 'version.txt'
       - '.github/workflows/player.yml'
   workflow_dispatch:
 
@@ -32,9 +33,30 @@ jobs:
 
     - name: Set Version
       run: |
-        VERSION="1.0.${{ github.run_number }}"
+        set -euo pipefail
+        MAJOR_MINOR=$(cat version.txt | tr -d '[:space:]')
+        STATE_FILE="${HOME}/.plainsight/player-build-state"
+        mkdir -p "${HOME}/.plainsight"
+
+        PREV_MAJOR_MINOR=""
+        PREV_PATCH=-1
+        if [ -f "${STATE_FILE}" ]; then
+          PREV_MAJOR_MINOR=$(grep "^MAJOR_MINOR=" "${STATE_FILE}" | cut -d= -f2 | head -1 || echo "")
+          PREV_PATCH=$(grep "^PATCH=" "${STATE_FILE}" | cut -d= -f2 | head -1 || echo "-1")
+        fi
+
+        if [ "${MAJOR_MINOR}" = "${PREV_MAJOR_MINOR}" ]; then
+          PATCH=$((PREV_PATCH + 1))
+        else
+          PATCH=0
+        fi
+
+        printf 'MAJOR_MINOR=%s\nPATCH=%d\n' "${MAJOR_MINOR}" "${PATCH}" > "${STATE_FILE}"
+
+        VERSION="${MAJOR_MINOR}.${PATCH}"
         echo "VERSION=${VERSION}" >> $GITHUB_ENV
         echo "FILE_NAME=plainsight-player-${VERSION}" >> $GITHUB_ENV
+        echo "Building version ${VERSION}"
 
     - name: Restore dependencies
       run: dotnet restore
@@ -48,6 +70,7 @@ jobs:
           -p:PublishSingleFile=true \
           -p:DebugType=None \
           -p:DebugSymbols=false \
+          -p:Version=${{ env.VERSION }} \
           -o ./publish/player
 
     - name: Validate UPDATES_PATH

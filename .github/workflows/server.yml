@@ -7,6 +7,7 @@ on:
       - 'src/PlainSight.Shared/**'
       - 'src/PlainSight.Server/**'
       - 'docker-compose.yml'
+      - 'version.txt'
       - '.github/workflows/server.yml'
   workflow_dispatch:
 
@@ -28,12 +29,37 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Set Version
+      run: |
+        set -euo pipefail
+        MAJOR_MINOR=$(cat version.txt | tr -d '[:space:]')
+        STATE_FILE="${HOME}/.plainsight/server-build-state"
+        mkdir -p "${HOME}/.plainsight"
+
+        PREV_MAJOR_MINOR=""
+        PREV_PATCH=-1
+        if [ -f "${STATE_FILE}" ]; then
+          PREV_MAJOR_MINOR=$(grep "^MAJOR_MINOR=" "${STATE_FILE}" | cut -d= -f2 | head -1 || echo "")
+          PREV_PATCH=$(grep "^PATCH=" "${STATE_FILE}" | cut -d= -f2 | head -1 || echo "-1")
+        fi
+
+        if [ "${MAJOR_MINOR}" = "${PREV_MAJOR_MINOR}" ]; then
+          PATCH=$((PREV_PATCH + 1))
+        else
+          PATCH=0
+        fi
+
+        printf 'MAJOR_MINOR=%s\nPATCH=%d\n' "${MAJOR_MINOR}" "${PATCH}" > "${STATE_FILE}"
+
+        BUILD_TAG="${MAJOR_MINOR}.${PATCH}"
+        echo "BUILD_TAG=${BUILD_TAG}" >> $GITHUB_ENV
+        echo "MAJOR_MINOR=${MAJOR_MINOR}" >> $GITHUB_ENV
+        echo "Building version ${BUILD_TAG}"
+
     - name: Build Docker image
       run: |
-        BUILD_TAG="1.0.${{ github.run_number }}"
-        echo "BUILD_TAG=${BUILD_TAG}" >> $GITHUB_ENV
-        docker build -t ${{ env.IMAGE_NAME }}:${BUILD_TAG} \
-          --build-arg BUILD_VERSION=${BUILD_TAG} \
+        docker build -t ${{ env.IMAGE_NAME }}:${{ env.BUILD_TAG }} \
+          --build-arg BUILD_VERSION=${{ env.BUILD_TAG }} \
           -f src/PlainSight.Server/Dockerfile .
 
     - name: Deploy and Verify
@@ -45,41 +71,41 @@ jobs:
         OBS_WEBSOCKET_URL: ${{ secrets.OBS_WEBSOCKET_URL }}
         OBS_WEBSOCKET_PASSWORD: ${{ secrets.OBS_WEBSOCKET_PASSWORD }}
       run: |
-        # Save the current tag if it exists for rollback
-        PREVIOUS_TAG=$(docker images ${{ env.IMAGE_NAME }} --format "{{.Tag}}" | grep -v "latest" | grep -v "current" | head -n 1 || echo "")
-        
         # Backup the current 'current' tag to 'previous'
         docker tag ${{ env.IMAGE_NAME }}:current ${{ env.IMAGE_NAME }}:previous || true
-        
+
         # Tag the new build as 'current'
         docker tag ${{ env.IMAGE_NAME }}:${{ env.BUILD_TAG }} ${{ env.IMAGE_NAME }}:current
-        
+
         echo "Starting deployment of ${{ env.BUILD_TAG }}..."
         docker compose up -d
-        
+
         echo "Waiting for health check..."
         MAX_RETRIES=20
         COUNT=0
         SUCCESS=0
-        
+
         while [ $COUNT -lt $MAX_RETRIES ]; do
-          # -S (show error), -f (fail on error), -v (verbose if needed)
           if curl -s -f http://localhost:8080/health; then
             SUCCESS=1
             break
           fi
           echo "Health check failed, retrying in 10s ($(($COUNT+1))/$MAX_RETRIES)..."
-          # Optional: Print container logs to see why it's failing
           docker logs --tail 20 plainsight-server || true
           sleep 10
           COUNT=$(($COUNT+1))
         done
-        
+
         if [ $SUCCESS -eq 1 ]; then
           echo "Deployment successful!"
-          # Cleanup: Keep only 5 most recent images (excluding 'current', 'previous')
-          # Matches tags like 1.0.1, 1.0.2, etc.
-          docker images ${{ env.IMAGE_NAME }} --format "{{.Tag}}" | grep -E "^1\.0\.[0-9]+$" | sort -V -r | tail -n +6 | xargs -I {} docker rmi ${{ env.IMAGE_NAME }}:{} || true
+          # Cleanup: Keep only 5 most recent images (excluding 'current', 'previous').
+          # Escape dots in MAJOR_MINOR for use as a regex pattern.
+          ESCAPED=$(printf '%s' "${{ env.MAJOR_MINOR }}" | sed 's/\./\\./g')
+          docker images ${{ env.IMAGE_NAME }} --format "{{.Tag}}" \
+            | grep -E "^${ESCAPED}\.[0-9]+$" \
+            | sort -V -r \
+            | tail -n +6 \
+            | xargs -I {} docker rmi ${{ env.IMAGE_NAME }}:{} || true
         else
           echo "::error::Deployment failed health check! Rolling back..."
           docker tag ${{ env.IMAGE_NAME }}:previous ${{ env.IMAGE_NAME }}:current
