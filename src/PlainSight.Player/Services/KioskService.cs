@@ -51,6 +51,15 @@ public class KioskService(
         // was set by our config, Aspire's dynamic allocation, or ASPNETCORE_URLS.
         IServerAddressesFeature? addressFeature = server.Features.Get<IServerAddressesFeature>();
         string baseUrl = addressFeature?.Addresses.FirstOrDefault() ?? "http://localhost:5555";
+
+        // Wildcard bind addresses ([::]  0.0.0.0  *) are valid for Kestrel but not for a
+        // browser client — translate them to localhost so Chromium can actually connect.
+        Uri uri = new(baseUrl);
+        if (uri.Host is "[::]" or "0.0.0.0" or "*")
+        {
+            baseUrl = new UriBuilder(uri) { Host = "localhost" }.Uri.ToString().TrimEnd('/');
+        }
+
         string playerUrl = $"{baseUrl}/player";
 
         if (!OperatingSystem.IsLinux())
