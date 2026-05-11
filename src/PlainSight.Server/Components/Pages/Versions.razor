@@ -275,7 +275,8 @@
                 return;
             }
 
-            // 2. Delete manifest FIRST to prevent the reconciler from re-ingesting it
+            // 2. Attempt to delete manifest. 
+            // If it exists, we must delete it to prevent re-ingestion.
             if (File.Exists(manifestPath))
             {
                 try
@@ -290,7 +291,8 @@
                 }
             }
 
-            // 3. Attempt to delete binary
+            // 3. Attempt to delete binary. 
+            // If it fails (SMB lock), we'll still clean the DB record since the manifest is gone.
             bool binaryDeleteFailed = false;
             if (File.Exists(filePath))
             {
