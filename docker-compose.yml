@@ -26,6 +26,7 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
       - ConnectionStrings__plainsightdb=Host=postgres;Database=plainsightdb;Username=plainsight;Password=${POSTGRES_PASSWORD}
+      - NDI_DISCOVERY_SERVER=${NDI_DISCOVERY_SERVER}
     ports:
       - "8080:8080"
     volumes:
