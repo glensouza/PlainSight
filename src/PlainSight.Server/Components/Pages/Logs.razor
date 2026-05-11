@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject ILogger<Logs> Logger
+@inject IJSRuntime JSRuntime
 @implements IDisposable
 
 <PageTitle>Logs — PlainSight</PageTitle>
@@ -125,15 +126,22 @@ else
                         <td><small class="text-muted">@(entry.CategoryName ?? entry.SourceId)</small></td>
                         <td><span class="badge @LevelBadgeClass(entry.Level)">@entry.Level</span></td>
                         <td>
-                            <span class="small">@entry.Message</span>
-                            @if (!string.IsNullOrEmpty(entry.Exception) && expandedIds.Contains(entry.Id))
-                            {
-                                <pre class="mt-1 mb-0 small text-danger" style="white-space:pre-wrap;font-size:0.75em">@entry.Exception</pre>
-                            }
-                            @if (!string.IsNullOrEmpty(entry.Exception) && !expandedIds.Contains(entry.Id))
-                            {
-                                <span class="text-muted ms-2 small">(has exception — click to expand)</span>
-                            }
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div @onclick:stopPropagation="true" @onclick:preventDefault="false" class="flex-grow-1">
+                                    <span class="small">@entry.Message</span>
+                                    @if (!string.IsNullOrEmpty(entry.Exception) && expandedIds.Contains(entry.Id))
+                                    {
+                                        <pre class="mt-1 mb-0 small text-danger" style="white-space:pre-wrap;font-size:0.75em">@entry.Exception</pre>
+                                    }
+                                    @if (!string.IsNullOrEmpty(entry.Exception) && !expandedIds.Contains(entry.Id))
+                                    {
+                                        <span class="text-muted ms-2 small">(has exception — click to expand)</span>
+                                    }
+                                </div>
+                                <button class="btn btn-xs btn-outline-secondary ms-2" @onclick="() => CopyToClipboard(entry)" @onclick:stopPropagation="true" title="Copy to clipboard">
+                                    <i class="bi bi-clipboard"></i>
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 }
@@ -432,6 +440,24 @@ else
         "Information" => "bg-info text-dark",
         _ => "bg-secondary"
     };
+
+    private async Task CopyToClipboard(LogEntry entry)
+    {
+        string text = $"[{entry.Timestamp:yyyy-MM-dd HH:mm:ss}] [{entry.Level}] {entry.Message}";
+        if (!string.IsNullOrEmpty(entry.Exception))
+        {
+            text += $"\n\nException:\n{entry.Exception}";
+        }
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to copy log to clipboard");
+        }
+    }
 
     public void Dispose()
     {
