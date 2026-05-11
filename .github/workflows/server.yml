@@ -30,9 +30,9 @@ jobs:
 
     - name: Build Docker image
       run: |
-        SHA_TAG=$(git rev-parse --short HEAD)
-        echo "SHA_TAG=${SHA_TAG}" >> $GITHUB_ENV
-        docker build -t ${{ env.IMAGE_NAME }}:${SHA_TAG} -f src/PlainSight.Server/Dockerfile .
+        BUILD_TAG="1.0.${{ github.run_number }}"
+        echo "BUILD_TAG=${BUILD_TAG}" >> $GITHUB_ENV
+        docker build -t ${{ env.IMAGE_NAME }}:${BUILD_TAG} -f src/PlainSight.Server/Dockerfile .
 
     - name: Deploy and Verify
       env:
@@ -48,9 +48,9 @@ jobs:
         docker tag ${{ env.IMAGE_NAME }}:current ${{ env.IMAGE_NAME }}:previous || true
         
         # Tag the new build as 'current'
-        docker tag ${{ env.IMAGE_NAME }}:${{ env.SHA_TAG }} ${{ env.IMAGE_NAME }}:current
+        docker tag ${{ env.IMAGE_NAME }}:${{ env.BUILD_TAG }} ${{ env.IMAGE_NAME }}:current
         
-        echo "Starting deployment of ${{ env.SHA_TAG }}..."
+        echo "Starting deployment of ${{ env.BUILD_TAG }}..."
         docker compose up -d
         
         echo "Waiting for health check..."
