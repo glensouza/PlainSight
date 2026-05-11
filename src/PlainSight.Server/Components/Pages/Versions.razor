@@ -57,10 +57,18 @@
                     <div class="list-group mb-0">
                         @foreach (PlayerVersion v in versions)
                         {
-                            <div class="list-group-item">
+                            string updatesPath = this.Configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
+                            bool existsOnDisk = File.Exists(Path.Combine(updatesPath, v.FileName));
+                            <div class="list-group-item @(existsOnDisk ? "" : "list-group-item-warning opacity-75")">
                                 <div class="d-flex justify-content-between align-items-center">
                                     <div>
-                                        <h6 class="mb-1"><code>@v.VersionNumber</code></h6>
+                                        <h6 class="mb-1">
+                                            <code>@v.VersionNumber</code>
+                                            @if (!existsOnDisk)
+                                            {
+                                                <span class="badge bg-warning text-dark ms-2"><i class="bi bi-exclamation-triangle"></i> Missing from disk</span>
+                                            }
+                                        </h6>
                                         <small class="text-muted">
                                             @v.UploadedAt.ToLocalString("yyyy-MM-dd HH:mm")
                                             &middot; @FormatBytes(v.FileSizeBytes)
