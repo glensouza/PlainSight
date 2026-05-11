@@ -49,6 +49,7 @@ sudo apt install -y \
   cifs-utils \
   grim \
   swayidle \
+  swaybg \
   wlopm \
   curl
 
@@ -158,16 +159,73 @@ EOF
 
 cat > ~/.config/labwc/autostart << 'EOF'
 #!/bin/bash
+# Solid black desktop so there is no flash between Plymouth exit and the player window appearing
+swaybg -c 000000 &
+
 # Disable screen sleep/power saving
 swayidle -w timeout 31536000 'wlopm --off \*' resume 'wlopm --on \*' &
-
-# The player is now managed by systemd --user, so we don't start it here.
-# But we ensure the user session is ready.
 EOF
 
 chmod +x ~/.config/labwc/autostart
 
-# 7. Enable services
+# 7. Configure silent boot for signage displays
+echo "Configuring silent boot..."
+
+# Determine boot partition path (Bookworm uses /boot/firmware; older Pi OS uses /boot)
+if [ -d "/boot/firmware" ]; then
+  BOOT_DIR="/boot/firmware"
+else
+  BOOT_DIR="/boot"
+fi
+
+# Disable the GPU firmware rainbow splash shown before the kernel loads
+CONFIG_FILE="$BOOT_DIR/config.txt"
+if grep -q "^disable_splash" "$CONFIG_FILE"; then
+  sudo sed -i 's/^disable_splash=.*/disable_splash=1/' "$CONFIG_FILE"
+elif grep -q "^#disable_splash" "$CONFIG_FILE"; then
+  sudo sed -i 's/^#disable_splash.*/disable_splash=1/' "$CONFIG_FILE"
+else
+  printf '\n# Suppress firmware boot splash\ndisable_splash=1\n' | sudo tee -a "$CONFIG_FILE" > /dev/null
+fi
+
+# Enable Plymouth via raspi-config (installs packages, adds 'quiet splash' to cmdline, builds initramfs)
+echo "Enabling Plymouth boot splash (this may take a couple of minutes)..."
+sudo raspi-config nonint do_boot_splash 0
+
+# Append additional parameters that raspi-config doesn't set
+CMDLINE_FILE="$BOOT_DIR/cmdline.txt"
+CMDLINE=$(cat "$CMDLINE_FILE")
+for PARAM in loglevel=0 logo.nologo vt.global_cursor_default=0 systemd.show_status=false; do
+  if ! echo "$CMDLINE" | grep -qw "$PARAM"; then
+    CMDLINE="$CMDLINE $PARAM"
+  fi
+done
+echo "$CMDLINE" | sudo tee "$CMDLINE_FILE" > /dev/null
+
+# Create PlainSight Plymouth theme — solid black screen, no distracting animation
+THEME_DIR="/usr/share/plymouth/themes/plainsight"
+sudo mkdir -p "$THEME_DIR"
+
+sudo tee "$THEME_DIR/plainsight.plymouth" > /dev/null << 'EOF'
+[Plymouth Theme]
+Name=PlainSight
+Description=PlainSight Digital Signage
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/plainsight
+ScriptFile=/usr/share/plymouth/themes/plainsight/plainsight.script
+EOF
+
+sudo tee "$THEME_DIR/plainsight.script" > /dev/null << 'EOF'
+Window.SetBackgroundTopColor(0.0, 0.0, 0.0);
+Window.SetBackgroundBottomColor(0.0, 0.0, 0.0);
+EOF
+
+echo "Applying PlainSight Plymouth theme (rebuilding initramfs, please wait)..."
+sudo plymouth-set-default-theme -R plainsight
+
+# 8. Enable services
 echo "Configuring boot target, autologin, and enabling services..."
 sudo systemctl set-default graphical.target
 sudo raspi-config nonint do_boot_behaviour B2
