@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.HttpOverrides;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -94,6 +95,14 @@ builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("player", client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddHttpContextAccessor();
 
+// Configure Forwarded Headers for reverse proxy support
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 WebApplication app = builder.Build();
 
 app.Services.GetRequiredService<ILoggerFactory>()
@@ -148,6 +157,7 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.UseForwardedHeaders();
 app.UseHttpsRedirection();
 
 app.UseAuthentication();
