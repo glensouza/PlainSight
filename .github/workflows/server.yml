@@ -14,6 +14,11 @@ env:
   IMAGE_NAME: plainsight-server
   COMPOSE_PROJECT_NAME: plainsight
 
+# Ensure only one deployment runs at a time and cancel older runs
+concurrency:
+  group: deploy-server
+  cancel-in-progress: true
+
 jobs:
   build-and-deploy:
     runs-on: self-hosted
