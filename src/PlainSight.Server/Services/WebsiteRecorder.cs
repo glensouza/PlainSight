@@ -278,7 +278,8 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
             "--no-first-run",
             "--disable-background-networking",
             "--disable-default-apps",
-            "--disable-sync"
+            "--disable-sync",
+            "--single-process"
         ];
         return new LaunchOptions
         {
