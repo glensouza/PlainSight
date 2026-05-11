@@ -130,9 +130,30 @@ internal sealed partial class ManifestReconciler : IPlayerVersionReconciler
             await this.dbContext.SaveChangesAsync(ct);
             this.logger.LogInformation("Ingested {Count} new player versions.", ingestedCount);
         }
-        else
+
+        // Prune DB records whose binary no longer exists on disk.
+        List<PlayerVersion> allVersions = await this.dbContext.PlayerVersions.ToListAsync(ct);
+        int prunedCount = 0;
+        foreach (PlayerVersion v in allVersions)
         {
-            this.logger.LogDebug("Reconciliation completed. No new versions ingested.");
+            string binaryPath = Path.Combine(this.updatesDir, Path.GetFileName(v.FileName));
+            if (!File.Exists(binaryPath))
+            {
+                this.dbContext.PlayerVersions.Remove(v);
+                prunedCount++;
+                this.logger.LogInformation("Pruned stale version record {Version} — binary not found on disk.", v.VersionNumber);
+            }
+        }
+
+        if (prunedCount > 0)
+        {
+            await this.dbContext.SaveChangesAsync(ct);
+            this.logger.LogInformation("Pruned {Count} stale player version record(s).", prunedCount);
+        }
+
+        if (ingestedCount == 0 && prunedCount == 0)
+        {
+            this.logger.LogDebug("Reconciliation completed. No changes.");
         }
 
         return ingestedCount;

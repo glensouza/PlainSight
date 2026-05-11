@@ -225,9 +225,9 @@
         
         try
         {
-            int ingested = await Reconciler.ReconcileAsync(CancellationToken.None);
-            syncMessage = $"Sync complete. Ingested {ingested} new version(s).";
-            await LoadAll();
+            int ingested = await this.Reconciler.ReconcileAsync(CancellationToken.None);
+            this.syncMessage = ingested > 0 ? $"Sync complete — {ingested} new version(s) ingested." : "Sync complete.";
+            await this.LoadAll();
         }
         catch (Exception ex)
         {
@@ -242,35 +242,36 @@
 
     private async Task DeleteVersion(int id)
     {
-        deletingId = id;
-        loadError = null;
-        syncMessage = null;
+        this.deletingId = id;
+        this.loadError = null;
+        this.syncMessage = null;
         try
         {
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await this.DbFactory.CreateDbContextAsync();
             PlayerVersion? version = await context.PlayerVersions.FindAsync(id);
             if (version == null)
             {
                 return;
             }
 
-            // Check if any group is still using this version
-            bool inUse = await context.DeviceGroupVersions.AnyAsync(g => g.TargetVersion == version.VersionNumber);
-            if (inUse)
-            {
-                loadError = $"Version {version.VersionNumber} is still assigned to one or more groups";
-                return;
-            }
-
-            string updatesPath = Configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
+            string updatesPath = this.Configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
             string safeFileName = Path.GetFileName(version.FileName);
-            
             string filePath = Path.Combine(updatesPath, safeFileName);
-            if (File.Exists(filePath))
+            bool binaryExists = File.Exists(filePath);
+
+            if (binaryExists)
             {
+                // Only block deletion if the binary is still on disk — once it's gone, cleaning the DB record is safe.
+                bool inUse = await context.DeviceGroupVersions.AnyAsync(g => g.TargetVersion == version.VersionNumber);
+                if (inUse)
+                {
+                    this.loadError = $"Version {version.VersionNumber} is still assigned to one or more groups. Reassign those groups first, then delete.";
+                    return;
+                }
+
                 File.Delete(filePath);
             }
-                
+
             string manifestPath = Path.Combine(updatesPath, safeFileName + ".json");
             if (File.Exists(manifestPath))
             {
@@ -279,16 +280,16 @@
 
             context.PlayerVersions.Remove(version);
             await context.SaveChangesAsync();
-            await LoadAll();
+            await this.LoadAll();
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error deleting version {Id}", id);
-            loadError = "Delete failed — see logs for details.";
+            this.Logger.LogError(ex, "Error deleting version {Id}", id);
+            this.loadError = "Delete failed — see logs for details.";
         }
         finally
         {
-            deletingId = null;
+            this.deletingId = null;
         }
     }
 
@@ -393,7 +394,7 @@
         return bytes switch
         {
             >= 1024 * 1024 => $"{bytes / 1024.0 / 1024.0:F1} MB",
-            >= 1024 => $"{bytes / 1024.0 / 1024.0:F1} KB",
+            >= 1024 => $"{bytes / 1024.0:F1} KB",
             _ => $"{bytes} B"
         };
     }
