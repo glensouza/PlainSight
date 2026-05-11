@@ -4,6 +4,6 @@
     protected override void OnInitialized()
     {
         string returnUrl = Uri.EscapeDataString(Navigation.Uri);
-        Navigation.NavigateTo($"/login?returnUrl={returnUrl}", forceLoad: true);
+        Navigation.NavigateTo($"/login?ReturnUrl={returnUrl}", forceLoad: true);
     }
 }

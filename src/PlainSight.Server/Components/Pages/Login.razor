@@ -45,6 +45,9 @@
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
 
+    [SupplyParameterFromQuery(Name = "ReturnUrl")]
+    private string? ReturnUrl { get; set; }
+
     [SupplyParameterFromForm]
     private LoginModel? Model { get; set; }
 
@@ -82,7 +85,10 @@
         ClaimsPrincipal principal = new(identity);
 
         await HttpContext!.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
-        Navigation.NavigateTo(user.MustChangePassword ? "/change-password" : "/", forceLoad: true);
+        string destination = !string.IsNullOrEmpty(this.ReturnUrl) && this.ReturnUrl.StartsWith('/')
+            ? this.ReturnUrl
+            : "/";
+        Navigation.NavigateTo(user.MustChangePassword ? "/change-password" : destination, forceLoad: true);
     }
 
     private sealed class LoginModel
