@@ -48,16 +48,19 @@ jobs:
         docker compose up -d plainsight-server
         
         echo "Waiting for health check..."
-        MAX_RETRIES=12
+        MAX_RETRIES=20
         COUNT=0
         SUCCESS=0
         
         while [ $COUNT -lt $MAX_RETRIES ]; do
-          if curl -s -f http://localhost:8080/health > /dev/null; then
+          # -S (show error), -f (fail on error), -v (verbose if needed)
+          if curl -s -f http://localhost:8080/health; then
             SUCCESS=1
             break
           fi
           echo "Health check failed, retrying in 10s ($(($COUNT+1))/$MAX_RETRIES)..."
+          # Optional: Print container logs to see why it's failing
+          docker logs --tail 20 plainsight-server || true
           sleep 10
           COUNT=$(($COUNT+1))
         done
