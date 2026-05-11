@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "PlainSight Database",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "plainsightdb",
+      "Username": "plainsight",
+      "SSLMode": "prefer",
+      "PassFile": "/tmp/pgpass"
+    }
+  }
+}

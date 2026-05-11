@@ -56,9 +56,17 @@ services:
     container_name: plainsight-pgadmin
     ports:
       - "5050:80"
+    volumes:
+      - ./src/PlainSight.Server/Data/pgadmin_servers.json:/pgadmin4/servers.json
+    entrypoint: >
+      /bin/sh -c "
+      echo \"postgres:5432:plainsightdb:plainsight:$${POSTGRES_PASSWORD}\" > /tmp/pgpass &&
+      chmod 600 /tmp/pgpass &&
+      /entrypoint.sh\"
     environment:
-      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL:?PGADMIN_DEFAULT_EMAIL environment variable is required}
-      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD:?PGADMIN_DEFAULT_PASSWORD environment variable is required}
+      - PGADMIN_DEFAULT_EMAIL=$${PGADMIN_DEFAULT_EMAIL:?PGADMIN_DEFAULT_EMAIL environment variable is required}
+      - PGADMIN_DEFAULT_PASSWORD=$${PGADMIN_DEFAULT_PASSWORD:?PGADMIN_DEFAULT_PASSWORD environment variable is required}
+      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
     networks:
       - plainsight-network
     restart: unless-stopped
