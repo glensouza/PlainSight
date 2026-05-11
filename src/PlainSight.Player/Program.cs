@@ -23,6 +23,11 @@ string idleCachePath = builder.Configuration["IdleCachePath"] ?? "/var/cache/pla
 // On the Pi without Aspire, override ServerUrl in appsettings or env to the real address.
 string serverUrl = builder.Configuration["ServerUrl"] ?? "http://plainsight-server";
 
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenAnyIP(5555);
+});
+
 // Remove the Polly resilience handlers that AddServiceDefaults adds to all clients.
 builder.Services.AddHttpClient<HeartbeatService>(client =>
 {
