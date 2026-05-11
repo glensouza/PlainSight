@@ -440,6 +440,16 @@ select option {
     background-color: var(--ps-bg-2) !important;
     color: var(--ps-text) !important;
 }
+.alert-secondary {
+    background-color: var(--ps-bg-3) !important;
+    border-color: var(--ps-line) !important;
+    color: var(--ps-text-2) !important;
+}
+.alert-info {
+    background-color: var(--ps-cyan-dim) !important;
+    border-color: var(--ps-line-glow) !important;
+    color: var(--ps-cyan) !important;
+}
 .text-dark, .text-body {
     color: var(--ps-text) !important;
 }
