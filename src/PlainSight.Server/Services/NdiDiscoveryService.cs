@@ -29,6 +29,12 @@ public class NdiDiscoveryService(
         TimeSpan scanTimeout = TimeSpan.FromSeconds(configuration.GetValue("Ndi:ScanTimeoutSeconds", 5));
         TimeSpan stalenessWindow = TimeSpan.FromSeconds(configuration.GetValue("Ndi:StalenessSeconds", 60));
 
+        string? discoveryServer = configuration["NDI_DISCOVERY_SERVER"];
+        if (!string.IsNullOrEmpty(discoveryServer))
+        {
+            logger.LogInformation("Using NDI Discovery Server: {Server}", discoveryServer);
+        }
+
         logger.LogInformation(
             "NDI discovery starting. Intervals: scan={ScanInterval}s, timeout={ScanTimeout}s, staleness={Staleness}s",
             scanInterval.TotalSeconds, scanTimeout.TotalSeconds, stalenessWindow.TotalSeconds);
@@ -43,10 +49,22 @@ public class NdiDiscoveryService(
                     
                     try
                     {
-                        IReadOnlyList<IZeroconfHost> hosts = await ZeroconfResolver.ResolveAsync(
-                            protocol,
-                            scanTime: scanTimeout,
-                            cancellationToken: stoppingToken);
+                        IReadOnlyList<IZeroconfHost> hosts;
+                        if (!string.IsNullOrEmpty(discoveryServer))
+                        {
+                            hosts = await ZeroconfResolver.ResolveAsync(
+                                protocol,
+                                scanTime: scanTimeout,
+                                cancellationToken: stoppingToken,
+                                netServiceEndpoints: [new System.Net.IPEndPoint(System.Net.IPAddress.Parse(discoveryServer), 5353)]);
+                        }
+                        else
+                        {
+                            hosts = await ZeroconfResolver.ResolveAsync(
+                                protocol,
+                                scanTime: scanTimeout,
+                                cancellationToken: stoppingToken);
+                        }
 
                         if (hosts.Count > 0)
                         {
