@@ -74,9 +74,9 @@ jobs:
         
         if [ $SUCCESS -eq 1 ]; then
           echo "Deployment successful!"
-          # Cleanup: Keep only 5 most recent images (excluding 'current', 'previous', and intermediate builds)
-          # We list tags, sort them, and remove all but the top 5
-          docker images ${{ env.IMAGE_NAME }} --format "{{.Tag}}" | grep -E "^[a-f0-9]{7}$" | sort -r | tail -n +6 | xargs -I {} docker rmi ${{ env.IMAGE_NAME }}:{} || true
+          # Cleanup: Keep only 5 most recent images (excluding 'current', 'previous')
+          # Matches tags like 1.0.1, 1.0.2, etc.
+          docker images ${{ env.IMAGE_NAME }} --format "{{.Tag}}" | grep -E "^1\.0\.[0-9]+$" | sort -V -r | tail -n +6 | xargs -I {} docker rmi ${{ env.IMAGE_NAME }}:{} || true
         else
           echo "::error::Deployment failed health check! Rolling back..."
           docker tag ${{ env.IMAGE_NAME }}:previous ${{ env.IMAGE_NAME }}:current
