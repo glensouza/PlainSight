@@ -276,7 +276,8 @@
             }
 
             // 2. Attempt to delete manifest. 
-            // If it exists, we must delete it to prevent re-ingestion.
+            // If it exists, we MUST try to delete it to prevent re-ingestion.
+            bool manifestDeleteFailed = false;
             if (File.Exists(manifestPath))
             {
                 try
@@ -285,14 +286,12 @@
                 }
                 catch (IOException ex)
                 {
-                    this.Logger.LogWarning(ex, "Could not delete manifest {Path}", manifestPath);
-                    this.loadError = "The manifest file is busy/locked and could not be deleted. Try again in a few seconds.";
-                    return;
+                    this.Logger.LogWarning(ex, "Could not delete manifest {Path} (likely SMB lock or stale entry)", manifestPath);
+                    manifestDeleteFailed = true;
                 }
             }
 
             // 3. Attempt to delete binary. 
-            // If it fails (SMB lock), we'll still clean the DB record since the manifest is gone.
             bool binaryDeleteFailed = false;
             if (File.Exists(filePath))
             {
@@ -307,15 +306,18 @@
                 }
             }
 
-            // 4. Remove from DB. Even if the binary was busy, since the manifest is gone, 
-            // the version will stay deleted and won't be re-ingested.
+            // 4. Remove from DB. We do this even if file deletes failed.
+            // If the files really exist, the Reconciler will find them again in 60s.
+            // If they are just "ghost" SMB entries, this cleans up the UI permanently.
             context.PlayerVersions.Remove(version);
             await context.SaveChangesAsync();
             await this.LoadAll();
 
-            if (binaryDeleteFailed)
+            if (manifestDeleteFailed || binaryDeleteFailed)
             {
-                this.syncMessage = $"Version {version.VersionNumber} removed from library, but the binary file is currently busy (likely being downloaded by a player) and remains on the NAS. It will not appear in the UI again.";
+                string msg = $"Version {version.VersionNumber} removed from UI, but one or more files on the NAS were busy or locked and could not be deleted.";
+                if (manifestDeleteFailed) msg += " WARNING: If the manifest file still exists, the version may reappear during the next sync.";
+                this.syncMessage = msg;
             }
         }
         catch (Exception ex)
