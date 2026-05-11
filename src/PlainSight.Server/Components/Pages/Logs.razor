@@ -451,7 +451,7 @@ else
 
         try
         {
-            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", text);
+            await JSRuntime.InvokeVoidAsync("copyToClipboard", text);
         }
         catch (Exception ex)
         {
