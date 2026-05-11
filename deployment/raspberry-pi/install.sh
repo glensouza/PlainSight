@@ -53,11 +53,14 @@ sudo apt install -y \
   curl
 
 # 3. Create directories
-echo "Creating application directories..."
+echo "Creating application and cache directories..."
 sudo mkdir -p /opt/plainsight
 sudo mkdir -p /mnt/plainsight
+sudo mkdir -p /var/cache/plainsight/content
+sudo mkdir -p /var/cache/plainsight/idle
 sudo mkdir -p /etc/samba
-sudo chown pi:pi /opt/plainsight
+sudo chown -R pi:pi /opt/plainsight
+sudo chown -R pi:pi /var/cache/plainsight
 
 # 4. Download Player Binary (Bootstrap)
 echo ""
