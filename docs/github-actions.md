@@ -10,110 +10,66 @@ The PlainSight project uses GitHub Actions for:
 - Managing image retention (5 previous versions)
 - Automated deployment to production server
 
-## Workflow File
+## Workflow Files
 
-Location: `.github/workflows/build-deploy.yml`
+- `.github/workflows/server.yml`: Handles server Docker builds and production deployment.
+- `.github/workflows/player.yml`: Handles Raspberry Pi player ARM64 builds and release management.
 
 ## Workflow Jobs
 
-### 1. `build-and-push` (Server)
+### 1. Server CI/CD (`server.yml`)
 
 **Trigger**: 
-- Push to `main` branch
-- Push tags matching `v*`
-- Pull requests to `main`
+- Push to `main` branch (specifically for server or shared code)
 - Manual workflow dispatch
 
-**Runner**: `ubuntu-latest` (Docker build requires Linux runner)
+**Runner**: `self-hosted` (must be the production Mac runner)
 
 **Steps**:
-1. Checkout repository
-2. Set up Docker Buildx
-3. Log in to GitHub Container Registry (ghcr.io)
-4. Extract Docker metadata (tags, labels)
-5. Build and push Docker image
-6. Clean up old images (keep 5 most recent)
+1. **Checkout**: Pulls latest code into the runner's workspace.
+2. **Build**: Builds a local Docker image tagged with the short Git SHA.
+3. **Deploy**:
+   - Tags the existing `current` image as `previous` (for rollback).
+   - Tags the new SHA-tagged image as `current`.
+   - Runs `docker compose up -d plainsight-server` using secrets injected into the environment.
+4. **Health Check**: Pings `http://localhost:8080/health` for up to 2 minutes.
+5. **Auto-Rollback**: If health check fails, re-tags `previous` as `current` and restarts.
+6. **Cleanup**: Retains only the 5 most recent SHA-tagged images.
 
-**Image Tags**:
-- `main` branch → `latest`
-- Tags `v1.0.0` → `1.0.0`, `1.0`
-- Commit SHA → `sha-abc1234`
-- PR number → `pr-123`
+**Required Secrets**:
+- `POSTGRES_PASSWORD`: Database password.
+- `CLOUDFLARE_TUNNEL_TOKEN`: Token for Cloudflare Tunnel.
+- `PGADMIN_DEFAULT_EMAIL`: pgAdmin login.
+- `PGADMIN_DEFAULT_PASSWORD`: pgAdmin password.
 
-### 2. `build-player` (Raspberry Pi)
+### 2. Player Release (`player.yml`)
 
 **Trigger**: Tags starting with `v` (e.g., `v1.0.0`)
 
-**Runner**: `self-hosted` (must have write access to the network share backing `UpdatesPath`)
+**Runner**: `self-hosted` (must have write access to the SMB share mount)
 
 **Steps**:
 1. Checkout repository
 2. Setup .NET 10 SDK
-3. Restore dependencies
-4. Build Player for ARM64 (linux-arm64) as single-file binary
-5. Compute SHA-256 hash of binary
-6. Create canonical-JSON manifest (sorted keys, no whitespace) with version, fileName, sizeBytes, sha256, signedAt, releaseUrl, notes
-7. Sign manifest with ECDSA P-256 using private key from `secrets.PLAINSIGHT_SIGNING_KEY`
-8. Write binary as `plainsight-player-{version}` and manifest as `plainsight-player-{version}.json` to `${{ vars.UPDATES_PATH }}` on the share (atomic write via `.tmp` rename)
-9. Create tar.gz archive for GitHub Release
-10. Upload tar.gz + manifest as GitHub Release assets (for cold-bootstrap reference)
-
-**Build Configuration**:
-```bash
-dotnet publish \
-  -c Release \
-  -r linux-arm64 \
-  --self-contained \
-  -p:PublishSingleFile=true \
-  -p:DebugType=None \
-  -p:DebugSymbols=false
-```
-
-**Key Pair Setup** (one-time, for maintainers):
-```bash
-# Generate ECDSA P-256 private key
-openssl ecparam -name prime256v1 -genkey -noout -out signing.key
-
-# Convert to PKCS8 format
-openssl pkcs8 -topk8 -nocrypt -in signing.key -out signing.pkcs8
-
-# Extract public key
-openssl ec -in signing.key -pubout -out release-signing.pub
-
-# Add signing.pkcs8 content as GitHub Actions secret: secrets.PLAINSIGHT_SIGNING_KEY
-# Commit release-signing.pub under src/PlainSight.Server/Keys/release-signing.pub
-```
-
-### 3. `deploy-to-server` (Production Deployment)
-
-**Trigger**: Push to `main` branch only
-
-**Runner**: `self-hosted` (can be macOS, Linux, or Windows)
-
-**Steps**:
-1. Pull latest Docker image
-2. Restart plainsight-server container
-3. Verify deployment via health check
-
-**Requirements**:
-- Self-hosted runner configured on the production server (can be macOS with Docker Desktop)
-- Docker Compose installed on runner
-- Access to Docker socket
+3. Build Player for ARM64 (linux-arm64) as single-file binary
+4. Compute SHA-256 hash of binary
+5. Create signed manifest JSON using `secrets.PLAINSIGHT_SIGNING_KEY`
+6. Write binary and manifest to `${{ vars.UPDATES_PATH }}` on the share.
+7. Create GitHub Release with assets.
 
 ## Configuration
 
 ### Required Secrets
 
-- `PLAINSIGHT_SIGNING_KEY`: ECDSA P-256 private key (PEM PKCS8 format) for signing player version manifests. Used by `build-player` job.
-
-### Optional Secrets
-
-- `DEPLOY_SERVER_URL`: Override default deployment URL
-- `SLACK_WEBHOOK`: Send deployment notifications
+- `POSTGRES_PASSWORD`: Database password for server deployment.
+- `CLOUDFLARE_TUNNEL_TOKEN`: Cloudflare Tunnel token.
+- `PGADMIN_DEFAULT_EMAIL`: pgAdmin admin email.
+- `PGADMIN_DEFAULT_PASSWORD`: pgAdmin admin password.
+- `PLAINSIGHT_SIGNING_KEY`: ECDSA P-256 private key for player updates.
 
 ### Required Variables
 
-- `UPDATES_PATH`: Path to the network share directory where player binaries and manifests are written (e.g., `/mnt/plainsight-share/updates`). Used by `build-player` job.
+- `UPDATES_PATH`: Absolute path to the `updates` folder on the runner's machine (e.g., `/Users/admin/MyCloudHome/PlainSight/updates`).
 
 ### Environment Variables
 

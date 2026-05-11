@@ -47,10 +47,17 @@ PGADMIN_DEFAULT_PASSWORD=your_secure_password_here
 
 ### 3. GitHub Actions Runner Setup
 
-The CI/CD pipeline (`server.yml`) requires two variables configured in your GitHub Repository settings (**Settings > Secrets and variables > Actions**):
+The CI/CD pipeline (`server.yml`) requires variables and secrets configured in your GitHub Repository settings (**Settings > Secrets and variables > Actions**):
 
-- `DEPLOYMENT_PATH`: The absolute path to the directory where `docker-compose.yml` resides on your Mac.
+**Variables:**
 - `UPDATES_PATH`: The absolute path to the `updates` folder on your mount (e.g., `/Users/admin/MyCloudHome/PlainSight/updates`).
+
+**Secrets:**
+- `POSTGRES_PASSWORD`: The password for the PostgreSQL database.
+- `CLOUDFLARE_TUNNEL_TOKEN`: Your Cloudflare Tunnel token.
+- `PGADMIN_DEFAULT_EMAIL`: Admin email for pgAdmin.
+- `PGADMIN_DEFAULT_PASSWORD`: Admin password for pgAdmin.
+- `PLAINSIGHT_SIGNING_KEY`: The ECDSA P-256 private key (pkcs8) for signing updates.
 
 ### 4. Release Signing Keys
 

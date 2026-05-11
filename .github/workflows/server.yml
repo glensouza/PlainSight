@@ -3,7 +3,6 @@ name: Server CI/CD
 on:
   push:
     branches: [ main ]
-    tags: [ 'v*' ]
     paths:
       - 'src/PlainSight.Shared/**'
       - 'src/PlainSight.Server/**'
@@ -12,12 +11,12 @@ on:
 
 env:
   IMAGE_NAME: plainsight-server
+  COMPOSE_PROJECT_NAME: plainsight
 
 jobs:
   build-and-deploy:
     runs-on: self-hosted
-    # Only run if DEPLOYMENT_PATH variable is configured
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOYMENT_PATH != ''
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
     - name: Checkout repository
@@ -30,9 +29,12 @@ jobs:
         docker build -t ${{ env.IMAGE_NAME }}:${SHA_TAG} -f src/PlainSight.Server/Dockerfile .
 
     - name: Deploy and Verify
+      env:
+        POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+        PGADMIN_DEFAULT_EMAIL: ${{ secrets.PGADMIN_DEFAULT_EMAIL }}
+        PGADMIN_DEFAULT_PASSWORD: ${{ secrets.PGADMIN_DEFAULT_PASSWORD }}
       run: |
-        cd ${{ vars.DEPLOYMENT_PATH }}
-        
         # Save the current tag if it exists for rollback
         PREVIOUS_TAG=$(docker images ${{ env.IMAGE_NAME }} --format "{{.Tag}}" | grep -v "latest" | grep -v "current" | head -n 1 || echo "")
         
