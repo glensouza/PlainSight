@@ -188,19 +188,22 @@ else
   printf '\n# Suppress firmware boot splash\ndisable_splash=1\n' | sudo tee -a "$CONFIG_FILE" > /dev/null
 fi
 
-# Enable Plymouth via raspi-config (installs packages, adds 'quiet splash' to cmdline, builds initramfs)
-echo "Enabling Plymouth boot splash (this may take a couple of minutes)..."
-sudo raspi-config nonint do_boot_splash 0
+# Install Plymouth directly so we control the package before touching cmdline.txt.
+# raspi-config do_boot_splash fails on a fresh image because Plymouth is not yet
+# installed when it runs, which causes set -e to abort the script prematurely.
+echo "Installing Plymouth (this may take a minute)..."
+sudo apt-get install -y plymouth plymouth-themes
 
 # Remove console=tty1 so the kernel and systemd write to the serial port only,
 # not the HDMI display. Plymouth starts too late on Pi OS (no initramfs by
 # default) to reliably intercept this output, so removing the binding is the
 # only way to guarantee a clean screen. The autologin getty and labwc both use
 # tty1 directly and are unaffected by this change.
+# quiet + splash are added here because raspi-config do_boot_splash is skipped.
 CMDLINE_FILE="$BOOT_DIR/cmdline.txt"
 CMDLINE=$(cat "$CMDLINE_FILE")
 CMDLINE=$(echo "$CMDLINE" | sed 's/\bconsole=tty[0-9]*\b//g' | sed 's/  */ /g' | sed 's/^ //')
-for PARAM in loglevel=0 logo.nologo vt.global_cursor_default=0; do
+for PARAM in quiet splash loglevel=0 logo.nologo vt.global_cursor_default=0; do
   if ! echo "$CMDLINE" | grep -qw "$PARAM"; then
     CMDLINE="$CMDLINE $PARAM"
   fi
@@ -244,6 +247,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable mnt-plainsight.automount
 systemctl --user daemon-reload
 systemctl --user enable plainsight.service
+# Allow the player user service to start at boot without waiting for interactive login
+sudo loginctl enable-linger pi
 
 echo ""
 echo "================================================"
