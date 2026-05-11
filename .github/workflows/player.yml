@@ -170,11 +170,16 @@ jobs:
       run: |
         set -euo pipefail
         UPDATES_PATH="$UPDATES_PATH_RAW"
-        # List binary files (no extension), newest first; delete anything beyond the 3rd
+        # Clean up SMB tombstone files (.smbdeleteXXX.N) left when macOS SMB
+        # renames rather than deletes a file that is momentarily resource-busy.
+        find "${UPDATES_PATH}" -maxdepth 1 -name '.smbdelete*' -delete 2>/dev/null || true
+        # List binary files (no extension), newest first; delete anything beyond the 3rd.
+        # Use || true on rm because macOS SMB returns EBUSY for in-use files and renames
+        # them to .smbdeleteXXX.N (tombstones cleaned above on the next run).
         ls -t "${UPDATES_PATH}"/plainsight-player-* 2>/dev/null \
           | grep -v '\.json$' \
           | tail -n +4 \
           | while IFS= read -r old; do
-              rm -f "${old}" "${old}.json"
+              rm -f "${old}" "${old}.json" 2>/dev/null || true
               echo "Pruned: $(basename "${old}")"
             done
