@@ -56,7 +56,7 @@ public class NdiDiscoveryService(
                                 protocol,
                                 scanTime: scanTimeout,
                                 cancellationToken: stoppingToken,
-                                netServiceEndpoints: [new System.Net.IPEndPoint(System.Net.IPAddress.Parse(discoveryServer), 5353)]);
+                                explicitEndpoints: [new System.Net.IPEndPoint(System.Net.IPAddress.Parse(discoveryServer), 5353)]);
                         }
                         else
                         {
