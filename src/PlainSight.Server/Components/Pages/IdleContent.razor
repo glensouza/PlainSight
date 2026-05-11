@@ -403,6 +403,7 @@ else
 
                 idleFiles = new DirectoryInfo(idlePath)
                     .GetFiles()
+                    .Where(f => MediaConstants.IsSupported(f.Name))
                     .OrderBy(f => f.Name)
                     .ToList();
             }

@@ -1,8 +1,10 @@
+using PlainSight.Shared;
+
 namespace PlainSight.Player;
 
 internal static class VideoFormats
 {
-    internal static readonly string[] SupportedMediaExtensions = [".mp4", ".webm", ".mkv", ".avi", ".mov", ".png", ".jpg", ".jpeg"];
+    internal static readonly string[] SupportedMediaExtensions = MediaConstants.AllSupportedExtensions;
 
     internal static readonly Dictionary<string, string> ContentTypes = new()
     {
@@ -13,18 +15,13 @@ internal static class VideoFormats
         { ".mov",  "video/quicktime" },
         { ".png",  "image/png" },
         { ".jpg",  "image/jpeg" },
-        { ".jpeg", "image/jpeg" }
+        { ".jpeg", "image/jpeg" },
+        { ".gif",  "image/gif" },
+        { ".bmp",  "image/bmp" },
+        { ".webp", "image/webp" }
     };
 
-    internal static bool IsVideo(string filename)
-    {
-        string extension = Path.GetExtension(filename).ToLowerInvariant();
-        return extension is ".mp4" or ".webm" or ".mkv" or ".avi" or ".mov";
-    }
+    internal static bool IsVideo(string filename) => MediaConstants.IsVideo(filename);
 
-    internal static bool IsImage(string filename)
-    {
-        string extension = Path.GetExtension(filename).ToLowerInvariant();
-        return extension is ".png" or ".jpg" or ".jpeg";
-    }
+    internal static bool IsImage(string filename) => MediaConstants.IsImage(filename);
 }

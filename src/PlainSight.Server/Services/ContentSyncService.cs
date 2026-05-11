@@ -10,8 +10,6 @@ public class ContentSyncService(
     MediaMetadataService metadataService,
     ILogger<ContentSyncService> logger)
 {
-    private static readonly string[] SupportedExtensions = [".mp4", ".avi", ".mov", ".mkv", ".webm", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"];
-
     private string ContentPath => configuration["ContentPath"] ?? "/mnt/plainsight/content";
 
     public async Task<(int Added, int Removed)> SyncAsync(CancellationToken cancellationToken = default)
@@ -22,7 +20,7 @@ public class ContentSyncService(
         }
 
         HashSet<string> diskFiles = Directory.GetFiles(this.ContentPath)
-            .Where(f => SupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+            .Where(f => MediaConstants.AllSupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
             .Select(f => Path.GetFileName(f))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -57,7 +55,7 @@ public class ContentSyncService(
         foreach (string fileName in diskFiles.Where(f => !dbFiles.Contains(f)))
         {
             string ext = Path.GetExtension(fileName).ToLowerInvariant();
-            bool isVideo = ext is ".mp4" or ".avi" or ".mov" or ".mkv" or ".webm";
+            bool isVideo = MediaConstants.IsVideo(fileName);
             ContentType contentType = fileName.StartsWith("rendered_", StringComparison.OrdinalIgnoreCase) && ext == ".mp4"
                 ? ContentType.RenderedWebsite
                 : isVideo ? ContentType.Video : ContentType.Image;
