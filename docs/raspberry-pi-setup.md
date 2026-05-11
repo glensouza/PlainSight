@@ -50,6 +50,23 @@ The automated script handles all configuration steps.
 4. Power on the device
 5. SSH into the device: `ssh pi@plainsight-player-01.local`
 
+#### Step 2b: Set Up Passwordless SSH (Windows)
+
+After first SSH login, copy your public key to the Pi so future connections
+(and remote management) don't require a password. On Windows, `ssh-copy-id`
+is not available — use this PowerShell equivalent instead:
+
+```powershell
+# Generate a key pair if you don't have one yet (run once per machine)
+ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\id_ed25519" -C "plainsight-admin"
+
+# Copy the public key to the Pi (you will be prompted for the Pi password once)
+type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh pi@plainsight-player-01.local "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && chmod 700 ~/.ssh"
+```
+
+After this, `ssh pi@plainsight-player-01.local` connects without a password.
+Repeat the `type ... | ssh ...` line for each additional Pi.
+
 #### Step 3: Run Installation Script
 
 ```bash
@@ -90,11 +107,13 @@ sudo apt upgrade -y
 
 ```bash
 sudo apt install -y \
+  chromium \
   labwc \
   wayland-protocols \
   cifs-utils \
   grim \
   swayidle \
+  swaybg \
   wlopm \
   curl
 ```
@@ -168,9 +187,10 @@ ExecStart=/opt/plainsight/PlainSight.Player
 Restart=always
 RestartSec=3
 Environment=DISPLAY=:0
-Environment=WAYLAND_DISPLAY=wayland-1
+Environment=WAYLAND_DISPLAY=wayland-0
 Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
 Environment=ServerUrl=http://SERVER_IP:8080
+Environment=PLAINSIGHT_APIKEY_PATH=/var/cache/plainsight/apikey
 
 [Install]
 WantedBy=graphical.target

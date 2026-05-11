@@ -44,6 +44,7 @@ sudo apt upgrade -y
 # 2. Install dependencies
 echo "Installing required dependencies..."
 sudo apt install -y \
+  chromium \
   labwc \
   wayland-protocols \
   cifs-utils \
@@ -134,9 +135,10 @@ ExecStart=/opt/plainsight/PlainSight.Player
 Restart=always
 RestartSec=3
 Environment=DISPLAY=:0
-Environment=WAYLAND_DISPLAY=wayland-1
+Environment=WAYLAND_DISPLAY=wayland-0
 Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
 Environment=ServerUrl=http://${SERVER_IP}:8080
+Environment=PLAINSIGHT_APIKEY_PATH=/var/cache/plainsight/apikey
 
 [Install]
 WantedBy=default.target
