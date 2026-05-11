@@ -192,10 +192,15 @@ fi
 echo "Enabling Plymouth boot splash (this may take a couple of minutes)..."
 sudo raspi-config nonint do_boot_splash 0
 
-# Append additional parameters that raspi-config doesn't set
+# Remove console=tty1 so the kernel and systemd write to the serial port only,
+# not the HDMI display. Plymouth starts too late on Pi OS (no initramfs by
+# default) to reliably intercept this output, so removing the binding is the
+# only way to guarantee a clean screen. The autologin getty and labwc both use
+# tty1 directly and are unaffected by this change.
 CMDLINE_FILE="$BOOT_DIR/cmdline.txt"
 CMDLINE=$(cat "$CMDLINE_FILE")
-for PARAM in loglevel=0 logo.nologo vt.global_cursor_default=0 systemd.show_status=false; do
+CMDLINE=$(echo "$CMDLINE" | sed 's/\bconsole=tty[0-9]*\b//g' | sed 's/  */ /g' | sed 's/^ //')
+for PARAM in loglevel=0 logo.nologo vt.global_cursor_default=0; do
   if ! echo "$CMDLINE" | grep -qw "$PARAM"; then
     CMDLINE="$CMDLINE $PARAM"
   fi
