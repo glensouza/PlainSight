@@ -29,12 +29,6 @@ public class NdiDiscoveryService(
         TimeSpan scanTimeout = TimeSpan.FromSeconds(configuration.GetValue("Ndi:ScanTimeoutSeconds", 5));
         TimeSpan stalenessWindow = TimeSpan.FromSeconds(configuration.GetValue("Ndi:StalenessSeconds", 60));
 
-        string? discoveryServer = configuration["NDI_DISCOVERY_SERVER"];
-        if (!string.IsNullOrEmpty(discoveryServer))
-        {
-            logger.LogInformation("Using NDI Discovery Server: {Server}", discoveryServer);
-        }
-
         logger.LogInformation(
             "NDI discovery starting. Intervals: scan={ScanInterval}s, timeout={ScanTimeout}s, staleness={Staleness}s",
             scanInterval.TotalSeconds, scanTimeout.TotalSeconds, stalenessWindow.TotalSeconds);
@@ -49,24 +43,10 @@ public class NdiDiscoveryService(
                     
                     try
                     {
-                        IReadOnlyList<IZeroconfHost> hosts;
-                        if (!string.IsNullOrEmpty(discoveryServer))
-                        {
-                            // Zeroconf library doesn't support unicast/fixed-IP discovery in the current version.
-                            // We log that we're using it, but we'll fall back to standard mDNS for now
-                            // to ensure the build passes and dev testing isn't broken.
-                            hosts = await ZeroconfResolver.ResolveAsync(
-                                protocol,
-                                scanTime: scanTimeout,
-                                cancellationToken: stoppingToken);
-                        }
-                        else
-                        {
-                            hosts = await ZeroconfResolver.ResolveAsync(
-                                protocol,
-                                scanTime: scanTimeout,
-                                cancellationToken: stoppingToken);
-                        }
+                        IReadOnlyList<IZeroconfHost> hosts = await ZeroconfResolver.ResolveAsync(
+                            protocol,
+                            scanTime: scanTimeout,
+                            cancellationToken: stoppingToken);
 
                         if (hosts.Count > 0)
                         {
