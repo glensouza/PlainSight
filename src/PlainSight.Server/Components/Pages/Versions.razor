@@ -265,30 +265,56 @@
             string updatesPath = this.Configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
             string safeFileName = Path.GetFileName(version.FileName);
             string filePath = Path.Combine(updatesPath, safeFileName);
-            bool binaryExists = File.Exists(filePath);
+            string manifestPath = Path.Combine(updatesPath, safeFileName + ".json");
 
-            if (binaryExists)
+            // 1. Check if version is in use by a group
+            bool inUse = await context.DeviceGroupVersions.AnyAsync(g => g.TargetVersion == version.VersionNumber);
+            if (inUse)
             {
-                // Only block deletion if the binary is still on disk — once it's gone, cleaning the DB record is safe.
-                bool inUse = await context.DeviceGroupVersions.AnyAsync(g => g.TargetVersion == version.VersionNumber);
-                if (inUse)
-                {
-                    this.loadError = $"Version {version.VersionNumber} is still assigned to one or more groups. Reassign those groups first, then delete.";
-                    return;
-                }
-
-                File.Delete(filePath);
+                this.loadError = $"Version {version.VersionNumber} is still assigned to one or more groups. Reassign those groups first.";
+                return;
             }
 
-            string manifestPath = Path.Combine(updatesPath, safeFileName + ".json");
+            // 2. Delete manifest FIRST to prevent the reconciler from re-ingesting it
             if (File.Exists(manifestPath))
             {
-                File.Delete(manifestPath);
+                try
+                {
+                    File.Delete(manifestPath);
+                }
+                catch (IOException ex)
+                {
+                    this.Logger.LogWarning(ex, "Could not delete manifest {Path}", manifestPath);
+                    this.loadError = "The manifest file is busy/locked and could not be deleted. Try again in a few seconds.";
+                    return;
+                }
             }
 
+            // 3. Attempt to delete binary
+            bool binaryDeleteFailed = false;
+            if (File.Exists(filePath))
+            {
+                try
+                {
+                    File.Delete(filePath);
+                }
+                catch (IOException ex)
+                {
+                    this.Logger.LogWarning(ex, "Could not delete binary {Path} (likely SMB lock)", filePath);
+                    binaryDeleteFailed = true;
+                }
+            }
+
+            // 4. Remove from DB. Even if the binary was busy, since the manifest is gone, 
+            // the version will stay deleted and won't be re-ingested.
             context.PlayerVersions.Remove(version);
             await context.SaveChangesAsync();
             await this.LoadAll();
+
+            if (binaryDeleteFailed)
+            {
+                this.syncMessage = $"Version {version.VersionNumber} removed from library, but the binary file is currently busy (likely being downloaded by a player) and remains on the NAS. It will not appear in the UI again.";
+            }
         }
         catch (Exception ex)
         {
