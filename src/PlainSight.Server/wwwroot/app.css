@@ -386,6 +386,20 @@ code, pre, .mono {
     font-size: 13px;
     color: var(--ps-text);
 }
+.form-control::file-selector-button {
+    background-color: var(--ps-bg-3);
+    color: var(--ps-text);
+    border-inline-end: 1px solid var(--ps-line-strong);
+    margin-right: 1rem;
+    padding: 0.4rem 0.875rem;
+    transition: background-color 0.15s ease-in-out;
+    border-top: 0;
+    border-bottom: 0;
+    border-left: 0;
+}
+.form-control:hover::file-selector-button {
+    background-color: var(--ps-bg-4);
+}
 .form-control::placeholder { color: var(--ps-text-3); }
 .form-control:hover, .form-select:hover {
     border-color: var(--ps-line-strong);
@@ -461,7 +475,7 @@ select option {
    Schedules / NDI / Versions etc lean on stock Bootstrap utility classes
    (bg-white, bg-light, text-dark) which were producing white panels with
    gray text — unreadable on the dark shell. Override Bootstrap globals. */
-.bg-white, .bg-light, .bg-body {
+.bg-white, .bg-light, .bg-body, .bg-info, .bg-info-subtle, .bg-warning, .bg-warning-subtle, .bg-danger, .bg-danger-subtle, .bg-success, .bg-success-subtle {
     background-color: var(--ps-bg-2) !important;
     color: var(--ps-text) !important;
 }
