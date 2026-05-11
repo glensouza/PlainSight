@@ -10,10 +10,14 @@ public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
     public async Task<byte[]> CaptureScreenshot()
     {
         if (OperatingSystem.IsLinux())
+        {
             return await this.CaptureLinuxAsync();
+        }
 
         if (OperatingSystem.IsWindows())
+        {
             return this.CaptureWindows();
+        }
 
         logger.LogWarning("Screenshot capture not supported on this platform");
         return [];
@@ -21,33 +25,47 @@ public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
 
     private async Task<byte[]> CaptureLinuxAsync()
     {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"plainsight_screenshot_{Guid.NewGuid():N}.png");
         try
         {
-            ProcessStartInfo startInfo = new()
+            using Process? process = Process.Start(new ProcessStartInfo
             {
                 FileName = "grim",
-                Arguments = "-",
-                RedirectStandardOutput = true,
+                Arguments = tempFile,
                 UseShellExecute = false
-            };
+            });
 
-            using Process? process = Process.Start(startInfo);
             if (process == null)
             {
                 logger.LogError("Failed to start grim process");
                 return [];
             }
 
-            using MemoryStream ms = new();
-            await process.StandardOutput.BaseStream.CopyToAsync(ms);
             await process.WaitForExitAsync();
 
-            return ms.ToArray();
+            if (process.ExitCode != 0)
+            {
+                logger.LogError("grim exited with code {ExitCode}", process.ExitCode);
+                return [];
+            }
+
+            return await File.ReadAllBytesAsync(tempFile);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error capturing screenshot via grim");
             return [];
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(tempFile);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to delete temp screenshot file {Path}", tempFile);
+            }
         }
     }
 
