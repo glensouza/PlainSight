@@ -392,13 +392,15 @@ code, pre, .mono {
     border-inline-end: 1px solid var(--ps-line-strong);
     margin-right: 1rem;
     padding: 0.4rem 0.875rem;
-    transition: background-color 0.15s ease-in-out;
+    transition: all 0.15s ease-in-out;
     border-top: 0;
     border-bottom: 0;
     border-left: 0;
 }
-.form-control:hover::file-selector-button {
+.form-control:hover::file-selector-button,
+.form-control::file-selector-button:hover {
     background-color: var(--ps-bg-4);
+    color: var(--ps-cyan);
 }
 .form-control::placeholder { color: var(--ps-text-3); }
 .form-control:hover, .form-select:hover {

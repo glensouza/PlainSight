@@ -679,7 +679,7 @@ else
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             devices = await context.Devices
                 .Include(d => d.AssignedNdiSource)
-                .OrderByDescending(d => d.LastSeen)
+                .OrderBy(d => d.Name)
                 .ToListAsync();
             List<DeviceGroupVersion> targets = await context.DeviceGroupVersions.ToListAsync();
             groupTargetVersions = targets.ToDictionary(t => t.GroupName, t => t.TargetVersion);
