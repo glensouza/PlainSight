@@ -25,16 +25,6 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Debug Environment
-      run: |
-        echo "Event: ${{ github.event_name }}"
-        echo "Ref: ${{ github.ref }}"
-        echo "UPDATES_PATH: ${{ vars.UPDATES_PATH }}"
-        echo "Runner OS: $RUNNER_OS"
-        echo "Shell: $SHELL"
-        id
-        ls -ld "${{ vars.UPDATES_PATH }}" || echo "UPDATES_PATH not accessible"
-
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
