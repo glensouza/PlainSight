@@ -42,6 +42,8 @@ jobs:
         CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
         PGADMIN_DEFAULT_EMAIL: ${{ secrets.PGADMIN_DEFAULT_EMAIL }}
         PGADMIN_DEFAULT_PASSWORD: ${{ secrets.PGADMIN_DEFAULT_PASSWORD }}
+        OBS_WEBSOCKET_URL: ${{ secrets.OBS_WEBSOCKET_URL }}
+        OBS_WEBSOCKET_PASSWORD: ${{ secrets.OBS_WEBSOCKET_PASSWORD }}
       run: |
         # Save the current tag if it exists for rollback
         PREVIOUS_TAG=$(docker images ${{ env.IMAGE_NAME }} --format "{{.Tag}}" | grep -v "latest" | grep -v "current" | head -n 1 || echo "")

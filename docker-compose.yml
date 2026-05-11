@@ -27,6 +27,8 @@ services:
       - ASPNETCORE_URLS=http://+:8080
       - ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
       - ConnectionStrings__plainsightdb=Host=postgres;Database=plainsightdb;Username=plainsight;Password=${POSTGRES_PASSWORD}
+      - OBS__WebSocketUrl=${OBS_WEBSOCKET_URL}
+      - OBS__WebSocketPassword=${OBS_WEBSOCKET_PASSWORD}
     ports:
       - "8080:8080"
     volumes:
