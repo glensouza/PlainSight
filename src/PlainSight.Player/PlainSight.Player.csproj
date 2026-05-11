@@ -19,9 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="wwwroot\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <EmbeddedResource Include="wwwroot\index.html" />
   </ItemGroup>
 
 </Project>

@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using PlainSight.Player;
 using PlainSight.Player.Services;
@@ -97,13 +98,18 @@ app.MapDefaultEndpoints();
 // Redirect root to /player so the Aspire dashboard endpoint link works directly
 app.MapGet("/", () => Results.Redirect("/player"));
 
-// Serve the HTML5 video player page.
-app.MapGet("/player", (IWebHostEnvironment env) =>
+// Serve the HTML5 video player page (embedded resource so it survives single-file publish).
+app.MapGet("/player", async () =>
 {
-    string htmlPath = Path.Combine(env.WebRootPath, "index.html");
-    if (!File.Exists(htmlPath))
+    await using Stream? stream = Assembly.GetExecutingAssembly()
+        .GetManifestResourceStream("PlainSight.Player.wwwroot.index.html");
+    if (stream == null)
+    {
         return Results.NotFound();
-    return Results.File(htmlPath, "text/html; charset=utf-8");
+    }
+    using StreamReader reader = new(stream);
+    string html = await reader.ReadToEndAsync();
+    return Results.Content(html, "text/html; charset=utf-8");
 });
 
 // Serve content files from both local cache and idle cache
