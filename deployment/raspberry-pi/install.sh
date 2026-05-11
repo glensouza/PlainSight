@@ -88,7 +88,7 @@ sudo chmod 600 /etc/samba/plainsight-credentials
 # 6. Configure systemd units
 echo "Configuring systemd services..."
 
-# SMB mount
+# SMB mount (stays as system unit)
 sudo bash -c "cat > /etc/systemd/system/mnt-plainsight.mount << EOF
 [Unit]
 Description=Mount Remote Signage Assets
@@ -104,7 +104,7 @@ Options=credentials=/etc/samba/plainsight-credentials,ro,vers=3.0
 WantedBy=multi-user.target
 EOF"
 
-# Automount
+# Automount (stays as system unit)
 sudo bash -c "cat > /etc/systemd/system/mnt-plainsight.automount << EOF
 [Unit]
 Description=Automount Signage Share
@@ -117,16 +117,17 @@ TimeoutIdleSec=0
 WantedBy=multi-user.target
 EOF"
 
-# PlainSight player service
-sudo bash -c "cat > /etc/systemd/system/plainsight.service << EOF
+# PlainSight player service (User Unit)
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/plainsight.service << EOF
 [Unit]
 Description=PlainSight Digital Signage Player
-After=network-online.target mnt-plainsight.mount
-Wants=mnt-plainsight.mount
+After=network-online.target
+# We don't depend on mnt-plainsight.mount here because it's a system unit,
+# but the player will handle the path being missing gracefully.
 
 [Service]
 Type=simple
-User=pi
 WorkingDirectory=/opt/plainsight
 ExecStart=/opt/plainsight/PlainSight.Player
 Restart=always
@@ -137,8 +138,8 @@ Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
 Environment=ServerUrl=http://${SERVER_IP}:8080
 
 [Install]
-WantedBy=graphical.target
-EOF"
+WantedBy=default.target
+EOF
 
 # 6. Configure labwc
 echo "Configuring labwc window manager..."
@@ -160,8 +161,8 @@ cat > ~/.config/labwc/autostart << 'EOF'
 # Disable screen sleep/power saving
 swayidle -w timeout 31536000 'wlopm --off \*' resume 'wlopm --on \*' &
 
-# Start PlainSight Player
-/opt/plainsight/PlainSight.Player &
+# The player is now managed by systemd --user, so we don't start it here.
+# But we ensure the user session is ready.
 EOF
 
 chmod +x ~/.config/labwc/autostart
@@ -169,11 +170,17 @@ chmod +x ~/.config/labwc/autostart
 # 7. Enable services
 echo "Configuring boot target, autologin, and enabling services..."
 sudo systemctl set-default graphical.target
-# Enable autologin to CLI as 'pi' user
 sudo raspi-config nonint do_boot_behaviour B2
+
+# Ensure labwc starts on login
+if ! grep -q "exec labwc" ~/.bash_profile 2>/dev/null; then
+  echo 'if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then exec labwc; fi' >> ~/.bash_profile
+fi
+
 sudo systemctl daemon-reload
 sudo systemctl enable mnt-plainsight.automount
-sudo systemctl enable plainsight.service
+systemctl --user daemon-reload
+systemctl --user enable plainsight.service
 
 echo ""
 echo "================================================"
