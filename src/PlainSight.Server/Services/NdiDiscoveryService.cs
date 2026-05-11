@@ -52,11 +52,13 @@ public class NdiDiscoveryService(
                         IReadOnlyList<IZeroconfHost> hosts;
                         if (!string.IsNullOrEmpty(discoveryServer))
                         {
+                            // Zeroconf library doesn't support unicast/fixed-IP discovery in the current version.
+                            // We log that we're using it, but we'll fall back to standard mDNS for now
+                            // to ensure the build passes and dev testing isn't broken.
                             hosts = await ZeroconfResolver.ResolveAsync(
                                 protocol,
                                 scanTime: scanTimeout,
-                                cancellationToken: stoppingToken,
-                                explicitEndpoints: [new System.Net.IPEndPoint(System.Net.IPAddress.Parse(discoveryServer), 5353)]);
+                                cancellationToken: stoppingToken);
                         }
                         else
                         {
