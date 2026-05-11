@@ -38,6 +38,10 @@ public class Schedule
     public int Priority { get; set; } = 0; // higher wins on overlap
     public bool IsActive { get; set; } = true;
 
+    public bool AutoScreenshotEnabled { get; set; }
+    public int ScreenshotBurstCount { get; set; } = 3;
+    public int ScreenshotBurstIntervalSeconds { get; set; } = 10;
+
     public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

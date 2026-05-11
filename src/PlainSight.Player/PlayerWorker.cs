@@ -47,6 +47,13 @@ public class PlayerWorker(
                         _ = this.ProcessScreenshotRequest(stoppingToken);
                     }
 
+                    if (response.ScreenshotBurstCount is > 0)
+                    {
+                        int count = response.ScreenshotBurstCount.Value;
+                        int intervalSeconds = response.ScreenshotBurstIntervalSeconds ?? 10;
+                        _ = this.ProcessScreenshotBurstAsync(count, intervalSeconds, stoppingToken);
+                    }
+
                     if (response.PlaylistItems != null)
                     {
                         playlist.UpdatePlaylist(response.PlaylistItems);
@@ -106,6 +113,40 @@ public class PlayerWorker(
         catch (Exception ex)
         {
             logger.LogError(ex, "Error processing screenshot request");
+        }
+    }
+
+    private async Task ProcessScreenshotBurstAsync(int count, int intervalSeconds, CancellationToken stoppingToken)
+    {
+        logger.LogInformation("Content change detected — starting screenshot burst: {Count} shots every {Interval}s", count, intervalSeconds);
+        for (int i = 0; i < count && !stoppingToken.IsCancellationRequested; i++)
+        {
+            if (i > 0)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), stoppingToken);
+            }
+
+            try
+            {
+                byte[] screenshotBytes = await screenshot.CaptureScreenshot();
+                if (screenshotBytes.Length > 0)
+                {
+                    await screenshotUpload.UploadAsync(screenshotBytes, stoppingToken);
+                }
+                else
+                {
+                    logger.LogWarning("Burst screenshot {Index}/{Count} returned empty; skipping upload", i + 1, count);
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                /* expected during shutdown */
+                return;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error capturing burst screenshot {Index}/{Count}", i + 1, count);
+            }
         }
     }
 
