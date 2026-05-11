@@ -36,7 +36,7 @@ public static class DeviceApi
             .WithGroupName("Device API")
             .DisableAntiforgery();
 
-        group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ScheduleService scheduleService, ObsDiscoveryService obsService, IConfiguration configuration, ILoggerFactory loggerFactory, CancellationToken ct) =>
+        group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ScheduleService scheduleService, ScheduleChangeTracker scheduleChangeTracker, ObsDiscoveryService obsService, IConfiguration configuration, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             ILogger logger = loggerFactory.CreateLogger("DeviceApi");
             
@@ -94,7 +94,6 @@ public static class DeviceApi
                 }
 
                 // Update Status
-                string? previouslyPlaying = device.CurrentlyPlaying;
                 device.LastSeen = DateTime.UtcNow;
                 device.CurrentVersion = data.AppVersion;
                 device.CurrentlyPlaying = data.CurrentFileName;
@@ -150,10 +149,12 @@ public static class DeviceApi
                     }
                 }
 
-                // Detect content change for auto-screenshot burst (per-schedule setting)
-                bool contentChanged = !string.IsNullOrEmpty(data.CurrentFileName)
-                    && data.CurrentFileName != previouslyPlaying;
-                bool burstEnabled = contentChanged && (activeSchedule?.AutoScreenshotEnabled ?? false);
+                // Detect schedule change for auto-screenshot burst (per-schedule setting).
+                // Triggers immediately when the server starts delivering a new schedule to this device,
+                // rather than waiting for the player to report a new filename (which can lag or never
+                // happen if the content isn't cached locally yet).
+                bool scheduleChanged = scheduleChangeTracker.DetectAndUpdate(device.DeviceId, activeSchedule?.Id);
+                bool burstEnabled = scheduleChanged && (activeSchedule?.AutoScreenshotEnabled ?? false);
                 int? burstCount = burstEnabled ? Math.Max(1, activeSchedule!.ScreenshotBurstCount) : null;
                 int? burstInterval = burstEnabled ? Math.Max(1, activeSchedule!.ScreenshotBurstIntervalSeconds) : null;
 

@@ -7,20 +7,32 @@ namespace PlainSight.Player.Services;
 
 public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
 {
+    // grim (Wayland screencopy) does not support concurrent invocations on labwc —
+    // serialize all captures so burst and manual requests never race each other.
+    private readonly SemaphoreSlim captureSemaphore = new(1, 1);
+
     public async Task<byte[]> CaptureScreenshot()
     {
-        if (OperatingSystem.IsLinux())
+        await this.captureSemaphore.WaitAsync();
+        try
         {
-            return await this.CaptureLinuxAsync();
-        }
+            if (OperatingSystem.IsLinux())
+            {
+                return await this.CaptureLinuxAsync();
+            }
 
-        if (OperatingSystem.IsWindows())
+            if (OperatingSystem.IsWindows())
+            {
+                return this.CaptureWindows();
+            }
+
+            logger.LogWarning("Screenshot capture not supported on this platform");
+            return [];
+        }
+        finally
         {
-            return this.CaptureWindows();
+            this.captureSemaphore.Release();
         }
-
-        logger.LogWarning("Screenshot capture not supported on this platform");
-        return [];
     }
 
     private async Task<byte[]> CaptureLinuxAsync()

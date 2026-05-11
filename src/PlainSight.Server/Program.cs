@@ -86,6 +86,7 @@ builder.Services.AddHostedService<NdiDiscoveryService>();
 builder.Services.AddSingleton<ObsDiscoveryService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ObsDiscoveryService>());
 builder.Services.AddSingleton<ScreenshotNotificationService>();
+builder.Services.AddSingleton<ScheduleChangeTracker>();
 builder.Services.AddSingleton<DbLoggerProvider>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DbLoggerProvider>());
 builder.Services.AddHostedService<LogRetentionService>();
