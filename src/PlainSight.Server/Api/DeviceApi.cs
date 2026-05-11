@@ -68,18 +68,21 @@ public static class DeviceApi
                 // Validate or assign API key
                 if (device.ApiKey != null)
                 {
-                    // Registered device � validate X-Api-Key header
+                    // Registered device — validate X-Api-Key header.
+                    // Return Problem (application/problem+json) rather than bare Unauthorized so that
+                    // UseStatusCodePagesWithReExecute does not intercept the empty 401 and re-execute
+                    // it through the Blazor pipeline, which would corrupt the status code.
                     string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
                     if (string.IsNullOrEmpty(incomingKey))
                     {
                         logger.LogWarning("Heartbeat rejected for device {DeviceId}: missing X-Api-Key header", SanitizeForLog(data.DeviceId));
-                        return Results.Unauthorized();
+                        return Results.Problem("Missing X-Api-Key header", statusCode: StatusCodes.Status401Unauthorized);
                     }
 
                     if (!VerifyApiKey(incomingKey, device.ApiKey))
                     {
                         logger.LogWarning("Heartbeat rejected for device {DeviceId}: invalid API key", SanitizeForLog(data.DeviceId));
-                        return Results.Unauthorized();
+                        return Results.Problem("Invalid API key", statusCode: StatusCodes.Status401Unauthorized);
                     }
                 }
                 else
@@ -209,14 +212,14 @@ public static class DeviceApi
 
             if (device.ApiKey == null)
             {
-                return Results.Unauthorized();
+                return Results.Problem("Device not registered", statusCode: StatusCodes.Status401Unauthorized);
             }
 
             string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
             if (string.IsNullOrEmpty(incomingKey) || !VerifyApiKey(incomingKey, device.ApiKey))
             {
                 logger.LogWarning("Log batch rejected for device {DeviceId}: invalid or missing API key", SanitizeForLog(deviceId));
-                return Results.Unauthorized();
+                return Results.Problem("Invalid or missing API key", statusCode: StatusCodes.Status401Unauthorized);
             }
 
             if (batch.Entries == null || batch.Entries.Count == 0)
@@ -267,19 +270,19 @@ public static class DeviceApi
                 return Results.NotFound();
             }
 
-            // Validate API key � reject if the device has no key yet (not yet registered via heartbeat)
+            // Validate API key — reject if the device has no key yet (not yet registered via heartbeat)
             // or if the provided key does not match.
             if (device.ApiKey == null)
             {
                 logger.LogWarning("Screenshot notification rejected for device {DeviceId}: device has no API key", SanitizeForLog(deviceId));
-                return Results.Unauthorized();
+                return Results.Problem("Device not registered", statusCode: StatusCodes.Status401Unauthorized);
             }
 
             string? incomingKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
             if (string.IsNullOrEmpty(incomingKey) || !VerifyApiKey(incomingKey, device.ApiKey))
             {
                 logger.LogWarning("Screenshot notification rejected for device {DeviceId}: invalid or missing API key", SanitizeForLog(deviceId));
-                return Results.Unauthorized();
+                return Results.Problem("Invalid or missing API key", statusCode: StatusCodes.Status401Unauthorized);
             }
 
             if (!request.HasFormContentType)
