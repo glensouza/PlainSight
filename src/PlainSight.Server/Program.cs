@@ -68,8 +68,10 @@ builder.Services.AddSingleton<VideoProcessorService>();
 builder.Services.AddSingleton<WebsiteRecorder>();
 builder.Services.AddSingleton<RenderQueue>();
 builder.Services.AddHostedService<RenderWorkerService>();
+builder.Services.AddSingleton<YouTubeDownloadQueue>();
+builder.Services.AddSingleton<YouTubeDownloadService>();
+builder.Services.AddHostedService<YouTubeDownloadWorkerService>();
 builder.Services.AddScoped<ContentSyncService>();
-builder.Services.AddScoped<YouTubeDownloadService>();
 builder.Services.AddHostedService<ContentSyncWorkerService>();
 builder.Services.AddSingleton<VersionService>();
 builder.Services.AddSingleton<SignatureVerifier>(sp =>
