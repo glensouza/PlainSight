@@ -14,6 +14,7 @@ on:
 env:
   IMAGE_NAME: plainsight-server
   COMPOSE_PROJECT_NAME: plainsight
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 # Ensure only one deployment runs at a time and cancel older runs
 concurrency:
