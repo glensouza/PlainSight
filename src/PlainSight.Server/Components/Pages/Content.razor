@@ -592,7 +592,7 @@ else
         isProcessingExisting = true;
         try
         {
-            string folderPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+            string folderPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
             
             string oldFileName = processingItem.FileName;
             string filePath = Path.Combine(folderPath, oldFileName);
@@ -677,7 +677,7 @@ else
                 return;
             }
 
-            string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+            string contentPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
             string oldFileName = item.FileName;
             string sanitizedInput = Path.GetFileName(newFileName);
             string oldExt = Path.GetExtension(oldFileName);
@@ -788,7 +788,7 @@ else
         try
         {
             const long maxAllowedSize = 512L * 1024 * 1024;
-            string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+            string contentPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
             Directory.CreateDirectory(contentPath);
 
             string safeOriginalName = Path.GetFileName(selectedFile.Name);
@@ -870,7 +870,7 @@ else
                     return Task.CompletedTask;
                 }
 
-                string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+                string contentPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
                 Directory.CreateDirectory(contentPath);
 
                 string fileName = $"rendered_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.CreateVersion7():N}.mp4";
@@ -963,7 +963,7 @@ else
             ContentItem? item = await context.ContentItems.FindAsync(id);
             if (item != null)
             {
-                string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+                string contentPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
                 string filePath = Path.Combine(contentPath, item.FileName);
                 
                 if (File.Exists(filePath))

@@ -13,6 +13,8 @@ internal static class VideoFormats
         { ".mkv",  "video/x-matroska" },
         { ".avi",  "video/x-msvideo" },
         { ".mov",  "video/quicktime" },
+        { ".m4v",  "video/mp4" },
+        { ".ts",   "video/mp2t" },
         { ".png",  "image/png" },
         { ".jpg",  "image/jpeg" },
         { ".jpeg", "image/jpeg" },

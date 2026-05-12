@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using PlainSight.Player;
 using PlainSight.Player.Services;
+using PlainSight.Shared;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -14,11 +15,11 @@ builder.Logging.AddProvider(new LogBufferProvider(logBuffer, logConfig));
 // Aspire service discovery, OpenTelemetry, health checks
 builder.AddServiceDefaults();
 
-string contentPath = builder.Configuration["ContentPath"] ?? "/mnt/plainsight/content";
-string cachePath = builder.Configuration["CachePath"] ?? "/var/cache/plainsight/content";
+string contentPath = MediaPathResolver.Resolve(builder.Configuration["ContentPath"] ?? "/mnt/plainsight/content");
+string cachePath = MediaPathResolver.Resolve(builder.Configuration["CachePath"] ?? "/var/cache/plainsight/content");
 
-string idleSourcePath = builder.Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
-string idleCachePath = builder.Configuration["IdleCachePath"] ?? "/var/cache/plainsight/idle";
+string idleSourcePath = MediaPathResolver.Resolve(builder.Configuration["IdlePath"] ?? "/mnt/plainsight/idle");
+string idleCachePath = MediaPathResolver.Resolve(builder.Configuration["IdleCachePath"] ?? "/var/cache/plainsight/idle");
 
 // Under Aspire the ServerUrl resolves via service discovery ("http://plainsight-server").
 // On the Pi without Aspire, override ServerUrl in appsettings or env to the real address.

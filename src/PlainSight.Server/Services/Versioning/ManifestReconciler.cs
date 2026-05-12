@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Data;
+using PlainSight.Shared;
 using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Services.Versioning;
@@ -33,7 +34,7 @@ internal sealed partial class ManifestReconciler : IPlayerVersionReconciler
         this.dbContext = dbContext;
         this.logger = logger;
         this.verifier = verifier;
-        this.updatesDir = configuration["UpdatesPath"] ?? Path.Combine(AppContext.BaseDirectory, "Updates");
+        this.updatesDir = MediaPathResolver.Resolve(configuration["UpdatesPath"] ?? Path.Combine(AppContext.BaseDirectory, "Updates"));
     }
 
     public async Task<int> ReconcileAsync(CancellationToken ct)

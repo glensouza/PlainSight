@@ -57,7 +57,7 @@
                     <div class="list-group mb-0">
                         @foreach (PlayerVersion v in versions)
                         {
-                            string updatesPath = this.Configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
+                            string updatesPath = MediaPathResolver.Resolve(this.Configuration["UpdatesPath"] ?? "/mnt/plainsight/updates");
                             bool existsOnDisk = File.Exists(Path.Combine(updatesPath, v.FileName));
                             <div class="list-group-item @(existsOnDisk ? "" : "list-group-item-warning opacity-75")">
                                 <div class="d-flex justify-content-between align-items-center">
@@ -274,7 +274,7 @@
                 return;
             }
 
-            string updatesPath = this.Configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
+            string updatesPath = MediaPathResolver.Resolve(this.Configuration["UpdatesPath"] ?? "/mnt/plainsight/updates");
             string safeFileName = Path.GetFileName(version.FileName);
             string filePath = Path.Combine(updatesPath, safeFileName);
             string manifestPath = Path.Combine(updatesPath, safeFileName + ".json");
