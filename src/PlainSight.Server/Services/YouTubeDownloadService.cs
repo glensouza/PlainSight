@@ -1,6 +1,3 @@
-using System.Diagnostics;
-using System.Globalization;
-using System.Text;
 using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Data;
 using PlainSight.Shared.Models;
@@ -14,6 +11,7 @@ public class YouTubeDownloadService(
     IDbContextFactory<PlainSightDbContext> dbFactory,
     IConfiguration configuration,
     MediaMetadataService mediaMetadataService,
+    VideoProcessorService videoProcessor,
     ILogger<YouTubeDownloadService> logger)
 {
     private const long DefaultMaxDownloadBytes = 2L * 1024 * 1024 * 1024; // 2 GB
@@ -84,8 +82,7 @@ public class YouTubeDownloadService(
 
         if (configuration.GetValue("YouTube:Shrink:Enabled", true))
         {
-            filePath = await this.ShrinkVideoAsync(filePath, ct);
-            fileName = Path.GetFileName(filePath);
+            (filePath, fileName) = await this.TryShrinkAsync(filePath, ct);
         }
 
         long finalSize = new FileInfo(filePath).Length;
@@ -108,7 +105,7 @@ public class YouTubeDownloadService(
         return video.Title;
     }
 
-    private async Task<string> ShrinkVideoAsync(string filePath, CancellationToken ct)
+    private async Task<(string FilePath, string FileName)> TryShrinkAsync(string filePath, CancellationToken ct)
     {
         int maxHeight = configuration.GetValue("YouTube:Shrink:MaxHeight", DefaultShrinkMaxHeight);
         int crf = configuration.GetValue("YouTube:Shrink:Crf", DefaultShrinkCrf);
@@ -121,88 +118,45 @@ public class YouTubeDownloadService(
         string finalPath = Path.Combine(directory, nameWithoutExt + ".mp4");
         long originalBytes = new FileInfo(filePath).Length;
 
-        using Process process = new()
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "ffmpeg",
-                Arguments = $"-y -i \"{filePath}\" -vf scale=-2:'min(ih,{maxHeight})' -c:v libx264 -preset {preset} -crf {crf.ToString(CultureInfo.InvariantCulture)} -c:a aac -b:a {audioBitrate} -movflags +faststart \"{shrunkPath}\"",
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
-        };
-
-        StringBuilder stderr = new();
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data != null)
-            {
-                stderr.AppendLine(e.Data);
-            }
-        };
-
         try
         {
-            if (!process.Start())
-            {
-                logger.LogWarning("Failed to start ffmpeg shrink for {FilePath}; keeping original", filePath);
-                return filePath;
-            }
-
-            process.BeginErrorReadLine();
-            await process.WaitForExitAsync(ct);
-
-            if (process.ExitCode != 0)
-            {
-                logger.LogWarning("ffmpeg shrink failed for {FilePath} with exit code {ExitCode}. Keeping original. Stderr: {Stderr}", filePath, process.ExitCode, stderr.ToString());
-                this.TryDelete(shrunkPath);
-                return filePath;
-            }
+            await videoProcessor.ProcessVideoAsync(filePath, shrunkPath, stripAudio: false, compress: true, maxHeight, preset, crf, audioBitrate, ct);
 
             long shrunkBytes = new FileInfo(shrunkPath).Length;
             if (shrunkBytes >= originalBytes)
             {
-                logger.LogInformation("Shrink for {FilePath} produced larger output ({ShrunkBytes} >= {OriginalBytes} bytes); keeping original", filePath, shrunkBytes, originalBytes);
-                this.TryDelete(shrunkPath);
-                return filePath;
+                logger.LogInformation("Shrink produced a larger file ({ShrunkBytes} >= {OriginalBytes} bytes); keeping original {FilePath}", shrunkBytes, originalBytes, filePath);
+                TryDeleteFile(shrunkPath);
+                return (filePath, Path.GetFileName(filePath));
             }
 
-            bool sameExtension = string.Equals(filePath, finalPath, StringComparison.OrdinalIgnoreCase);
-            if (sameExtension)
+            bool isAlreadyMp4 = string.Equals(filePath, finalPath, StringComparison.OrdinalIgnoreCase);
+            File.Move(shrunkPath, finalPath, overwrite: isAlreadyMp4);
+            if (!isAlreadyMp4)
             {
-                File.Move(shrunkPath, finalPath, overwrite: true);
-            }
-            else
-            {
-                File.Move(shrunkPath, finalPath);
-                this.TryDelete(filePath);
+                TryDeleteFile(filePath);
             }
 
             double pctReduction = (originalBytes - shrunkBytes) * 100.0 / originalBytes;
-            logger.LogInformation("Shrunk {FilePath}: {OriginalMB:F1} MB -> {ShrunkMB:F1} MB ({Pct:F1}% reduction)", finalPath, originalBytes / 1024.0 / 1024.0, shrunkBytes / 1024.0 / 1024.0, pctReduction);
-            return finalPath;
+            logger.LogInformation("Shrunk {FinalPath}: {OriginalMB:F1} MB -> {ShrunkMB:F1} MB ({Pct:F1}% reduction)",
+                finalPath, originalBytes / 1024.0 / 1024.0, shrunkBytes / 1024.0 / 1024.0, pctReduction);
+
+            return (finalPath, Path.GetFileName(finalPath));
         }
         catch (OperationCanceledException)
         {
-            try
-            {
-                if (!process.HasExited)
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-            }
-            catch (InvalidOperationException)
-            {
-                /* process never started or already exited */
-            }
-
-            this.TryDelete(shrunkPath);
+            TryDeleteFile(shrunkPath);
             throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Shrink failed for {FilePath}; keeping original", filePath);
+            TryDeleteFile(shrunkPath);
+            return (filePath, Path.GetFileName(filePath));
         }
     }
 
-    private void TryDelete(string path)
+    private void TryDeleteFile(string path)
     {
         if (!File.Exists(path))
         {

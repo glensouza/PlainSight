@@ -1,21 +1,41 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 
 namespace PlainSight.Server.Services;
 
 public class VideoProcessorService(ILogger<VideoProcessorService> logger)
 {
-    public async Task ProcessVideoAsync(string inputPath, string outputPath, bool stripAudio, bool compress, CancellationToken cancellationToken = default)
+    public async Task ProcessVideoAsync(
+        string inputPath,
+        string outputPath,
+        bool stripAudio,
+        bool compress,
+        int maxHeight = 0,
+        string preset = "medium",
+        int crf = 28,
+        string audioBitrate = "128k",
+        CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("Processing video: {InputPath} -> {OutputPath} (StripAudio: {StripAudio}, Compress: {Compress})", 
-            inputPath, outputPath, stripAudio, compress);
+        logger.LogInformation("Processing video: {InputPath} -> {OutputPath} (StripAudio: {StripAudio}, Compress: {Compress}, MaxHeight: {MaxHeight})",
+            inputPath, outputPath, stripAudio, compress, maxHeight);
 
         StringBuilder arguments = new();
         arguments.Append($"-y -i \"{inputPath}\" ");
 
-        // Copy video stream without re-encoding
-        // Re-encode to H.264 with a reasonable CRF for digital signage
-        arguments.Append(compress ? "-c:v libx264 -crf 28 -preset fast -pix_fmt yuv420p " : "-c:v copy ");
+        if (compress)
+        {
+            if (maxHeight > 0)
+            {
+                arguments.Append($"-vf scale=-2:'min(ih,{maxHeight.ToString(CultureInfo.InvariantCulture)})' ");
+            }
+
+            arguments.Append($"-c:v libx264 -preset {preset} -crf {crf.ToString(CultureInfo.InvariantCulture)} -pix_fmt yuv420p ");
+        }
+        else
+        {
+            arguments.Append("-c:v copy ");
+        }
 
         if (stripAudio)
         {
@@ -23,22 +43,21 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
         }
         else
         {
-            // Copy audio stream or re-encode to AAC if compressing
-            arguments.Append(compress ? "-c:a aac -b:a 128k " : "-c:a copy ");
+            arguments.Append(compress ? $"-c:a aac -b:a {audioBitrate} " : "-c:a copy ");
         }
 
-        // Ensure we output to MP4
-        arguments.Append($"-f mp4 \"{outputPath}\"");
+        arguments.Append($"-movflags +faststart -f mp4 \"{outputPath}\"");
 
-        using Process process = new();
-        process.StartInfo = new ProcessStartInfo
+        using Process process = new()
         {
-            FileName = "ffmpeg",
-            Arguments = arguments.ToString(),
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "ffmpeg",
+                Arguments = arguments.ToString(),
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
         };
 
         StringBuilder ffmpegError = new();
@@ -57,7 +76,27 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
         }
 
         process.BeginErrorReadLine();
-        await process.WaitForExitAsync(cancellationToken);
+
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                /* process never started or already exited */
+            }
+
+            throw;
+        }
 
         if (process.ExitCode != 0)
         {

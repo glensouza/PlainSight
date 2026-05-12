@@ -523,7 +523,7 @@ else
             }
 
             // Process the video to the temp MP4 file
-            await VideoProcessorService.ProcessVideoAsync(filePath, tempPath, stripAudio, compressVideo, cts.Token);
+            await VideoProcessorService.ProcessVideoAsync(filePath, tempPath, stripAudio, compressVideo, cancellationToken: cts.Token);
 
             // Determine the target file name (ensure it ends with .mp4 since we processed to MP4)
             string targetFileName = Path.ChangeExtension(oldFileName, ".mp4");

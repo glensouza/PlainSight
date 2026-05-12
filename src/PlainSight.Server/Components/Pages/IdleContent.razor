@@ -300,7 +300,7 @@ else
                 return;
             }
 
-            await VideoProcessorService.ProcessVideoAsync(filePath, tempPath, stripAudio, compressVideo, cts.Token);
+            await VideoProcessorService.ProcessVideoAsync(filePath, tempPath, stripAudio, compressVideo, cancellationToken: cts.Token);
 
             string targetFileName = Path.ChangeExtension(oldFileName, ".mp4");
             string targetPath = Path.Combine(idlePath, targetFileName);
