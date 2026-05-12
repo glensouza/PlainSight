@@ -307,6 +307,19 @@ else
 }
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private async Task<bool> IsAdminAsync()
+    {
+        if (this.AuthState == null)
+        {
+            return false;
+        }
+
+        AuthenticationState state = await this.AuthState;
+        return state.User.IsInRole("Admin");
+    }
+
     private List<Schedule>? schedules;
     private List<Playlist>? playlists;
     private List<DeviceGroup>? deviceGroups;
@@ -493,6 +506,12 @@ else
     {
         if (deleteTarget == null)
         {
+            return;
+        }
+
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted to delete schedule {Id}", deleteTarget.Id);
             return;
         }
 

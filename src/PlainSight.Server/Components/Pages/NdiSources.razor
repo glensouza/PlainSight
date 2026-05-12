@@ -204,7 +204,7 @@ else
                                         </button>
                                     </Authorized>
                                 </AuthorizeView>
-                                </div>
+                            }
                         </td>
                     </tr>
                 }
@@ -262,6 +262,19 @@ else
 }
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private async Task<bool> IsAdminAsync()
+    {
+        if (this.AuthState == null)
+        {
+            return false;
+        }
+
+        AuthenticationState state = await this.AuthState;
+        return state.User.IsInRole("Admin");
+    }
+
     private List<NdiSource>? sources;
     private string? liveSourceName;
     private int liveDeviceCount;
@@ -627,6 +640,12 @@ else
 
     private async Task DeleteSource(int id, string name)
     {
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted to delete NDI source {Id}", id);
+            return;
+        }
+
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();

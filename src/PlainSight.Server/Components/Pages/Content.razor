@@ -468,6 +468,19 @@ else
         public string? DownloadedTitle { get; set; }
     }
 
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private async Task<bool> IsAdminAsync()
+    {
+        if (this.AuthState == null)
+        {
+            return false;
+        }
+
+        AuthenticationState state = await this.AuthState;
+        return state.User.IsInRole("Admin");
+    }
+
     private List<ContentItem>? contentItems;
     private bool uploading;
     private bool syncing;
@@ -961,6 +974,12 @@ else
 
     private async Task DeleteContent(int id)
     {
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted to delete content {Id}", id);
+            return;
+        }
+
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();

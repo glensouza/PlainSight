@@ -13,7 +13,9 @@ public class VersionService(IDbContextFactory<PlainSightDbContext> dbFactory, IL
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>();
 
         string infoVersion = attribute?.InformationalVersion ?? "1.0.0";
-        return $"v{infoVersion}";
+        int plusIndex = infoVersion.IndexOf('+');
+        string semVer = plusIndex >= 0 ? infoVersion[..plusIndex] : infoVersion;
+        return $"v{semVer}";
     }
 
     public string GetServerCommitHash()

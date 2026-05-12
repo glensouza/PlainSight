@@ -82,7 +82,7 @@ else
                             }
                         </h5>
                         <div>
-                            <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenEditor(playlist)">
+                            <button class="btn btn-sm btn-outline-primary" @onclick="() => EditPlaylist(playlist.Id)">
                                 <i class="bi bi-pencil"></i> Edit
                             </button>
                             <AuthorizeView Roles="Admin">
@@ -225,6 +225,19 @@ else
 }
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private async Task<bool> IsAdminAsync()
+    {
+        if (this.AuthState == null)
+        {
+            return false;
+        }
+
+        AuthenticationState state = await this.AuthState;
+        return state.User.IsInRole("Admin");
+    }
+
     private List<Playlist>? playlists;
     private List<ContentItem>? availableContent;
     private bool showCreateForm;
@@ -356,6 +369,12 @@ else
 
     private async Task DeletePlaylist(int id)
     {
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted to delete playlist {Id}", id);
+            return;
+        }
+
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
