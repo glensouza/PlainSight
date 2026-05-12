@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace PlainSight.Shared.Models;
 
 public class BrandingSchedule
@@ -6,6 +8,9 @@ public class BrandingSchedule
 
     public int BrandingVideoId { get; set; }
     public BrandingVideo BrandingVideo { get; init; } = null!;
+
+    [Required]
+    public string GroupName { get; set; } = "Default";
 
     public DayOfWeekFlags DaysOfWeek { get; set; } = DayOfWeekFlags.All;
     

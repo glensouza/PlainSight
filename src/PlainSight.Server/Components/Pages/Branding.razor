@@ -5,6 +5,7 @@
 @inject IConfiguration Configuration
 @inject ILogger<Branding> Logger
 @inject MediaMetadataService MediaMetadataService
+@inject VideoProcessorService VideoProcessorService
 
 <PageTitle>Branding Management — PlainSight</PageTitle>
 
@@ -14,6 +15,14 @@
         <p class="text-muted mb-0">Manage logo branding videos played between playlist loops</p>
     </div>
 </div>
+
+@if (globalError != null)
+{
+    <div class="alert alert-danger mt-3">
+        <i class="bi bi-exclamation-octagon"></i> @globalError
+        <button type="button" class="btn-close float-end" @onclick="() => globalError = null"></button>
+    </div>
+}
 
 <div class="row g-4 mt-2">
     <div class="col-lg-6">
@@ -31,7 +40,7 @@
                 else if (videos.Count == 0)
                 {
                     <div class="alert alert-info small">
-                        No branding videos found. Branding videos must be uploaded to the <strong>idle</strong> folder first.
+                        No branding videos found. Upload a new video or add one from the idle library.
                     </div>
                 }
                 else
@@ -80,21 +89,43 @@
                 }
 
                 <hr/>
-                <h6 class="fs-7 fw-bold mb-3">Add Video from Idle Library</h6>
-                <div class="input-group input-group-sm mb-3">
-                    <select class="form-select" @bind="selectedFileName">
-                        <option value="">-- Select file --</option>
-                        @if (idleFiles != null)
-                        {
-                            @foreach (FileInfo f in idleFiles)
+                
+                <div class="mb-4">
+                    <h6 class="fs-7 fw-bold mb-2">Direct Upload</h6>
+                    <div class="input-group input-group-sm">
+                        <InputFile class="form-control" OnChange="HandleFileSelected" accept="video/*" />
+                        <button class="btn btn-primary" @onclick="UploadBrandingVideo" disabled="@(selectedUploadFile == null || uploading)">
+                            @if (uploading)
                             {
-                                <option value="@f.Name">@f.Name</option>
+                                <span class="spinner-border spinner-border-sm" role="status"></span>
                             }
-                        }
-                    </select>
-                    <button class="btn btn-primary" @onclick="AddBrandingVideo" disabled="@(string.IsNullOrEmpty(selectedFileName))">
-                        Add to Branding
-                    </button>
+                            else
+                            {
+                                <i class="bi bi-upload"></i>
+                                <span> Upload</span>
+                            }
+                        </button>
+                    </div>
+                    <small class="text-muted">Uploads directly to the idle folder and adds to branding library.</small>
+                </div>
+
+                <div>
+                    <h6 class="fs-7 fw-bold mb-2">Add from Idle Library</h6>
+                    <div class="input-group input-group-sm">
+                        <select class="form-select" @bind="selectedFileName">
+                            <option value="">-- Select file --</option>
+                            @if (availableIdleFiles != null)
+                            {
+                                @foreach (FileInfo f in availableIdleFiles)
+                                {
+                                    <option value="@f.Name">@f.Name</option>
+                                }
+                            }
+                        </select>
+                        <button class="btn btn-outline-primary" @onclick="AddBrandingVideoFromIdle" disabled="@(string.IsNullOrEmpty(selectedFileName))">
+                            Add to Branding
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -128,6 +159,7 @@
                         <table class="table table-sm table-hover align-middle small">
                             <thead>
                                 <tr>
+                                    <th>Group</th>
                                     <th>Video</th>
                                     <th>Timing</th>
                                     <th class="text-end">Actions</th>
@@ -137,6 +169,7 @@
                                 @foreach (BrandingSchedule s in schedules)
                                 {
                                     <tr>
+                                        <td><span class="badge bg-secondary">@s.GroupName</span></td>
                                         <td><strong>@s.BrandingVideo.Name</strong></td>
                                         <td>
                                             <code>@s.StartTime.ToString("HH:mm")</code> – <code>@s.EndTime.ToString("HH:mm")</code>
@@ -168,6 +201,19 @@
                     <button type="button" class="btn-close" @onclick="() => showScheduleForm = false"></button>
                 </div>
                 <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Target Group</label>
+                        <select class="form-select form-select-sm" @bind="newScheduleGroupName">
+                            <option value="Default">Default (Global Fallback)</option>
+                            @if (deviceGroups != null)
+                            {
+                                @foreach (var g in deviceGroups)
+                                {
+                                    <option value="@g.Name">@g.Name</option>
+                                }
+                            }
+                        </select>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label small fw-bold">Video</label>
                         <select class="form-select form-select-sm" @bind="newScheduleVideoId">
@@ -218,9 +264,16 @@
 @code {
     private List<BrandingVideo>? videos;
     private List<BrandingSchedule>? schedules;
-    private List<FileInfo>? idleFiles;
+    private List<DeviceGroup>? deviceGroups;
+    private List<FileInfo>? availableIdleFiles;
+    
     private string selectedFileName = "";
+    private IBrowserFile? selectedUploadFile;
+    private bool uploading;
+    private string? globalError;
+
     private bool showScheduleForm;
+    private string newScheduleGroupName = "Default";
     private int newScheduleVideoId;
     private TimeOnly newScheduleStartTime = new(0, 0);
     private TimeOnly newScheduleEndTime = new(23, 59, 59);
@@ -236,7 +289,12 @@
     {
         await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
         videos = await context.BrandingVideos.OrderBy(v => v.Name).ToListAsync();
-        schedules = await context.BrandingSchedules.Include(s => s.BrandingVideo).OrderBy(s => s.StartTime).ToListAsync();
+        schedules = await context.BrandingSchedules
+            .Include(s => s.BrandingVideo)
+            .OrderBy(s => s.GroupName)
+            .ThenBy(s => s.StartTime)
+            .ToListAsync();
+        deviceGroups = await context.DeviceGroups.Where(g => g.Name != "Default").OrderBy(g => g.Name).ToListAsync();
     }
 
     private async Task LoadIdleFiles()
@@ -244,21 +302,89 @@
         string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
         if (Directory.Exists(idlePath))
         {
-            idleFiles = new DirectoryInfo(idlePath).GetFiles().Where(f => MediaConstants.IsVideo(f.Name)).ToList();
+            var files = new DirectoryInfo(idlePath).GetFiles().Where(f => MediaConstants.IsVideo(f.Name)).ToList();
+            
+            // Filter out files already in branding library
+            if (videos != null)
+            {
+                var existingNames = videos.Select(v => v.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                availableIdleFiles = files.Where(f => !existingNames.Contains(f.Name)).ToList();
+            }
+            else
+            {
+                availableIdleFiles = files;
+            }
         }
     }
 
-    private async Task AddBrandingVideo()
+    private void HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedUploadFile = e.File;
+        globalError = null;
+    }
+
+    private async Task UploadBrandingVideo()
+    {
+        if (selectedUploadFile == null) return;
+
+        uploading = true;
+        globalError = null;
+        try
+        {
+            string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+            Directory.CreateDirectory(idlePath);
+
+            string fileName = Path.GetFileName(selectedUploadFile.Name);
+            string filePath = Path.Combine(idlePath, fileName);
+
+            if (File.Exists(filePath))
+            {
+                globalError = "A file with this name already exists in the idle folder.";
+                return;
+            }
+
+            await using (Stream stream = selectedUploadFile.OpenReadStream(512L * 1024 * 1024))
+            await using (FileStream fileStream = new(filePath, FileMode.Create))
+            {
+                await stream.CopyToAsync(fileStream);
+            }
+
+            selectedUploadFile = null;
+            selectedFileName = fileName;
+            await AddBrandingVideoFromIdle();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error uploading branding video");
+            globalError = "Upload failed: " + ex.Message;
+        }
+        finally
+        {
+            uploading = false;
+        }
+    }
+
+    private async Task AddBrandingVideoFromIdle()
     {
         if (string.IsNullOrEmpty(selectedFileName)) return;
 
         await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
         
-        if (await context.BrandingVideos.AnyAsync(v => v.FileName == selectedFileName)) return;
+        if (await context.BrandingVideos.AnyAsync(v => v.FileName == selectedFileName))
+        {
+            selectedFileName = "";
+            return;
+        }
 
         string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
         string filePath = Path.Combine(idlePath, selectedFileName);
         
+        if (!File.Exists(filePath))
+        {
+            globalError = "File not found in idle library.";
+            return;
+        }
+
         int duration = await MediaMetadataService.GetVideoDurationAsync(filePath);
 
         var video = new BrandingVideo
@@ -274,6 +400,7 @@
         await context.SaveChangesAsync();
         selectedFileName = "";
         await LoadData();
+        await LoadIdleFiles();
     }
 
     private async Task SetDefault(BrandingVideo video)
@@ -290,11 +417,13 @@
         context.BrandingVideos.Remove(video);
         await context.SaveChangesAsync();
         await LoadData();
+        await LoadIdleFiles();
     }
 
     private void ShowCreateSchedule()
     {
         newScheduleVideoId = videos?.FirstOrDefault()?.Id ?? 0;
+        newScheduleGroupName = "Default";
         showScheduleForm = true;
     }
 
@@ -310,6 +439,7 @@
         var schedule = new BrandingSchedule
         {
             BrandingVideoId = newScheduleVideoId,
+            GroupName = newScheduleGroupName,
             StartTime = newScheduleStartTime,
             EndTime = newScheduleEndTime,
             DaysOfWeek = newScheduleDays,

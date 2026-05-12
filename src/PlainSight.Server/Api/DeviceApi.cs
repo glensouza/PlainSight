@@ -111,7 +111,7 @@ public static class DeviceApi
                 Playlist? activePlaylist = activeSchedule?.Playlist;
 
                 // Resolve branding
-                BrandingVideo? branding = await brandingService.GetActiveBrandingAsync(ct);
+                BrandingVideo? branding = await brandingService.GetActiveBrandingAsync(device.Group, ct);
 
                 // Resolve live mode: explicit override wins, otherwise auto-switch.
                 int sourceStaleness = configuration.GetValue("Ndi:StalenessSeconds", 60);

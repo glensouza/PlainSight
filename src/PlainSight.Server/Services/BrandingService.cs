@@ -6,27 +6,23 @@ namespace PlainSight.Server.Services;
 
 public class BrandingService(IDbContextFactory<PlainSightDbContext> dbFactory)
 {
-    public async Task<BrandingVideo?> GetActiveBrandingAsync(CancellationToken ct = default)
+    public async Task<BrandingVideo?> GetActiveBrandingAsync(string groupName, CancellationToken ct = default)
     {
         await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(ct);
 
-        DateTime now = DateTime.UtcNow;
-        // PlainSight uses Pacific Time for scheduling (as seen in Schedules.razor)
-        // However, the DB typically stores UTC. Let's assume the StartTime/EndTime
-        // are compared against the current time in the system's timezone.
-        // For consistency with ScheduleService, we should use the same logic.
-        
         TimeOnly currentTime = TimeOnly.FromDateTime(DateTime.Now); 
         DayOfWeek currentDay = DateTime.Now.DayOfWeek;
         DayOfWeekFlags dayFlag = (DayOfWeekFlags)(1 << (int)currentDay);
 
-        // Find active scheduled branding
+        // Find active scheduled branding for this specific group or Default
         BrandingSchedule? activeSchedule = await context.BrandingSchedules
             .Include(s => s.BrandingVideo)
             .Where(s => s.IsActive)
             .Where(s => (s.DaysOfWeek & dayFlag) != 0)
             .Where(s => s.StartTime <= currentTime && s.EndTime >= currentTime)
-            .OrderByDescending(s => s.Id) // If multiple, latest wins for now
+            .Where(s => s.GroupName == groupName || s.GroupName == "Default")
+            .OrderByDescending(s => s.GroupName == groupName) // Specific group wins over Default
+            .ThenByDescending(s => s.Id)
             .FirstOrDefaultAsync(ct);
 
         if (activeSchedule != null)
