@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PlainSight.Server.Data;
 using PlainSight.Server.Services;
+using PlainSight.Shared;
 using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Api;
@@ -310,7 +311,7 @@ public static class DeviceApi
                 return Results.BadRequest("Missing fileName");
             }
 
-            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
+            string screenshotsRoot = MediaPathResolver.Resolve(configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots");
             string deviceDir = Path.Combine(screenshotsRoot, deviceId);
 
             // Reject deviceId values that escape screenshotsRoot (path traversal)

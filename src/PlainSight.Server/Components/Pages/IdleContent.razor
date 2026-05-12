@@ -6,7 +6,7 @@
 @inject IConfiguration Configuration
 @inject ILogger<IdleContent> Logger
 
-@implements IDisposable
+@implements IAsyncDisposable
 
 <PageTitle>Idle Content Library — PlainSight</PageTitle>
 
@@ -213,7 +213,7 @@ else
 {
     string previewName = previewIdleFileName;
     string apiPath = $"/api/media/idle/{previewIdleFileName}";
-    bool isImage = previewIdleFileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || previewIdleFileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || previewIdleFileName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase);
+    bool isImage = MediaConstants.IsImage(previewIdleFileName);
     long fileSize = idleFiles?.FirstOrDefault(f => f.Name == previewIdleFileName)?.Length ?? 0;
 
     <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.8);">
@@ -245,6 +245,9 @@ else
 }
 
 @code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
     private List<FileInfo>? idleFiles;
     private bool uploadingIdle;
     private IBrowserFile? selectedIdleFile;
@@ -259,38 +262,97 @@ else
     private string? idleFileToDelete;
     private readonly CancellationTokenSource cts = new();
     private FileSystemWatcher? fileWatcher;
+    private Timer? refreshDebounce;
+    private readonly Lock refreshLock = new();
+    private bool refreshInFlight;
+    private bool refreshPending;
+    private static readonly TimeSpan RefreshDebounceWindow = TimeSpan.FromMilliseconds(400);
 
     protected override async Task OnInitializedAsync()
     {
         await LoadIdleContent();
-        
+
         string idlePath = GetActualIdlePath();
         if (Directory.Exists(idlePath))
         {
-            fileWatcher = new FileSystemWatcher(idlePath);
-            fileWatcher.Created += (s, e) => InvokeAsync(async () => { await LoadIdleContent(); StateHasChanged(); });
-            fileWatcher.Deleted += (s, e) => InvokeAsync(async () => { await LoadIdleContent(); StateHasChanged(); });
-            fileWatcher.Renamed += (s, e) => InvokeAsync(async () => { await LoadIdleContent(); StateHasChanged(); });
+            fileWatcher = new FileSystemWatcher(idlePath)
+            {
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime
+            };
+            fileWatcher.Created += this.OnIdleFolderChanged;
+            fileWatcher.Deleted += this.OnIdleFolderChanged;
+            fileWatcher.Renamed += this.OnIdleFolderChanged;
+            fileWatcher.Changed += this.OnIdleFolderChanged;
             fileWatcher.EnableRaisingEvents = true;
         }
     }
 
-    private string GetActualIdlePath()
+    private string GetActualIdlePath() =>
+        MediaPathResolver.Resolve(Configuration["IdlePath"] ?? "/mnt/plainsight/idle");
+
+    private void OnIdleFolderChanged(object sender, FileSystemEventArgs e)
     {
-        string configuredPath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
-        string parentDir = Path.GetDirectoryName(configuredPath) ?? "/mnt/plainsight";
-        string dirName = Path.GetFileName(configuredPath);
-        
-        if (Directory.Exists(parentDir))
+        Timer? existing;
+        lock (this.refreshLock)
         {
-            string? match = Directory.GetDirectories(parentDir)
-                .FirstOrDefault(d => string.Equals(Path.GetFileName(d), dirName, StringComparison.OrdinalIgnoreCase));
-            if (match != null)
-            {
-                return match;
-            }
+            existing = this.refreshDebounce;
+            this.refreshDebounce = new Timer(_ => this.RunDebouncedRefresh(), null, RefreshDebounceWindow, Timeout.InfiniteTimeSpan);
         }
-        return configuredPath;
+        existing?.Dispose();
+    }
+
+    private void RunDebouncedRefresh()
+    {
+        lock (this.refreshLock)
+        {
+            if (this.refreshInFlight)
+            {
+                this.refreshPending = true;
+                return;
+            }
+            this.refreshInFlight = true;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    await LoadIdleContent();
+                    StateHasChanged();
+
+                    lock (this.refreshLock)
+                    {
+                        if (!this.refreshPending)
+                        {
+                            this.refreshInFlight = false;
+                            return;
+                        }
+                        this.refreshPending = false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Debounced idle refresh failed");
+                lock (this.refreshLock)
+                {
+                    this.refreshInFlight = false;
+                    this.refreshPending = false;
+                }
+            }
+        });
+    }
+
+    private async Task<bool> UserIsAdminAsync()
+    {
+        if (AuthState == null)
+        {
+            return false;
+        }
+        AuthenticationState state = await AuthState;
+        return state.User.IsInRole("Admin");
     }
 
     private void PreviewIdleContent(string fileName)
@@ -418,6 +480,10 @@ else
         return Path.GetExtension(fileName).ToLowerInvariant() switch
         {
             ".webm" => "video/webm",
+            ".mkv" => "video/x-matroska",
+            ".avi" => "video/x-msvideo",
+            ".mov" => "video/quicktime",
+            ".ts" => "video/mp2t",
             _ => "video/mp4"
         };
     }
@@ -508,8 +574,24 @@ else
     {
         try
         {
+            if (!await UserIsAdminAsync())
+            {
+                Logger.LogWarning("Non-admin user attempted to delete idle file {FileName}", fileName);
+                idleUploadError = "Only administrators can delete idle content.";
+                idleFileToDelete = null;
+                return;
+            }
+
+            string sanitized = Path.GetFileName(fileName);
+            if (string.IsNullOrEmpty(sanitized) || sanitized != fileName)
+            {
+                idleUploadError = "Invalid file name.";
+                idleFileToDelete = null;
+                return;
+            }
+
             string idlePath = GetActualIdlePath();
-            string filePath = Path.Combine(idlePath, fileName);
+            string filePath = Path.Combine(idlePath, sanitized);
 
             if (File.Exists(filePath))
             {
@@ -539,13 +621,30 @@ else
         return $"{len:0.##} {sizes[order]}";
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (fileWatcher != null)
         {
             fileWatcher.EnableRaisingEvents = false;
+            fileWatcher.Created -= this.OnIdleFolderChanged;
+            fileWatcher.Deleted -= this.OnIdleFolderChanged;
+            fileWatcher.Renamed -= this.OnIdleFolderChanged;
+            fileWatcher.Changed -= this.OnIdleFolderChanged;
             fileWatcher.Dispose();
+            fileWatcher = null;
         }
+
+        Timer? timer;
+        lock (this.refreshLock)
+        {
+            timer = this.refreshDebounce;
+            this.refreshDebounce = null;
+        }
+        if (timer != null)
+        {
+            await timer.DisposeAsync();
+        }
+
         cts.Cancel();
         cts.Dispose();
     }

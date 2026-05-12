@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PlainSight.Shared;
 using PlainSight.Shared.Models;
 
 namespace PlainSight.Player.Services;
@@ -15,31 +16,9 @@ public class PlaylistService
 
     public PlaylistService(string contentPath, string idlePath, ILogger<PlaylistService> logger)
     {
-        this.contentPath = ResolveActualPath(contentPath);
-        this.idlePath = ResolveActualPath(idlePath);
+        this.contentPath = MediaPathResolver.Resolve(contentPath);
+        this.idlePath = MediaPathResolver.Resolve(idlePath);
         this.logger = logger;
-    }
-
-    private static string ResolveActualPath(string configuredPath)
-    {
-        if (Directory.Exists(configuredPath))
-        {
-            return configuredPath;
-        }
-
-        string? parentDir = Path.GetDirectoryName(configuredPath);
-        string dirName = Path.GetFileName(configuredPath);
-
-        if (parentDir != null && Directory.Exists(parentDir))
-        {
-            string? match = Directory.GetDirectories(parentDir)
-                .FirstOrDefault(d => string.Equals(Path.GetFileName(d), dirName, StringComparison.OrdinalIgnoreCase));
-            if (match != null)
-            {
-                return match;
-            }
-        }
-        return configuredPath;
     }
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)

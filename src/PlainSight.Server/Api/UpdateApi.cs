@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Data;
+using PlainSight.Shared;
 using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Api;
@@ -22,9 +23,9 @@ public static class UpdateApi
                 return Results.NotFound("No player versions ingested");
             }
 
-            string root = ResolveActualPath(configuration["UpdatesPath"] ?? "/mnt/plainsight/updates");
+            string root = MediaPathResolver.Resolve(configuration["UpdatesPath"] ?? "/mnt/plainsight/updates");
             string filePath = Path.Combine(root, latest.FileName);
-            
+
             if (!File.Exists(filePath))
             {
                 return Results.NotFound($"Binary {latest.FileName} missing from share");
@@ -44,7 +45,7 @@ public static class UpdateApi
                 return Results.NotFound($"Version {version} not found");
             }
 
-            string root = ResolveActualPath(configuration["UpdatesPath"] ?? "/mnt/plainsight/updates");
+            string root = MediaPathResolver.Resolve(configuration["UpdatesPath"] ?? "/mnt/plainsight/updates");
             string filePath = Path.Combine(root, record.FileName);
 
             if (!File.Exists(filePath))
@@ -54,24 +55,5 @@ public static class UpdateApi
 
             return Results.File(filePath, "application/octet-stream", record.FileName);
         });
-    }
-
-    private static string ResolveActualPath(string configuredPath)
-    {
-        if (Directory.Exists(configuredPath)) return configuredPath;
-
-        string? parentDir = Path.GetDirectoryName(configuredPath);
-        string dirName = Path.GetFileName(configuredPath);
-        
-        if (parentDir != null && Directory.Exists(parentDir))
-        {
-            string? match = Directory.GetDirectories(parentDir)
-                .FirstOrDefault(d => string.Equals(Path.GetFileName(d), dirName, StringComparison.OrdinalIgnoreCase));
-            if (match != null)
-            {
-                return match;
-            }
-        }
-        return configuredPath;
     }
 }

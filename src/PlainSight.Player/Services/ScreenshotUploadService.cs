@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using Microsoft.Extensions.Configuration;
+using PlainSight.Shared;
 
 namespace PlainSight.Player.Services;
 
@@ -21,7 +22,7 @@ public class ScreenshotUploadService(
         try
         {
             // 1. Save to SMB share
-            string screenshotsRoot = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";
+            string screenshotsRoot = MediaPathResolver.Resolve(configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots");
             string deviceDir = Path.Combine(screenshotsRoot, this.deviceId);
             
             if (!Directory.Exists(deviceDir))

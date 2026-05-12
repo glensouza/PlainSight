@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using PlainSight.Shared;
 
 namespace PlainSight.Player.Services;
 
@@ -18,7 +19,7 @@ public class UpdateService(IConfiguration configuration, ILogger<UpdateService> 
             string tempPath = this.executablePath + ".new";
             byte[]? data = null;
 
-            string updatesPath = configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
+            string updatesPath = MediaPathResolver.Resolve(configuration["UpdatesPath"] ?? "/mnt/plainsight/updates");
             string localFilePath = Path.Combine(updatesPath, updateFileName);
 
             if (File.Exists(localFilePath))

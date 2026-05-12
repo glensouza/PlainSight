@@ -11,38 +11,15 @@ public class ContentSyncService(
     MediaMetadataService metadataService,
     ILogger<ContentSyncService> logger)
 {
-    private string ContentPath => ResolveActualPath(configuration["ContentPath"] ?? "/mnt/plainsight/content");
-
-    private static string ResolveActualPath(string configuredPath)
-    {
-        if (Directory.Exists(configuredPath))
-        {
-            return configuredPath;
-        }
-
-        string? parentDir = Path.GetDirectoryName(configuredPath);
-        string dirName = Path.GetFileName(configuredPath);
-
-        if (parentDir != null && Directory.Exists(parentDir))
-        {
-            string? match = Directory.GetDirectories(parentDir)
-                .FirstOrDefault(d => string.Equals(Path.GetFileName(d), dirName, StringComparison.OrdinalIgnoreCase));
-            if (match != null)
-            {
-                return match;
-            }
-        }
-        return configuredPath;
-    }
-
     public async Task<(int Added, int Removed)> SyncAsync(CancellationToken cancellationToken = default)
     {
-        if (!Directory.Exists(this.ContentPath))
+        string contentPath = MediaPathResolver.Resolve(configuration["ContentPath"] ?? "/mnt/plainsight/content");
+        if (!Directory.Exists(contentPath))
         {
             return (0, 0);
         }
 
-        HashSet<string> diskFiles = Directory.GetFiles(this.ContentPath)
+        HashSet<string> diskFiles = Directory.GetFiles(contentPath)
             .Where(f => MediaConstants.AllSupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
             .Select(f => Path.GetFileName(f))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -83,7 +60,7 @@ public class ContentSyncService(
                 ? ContentType.RenderedWebsite
                 : isVideo ? ContentType.Video : ContentType.Image;
 
-            string filePath = Path.Combine(this.ContentPath, fileName);
+            string filePath = Path.Combine(contentPath, fileName);
             FileInfo fileInfo = new(filePath);
 
             int duration = 10;
