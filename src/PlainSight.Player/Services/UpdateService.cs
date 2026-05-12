@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 
 namespace PlainSight.Player.Services;
 
-public class UpdateService(HttpClient http, IConfiguration configuration, ILogger<UpdateService> logger)
+public class UpdateService(IConfiguration configuration, ILogger<UpdateService> logger)
 {
     private readonly string executablePath = Environment.ProcessPath ?? "/opt/plainsight/PlainSight.Player";
 
