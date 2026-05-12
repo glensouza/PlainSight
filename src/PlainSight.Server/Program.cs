@@ -83,6 +83,7 @@ builder.Services.AddSingleton<SignatureVerifier>(sp =>
 builder.Services.AddScoped<IPlayerVersionReconciler, ManifestReconciler>();
 builder.Services.AddHostedService<ReconciliationBackgroundService>();
 builder.Services.AddScoped<ScheduleService>();
+builder.Services.AddScoped<BrandingService>();
 builder.Services.AddHostedService<AutoScreenshotService>();
 builder.Services.AddHostedService<DeviceMonitorService>();
 builder.Services.AddHostedService<NdiDiscoveryService>();

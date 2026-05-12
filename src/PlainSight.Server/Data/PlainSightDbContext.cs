@@ -19,10 +19,27 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
     public DbSet<NdiSource> NdiSources => this.Set<NdiSource>();
     public DbSet<SystemSetting> SystemSettings => this.Set<SystemSetting>();
     public DbSet<LogEntry> LogEntries => this.Set<LogEntry>();
+    public DbSet<BrandingVideo> BrandingVideos => this.Set<BrandingVideo>();
+    public DbSet<BrandingSchedule> BrandingSchedules => this.Set<BrandingSchedule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<BrandingVideo>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.FileName).IsUnique();
+        });
+
+        modelBuilder.Entity<BrandingSchedule>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.BrandingVideo)
+                .WithMany()
+                .HasForeignKey(e => e.BrandingVideoId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
 
         modelBuilder.Entity<SystemSetting>(entity =>
         {
