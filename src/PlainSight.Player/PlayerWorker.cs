@@ -60,11 +60,13 @@ public class PlayerWorker(
 
                     if (response.PlaylistItems != null)
                     {
-                        playlist.UpdatePlaylist(response.PlaylistItems);
+                        playlist.UpdatePlaylist(response.PlaylistItems, response.BrandingItem);
                     }
                     else
                     {
                         // No scheduled playlist from server, refresh from the local playlist.json (synced from SMB)
+                        // We still update the branding item if available
+                        playlist.UpdatePlaylist(new List<PlaylistItemDto>(), response.BrandingItem);
                         await playlist.RefreshAsync(stoppingToken);
                     }
 

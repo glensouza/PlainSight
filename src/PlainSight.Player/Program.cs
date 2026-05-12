@@ -147,7 +147,11 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
 
 // Return current playlist (switches to idle automatically)
 app.MapGet("/api/playlist", (PlaylistService playlist) =>
-    Results.Json(playlist.GetCurrentPlaylist()));
+    Results.Json(new
+    {
+        Items = playlist.GetCurrentPlaylist(),
+        Branding = playlist.GetBrandingItem()
+    }));
 
 // Direct live screenshot API called by the server
 app.MapGet("/api/screenshot", async (ScreenCaptureService screenCapture) =>
