@@ -8,7 +8,7 @@
 @inject RenderQueue RenderQueue
 @inject IConfiguration Configuration
 @inject ILogger<Content> Logger
-@inject YouTubeDownloadService DownloadService
+@inject YouTubeDownloadQueue YouTubeDownloadQueue
 @implements IDisposable
 
 <PageTitle>Content Library — PlainSight</PageTitle>
@@ -102,29 +102,9 @@
                                 <div class="mb-2">
                                     <input type="text" class="form-control form-control-sm" placeholder="https://youtube.com/watch?v=..." @bind="youtubeUrl" />
                                 </div>
-                                @if (youtubeDownloadError != null)
-                                {
-                                    <div class="alert alert-danger py-1 px-2 mb-2">
-                                        <small><i class="bi bi-exclamation-triangle"></i> @youtubeDownloadError</small>
-                                    </div>
-                                }
-                                @if (youtubeDownloadSuccess != null)
-                                {
-                                    <div class="alert alert-success py-1 px-2 mb-2">
-                                        <small><i class="bi bi-check-circle"></i> @youtubeDownloadSuccess</small>
-                                    </div>
-                                }
-                                <button class="btn btn-sm btn-outline-danger" @onclick="DownloadYouTube" disabled="@(isDownloadingYouTube || string.IsNullOrWhiteSpace(youtubeUrl))">
-                                    @if (isDownloadingYouTube)
-                                    {
-                                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                                        <span>Downloading...</span>
-                                    }
-                                    else
-                                    {
-                                        <i class="bi bi-cloud-arrow-down"></i>
-                                        <span>Download</span>
-                                    }
+                                <button class="btn btn-sm btn-outline-danger" @onclick="EnqueueYouTubeDownload" disabled="@string.IsNullOrWhiteSpace(youtubeUrl)">
+                                    <i class="bi bi-cloud-arrow-down"></i>
+                                    <span>Download</span>
                                 </button>
                             </div>
                         </div>
@@ -176,6 +156,62 @@
                                 @if (job.Status is "Done" or "Failed")
                                 {
                                     <button class="btn btn-sm btn-link py-0" @onclick="() => renderJobs.Remove(job)">
+                                        <i class="bi bi-x"></i>
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@if (youtubeJobs.Count > 0)
+{
+    <div class="card mb-4">
+        <div class="card-header">
+            <h6 class="mb-0"><i class="bi bi-youtube"></i> YouTube Download Queue</h6>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <tbody>
+                    @foreach (YouTubeJobState job in youtubeJobs)
+                    {
+                        <tr>
+                            <td class="ps-3">
+                                @if (job.Status is "Queued" or "Processing")
+                                {
+                                    <span class="spinner-border spinner-border-sm text-danger" role="status"></span>
+                                }
+                                else if (job.Status == "Done")
+                                {
+                                    <i class="bi bi-check-circle-fill text-success"></i>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-x-circle-fill text-danger"></i>
+                                }
+                            </td>
+                            <td><small class="text-truncate d-inline-block" style="max-width:300px">@job.Url</small></td>
+                            <td>
+                                <span class="badge @(job.Status switch { "Done" => "bg-success", "Failed" => "bg-danger", "Processing" => "bg-danger", _ => "bg-secondary" })">
+                                    @job.Status
+                                </span>
+                                @if (job.Status == "Done" && job.DownloadedTitle != null)
+                                {
+                                    <small class="text-muted ms-1">@job.DownloadedTitle</small>
+                                }
+                                @if (job.Error != null)
+                                {
+                                    <small class="text-danger ms-1">@job.Error</small>
+                                }
+                            </td>
+                            <td>
+                                @if (job.Status is "Done" or "Failed")
+                                {
+                                    <button class="btn btn-sm btn-link py-0" @onclick="() => youtubeJobs.Remove(job)">
                                         <i class="bi bi-x"></i>
                                     </button>
                                 }
@@ -419,6 +455,15 @@ else
         public string? Error { get; set; }
     }
 
+    private sealed class YouTubeJobState
+    {
+        public string JobId { get; init; } = "";
+        public string Url { get; init; } = "";
+        public string Status { get; set; } = "Queued";
+        public string? Error { get; set; }
+        public string? DownloadedTitle { get; set; }
+    }
+
     private List<ContentItem>? contentItems;
     private bool uploading;
     private bool syncing;
@@ -441,9 +486,8 @@ else
     private int newDuration = 10;
     private ContentItem? itemToDelete;
     private string youtubeUrl = "";
-    private bool isDownloadingYouTube;
-    private string? youtubeDownloadError;
-    private string? youtubeDownloadSuccess;
+    private readonly List<YouTubeJobState> youtubeJobs = [];
+    private bool isPollingYouTube;
     private readonly CancellationTokenSource cts = new();
 
     protected override async Task OnInitializedAsync()
@@ -451,32 +495,73 @@ else
         await RunSync();
     }
 
-    private async Task DownloadYouTube()
+    private Task EnqueueYouTubeDownload()
     {
-        if (string.IsNullOrWhiteSpace(youtubeUrl))
+        if (string.IsNullOrWhiteSpace(this.youtubeUrl))
+        {
+            return Task.CompletedTask;
+        }
+
+        YouTubeDownloadJob job = new() { Url = this.youtubeUrl };
+        YouTubeDownloadQueue.Enqueue(job);
+        this.youtubeJobs.Add(new YouTubeJobState { JobId = job.Id, Url = this.youtubeUrl });
+        this.youtubeUrl = "";
+
+        if (!this.isPollingYouTube)
+        {
+            _ = this.PollYouTubeJobsAsync();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task PollYouTubeJobsAsync()
+    {
+        if (this.isPollingYouTube)
         {
             return;
         }
 
-        isDownloadingYouTube = true;
-        youtubeDownloadError = null;
-        youtubeDownloadSuccess = null;
-        
+        this.isPollingYouTube = true;
         try
         {
-            string title = await DownloadService.DownloadVideoAsync(youtubeUrl, cts.Token);
-            youtubeDownloadSuccess = $"Successfully downloaded: {title}";
-            youtubeUrl = "";
-            await LoadContent();
+            while (this.youtubeJobs.Count(static j => j.Status is "Queued" or "Processing") != 0 && !cts.IsCancellationRequested)
+            {
+                await Task.Delay(2000, cts.Token);
+
+                bool anyFinished = false;
+                foreach (YouTubeJobState jobState in this.youtubeJobs.Where(static j => j.Status is "Queued" or "Processing").ToList())
+                {
+                    YouTubeDownloadJob? job = YouTubeDownloadQueue.GetJob(jobState.JobId);
+                    if (job == null)
+                    {
+                        continue;
+                    }
+
+                    jobState.Status = job.Status.ToString();
+                    jobState.Error = job.Error;
+                    jobState.DownloadedTitle = job.DownloadedTitle;
+                    if (job.Status is YouTubeDownloadJobStatus.Done or YouTubeDownloadJobStatus.Failed)
+                    {
+                        anyFinished = true;
+                    }
+                }
+
+                if (anyFinished)
+                {
+                    await LoadContent();
+                }
+
+                StateHasChanged();
+            }
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
         {
-            Logger.LogError(ex, "Error downloading from YouTube");
-            youtubeDownloadError = ex.Message;
+            /* expected during shutdown */
         }
         finally
         {
-            isDownloadingYouTube = false;
+            this.isPollingYouTube = false;
         }
     }
 
@@ -523,7 +608,7 @@ else
             }
 
             // Process the video to the temp MP4 file
-            await VideoProcessorService.ProcessVideoAsync(filePath, tempPath, stripAudio, compressVideo, cts.Token);
+            await VideoProcessorService.ProcessVideoAsync(filePath, tempPath, stripAudio, compressVideo, cancellationToken: cts.Token);
 
             // Determine the target file name (ensure it ends with .mp4 since we processed to MP4)
             string targetFileName = Path.ChangeExtension(oldFileName, ".mp4");
