@@ -284,9 +284,9 @@
                 {
                     File.Delete(manifestPath);
                 }
-                catch (IOException ex)
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    this.Logger.LogWarning(ex, "Could not delete manifest {Path} (likely SMB lock or stale entry)", manifestPath);
+                    this.Logger.LogWarning(ex, "Could not delete manifest {Path} (busy or permission denied)", manifestPath);
                     manifestDeleteFailed = true;
                 }
             }
@@ -299,9 +299,9 @@
                 {
                     File.Delete(filePath);
                 }
-                catch (IOException ex)
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    this.Logger.LogWarning(ex, "Could not delete binary {Path} (likely SMB lock)", filePath);
+                    this.Logger.LogWarning(ex, "Could not delete binary {Path} (busy or permission denied)", filePath);
                     binaryDeleteFailed = true;
                 }
             }

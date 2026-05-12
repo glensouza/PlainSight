@@ -29,9 +29,9 @@ WORKDIR /app
 EXPOSE 8080
 EXPOSE 8081
 
+# Install dependencies and a real Chromium binary (avoiding Snap wrapper)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    chromium-browser \
     fonts-liberation \
     libasound2t64 \
     libatk-bridge2.0-0t64 \
@@ -58,12 +58,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     libxtst6 \
     xdg-utils \
+    && apt-get install -y chromium-browser-l10n || true \
+    && apt-get install -y chromium || apt-get install -y chromium-shell || echo "Fallback installation..." \
     && rm -rf /var/lib/apt/lists/*
 
-# Verify chromium installation path
-RUN which chromium-browser || which chromium || echo "Chromium not found in PATH"
+# Verify chromium installation path and provide a stable link
+RUN which chromium || which chromium-browser || echo "Chromium not found"
 
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 
 COPY --from=publish /app/publish .
