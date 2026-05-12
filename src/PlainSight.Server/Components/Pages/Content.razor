@@ -287,9 +287,13 @@ else
                                 <button class="btn btn-outline-secondary" @onclick="() => StartRename(item)" title="Rename">
                                     <i class="bi bi-pencil"></i>
                                 </button>
-                                <button class="btn btn-outline-danger" @onclick="() => ConfirmDelete(item)" title="Delete">
-                                    <i class="bi bi-trash"></i>
-                                </button>
+                                <AuthorizeView Roles="Admin">
+                                    <Authorized>
+                                        <button class="btn btn-outline-danger" @onclick="() => ConfirmDelete(item)" title="Delete">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </Authorized>
+                                </AuthorizeView>
                             </div>
                         </td>
                     </tr>
@@ -462,6 +466,19 @@ else
         public string Status { get; set; } = "Queued";
         public string? Error { get; set; }
         public string? DownloadedTitle { get; set; }
+    }
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private async Task<bool> IsAdminAsync()
+    {
+        if (this.AuthState == null)
+        {
+            return false;
+        }
+
+        AuthenticationState state = await this.AuthState;
+        return state.User.IsInRole("Admin");
     }
 
     private List<ContentItem>? contentItems;
@@ -957,6 +974,12 @@ else
 
     private async Task DeleteContent(int id)
     {
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted to delete content {Id}", id);
+            return;
+        }
+
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();

@@ -194,12 +194,16 @@ else
                             }
                             @if (source.IsManual)
                             {
-                                <button class="btn btn-sm btn-outline-danger ms-1"
-                                        @onclick="() => DeleteSource(source.Id, source.ServiceName)"
-                                        disabled="@isCurrentlyLiveSource"
-                                        title="@(isCurrentlyLiveSource ? "End Live before deleting" : "Delete source")">
-                                    <i class="bi bi-trash"></i>
-                                </button>
+                                <AuthorizeView Roles="Admin">
+                                    <Authorized>
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                @onclick="() => DeleteSource(source.Id, source.ServiceName)"
+                                                disabled="@isCurrentlyLiveSource"
+                                                title="@(isCurrentlyLiveSource ? "End Live before deleting" : "Delete source")">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </Authorized>
+                                </AuthorizeView>
                             }
                         </td>
                     </tr>
@@ -258,6 +262,19 @@ else
 }
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private async Task<bool> IsAdminAsync()
+    {
+        if (this.AuthState == null)
+        {
+            return false;
+        }
+
+        AuthenticationState state = await this.AuthState;
+        return state.User.IsInRole("Admin");
+    }
+
     private List<NdiSource>? sources;
     private string? liveSourceName;
     private int liveDeviceCount;
@@ -623,6 +640,12 @@ else
 
     private async Task DeleteSource(int id, string name)
     {
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted to delete NDI source {Id}", id);
+            return;
+        }
+
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();

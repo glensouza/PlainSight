@@ -1,6 +1,6 @@
 @page "/versions"
 @rendermode InteractiveServer
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Admin")]
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject IConfiguration Configuration
 @inject ILogger<Versions> Logger
