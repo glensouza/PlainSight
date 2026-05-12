@@ -7,7 +7,11 @@
         </div>
         <div>
             <div class="sidebar-brand-name">PlainSight</div>
-            <div class="sidebar-brand-sub">@VersionService.GetServerVersion() · NOC</div>
+            <div class="sidebar-brand-sub">
+                <a href="@VersionService.GetCommitUrl()" target="_blank" class="text-decoration-none text-inherit">
+                    @VersionService.GetServerVersion()
+                </a>
+            </div>
         </div>
     </div>
 
@@ -62,22 +66,22 @@
             </NavLink>
         </div>
 
-        <div class="nav-section-label">System</div>
-
-        <div class="nav-item">
-            <NavLink class="nav-link" href="logs">
-                <i class="bi bi-journal-text"></i> System Logs
-            </NavLink>
-        </div>
-
-        <div class="nav-item">
-            <NavLink class="nav-link" href="versions">
-                <i class="bi bi-box-seam"></i> Software Versions
-            </NavLink>
-        </div>
-
         <AuthorizeView Roles="Admin">
             <Authorized>
+                <div class="nav-section-label">System</div>
+
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="logs">
+                        <i class="bi bi-journal-text"></i> System Logs
+                    </NavLink>
+                </div>
+
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="versions">
+                        <i class="bi bi-box-seam"></i> Software Versions
+                    </NavLink>
+                </div>
+
                 <div class="nav-item">
                     <NavLink class="nav-link" href="users">
                         <i class="bi bi-people"></i> Manage Users

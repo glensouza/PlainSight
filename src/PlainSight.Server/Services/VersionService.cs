@@ -9,24 +9,37 @@ public class VersionService(IDbContextFactory<PlainSightDbContext> dbFactory, IL
 {
     public string GetServerVersion()
     {
-        Version? version = Assembly.GetExecutingAssembly().GetName().Version;
-        if (version != null && version is { Major: > 0 })
-        {
-            return $"v{version.Major}.{version.Minor}.{version.Build}";
-        }
-
         AssemblyInformationalVersionAttribute? attribute = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>();
 
         string infoVersion = attribute?.InformationalVersion ?? "1.0.0";
-        // Strip the commit hash if it exists (e.g. 1.0.0+abc1234 -> 1.0.0)
+        return $"v{infoVersion}";
+    }
+
+    public string GetServerCommitHash()
+    {
+        AssemblyInformationalVersionAttribute? attribute = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>();
+
+        string infoVersion = attribute?.InformationalVersion ?? "";
         int plusIndex = infoVersion.IndexOf('+');
-        if (plusIndex > 0)
+        if (plusIndex >= 0 && plusIndex < infoVersion.Length - 1)
         {
-            infoVersion = infoVersion[..plusIndex];
+            return infoVersion[(plusIndex + 1)..];
         }
 
-        return $"v{infoVersion}";
+        return "";
+    }
+
+    public string GetCommitUrl()
+    {
+        string hash = this.GetServerCommitHash();
+        if (string.IsNullOrEmpty(hash))
+        {
+            return "https://github.com/glensouza/PlainSight";
+        }
+
+        return $"https://github.com/glensouza/PlainSight/commit/{hash}";
     }
 
     public async Task<string> GetTargetVersionAsync(string deviceGroup, CancellationToken cancellationToken = default)

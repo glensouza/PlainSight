@@ -287,9 +287,13 @@ else
                                 <button class="btn btn-outline-secondary" @onclick="() => StartRename(item)" title="Rename">
                                     <i class="bi bi-pencil"></i>
                                 </button>
-                                <button class="btn btn-outline-danger" @onclick="() => ConfirmDelete(item)" title="Delete">
-                                    <i class="bi bi-trash"></i>
-                                </button>
+                                <AuthorizeView Roles="Admin">
+                                    <Authorized>
+                                        <button class="btn btn-outline-danger" @onclick="() => ConfirmDelete(item)" title="Delete">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </Authorized>
+                                </AuthorizeView>
                             </div>
                         </td>
                     </tr>

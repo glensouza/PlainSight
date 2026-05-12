@@ -140,21 +140,28 @@ else
                     <div class="ps-cell">
                         <div class="ps-cell__label">GROUP</div>
                         <div class="ps-cell__value">
-                            <select class="ps-cell__select"
-                                    value="@device.Group"
-                                    @onchange="e => ChangeGroup(device.DeviceId, e.Value?.ToString() ?? device.Group)">
-                                @if (deviceGroups != null)
-                                {
-                                    @foreach (DeviceGroup g in deviceGroups)
-                                    {
-                                        <option value="@g.Name">@g.Name</option>
-                                    }
-                                }
-                                else
-                                {
-                                    <option value="@device.Group">@device.Group</option>
-                                }
-                            </select>
+                            <AuthorizeView Roles="Admin">
+                                <Authorized>
+                                    <select class="ps-cell__select"
+                                            value="@device.Group"
+                                            @onchange="e => ChangeGroup(device.DeviceId, e.Value?.ToString() ?? device.Group)">
+                                        @if (deviceGroups != null)
+                                        {
+                                            @foreach (DeviceGroup g in deviceGroups)
+                                            {
+                                                <option value="@g.Name">@g.Name</option>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <option value="@device.Group">@device.Group</option>
+                                        }
+                                    </select>
+                                </Authorized>
+                                <NotAuthorized>
+                                    <span class="ps-cell__text">@device.Group</span>
+                                </NotAuthorized>
+                            </AuthorizeView>
                         </div>
                     </div>
                     <div class="ps-cell ps-cell--interactive" @onclick="() => ShowScreenshotHistory(device)" title="View screenshot history">
@@ -199,26 +206,30 @@ else
                         <i class="bi bi-broadcast"></i>
                         <span>@GetLiveModeLabel(device)</span>
                     </button>
-                    <button class="ps-action ps-action--warn"
-                            @onclick="() => ResetApiKey(device.DeviceId)"
-                            disabled="@resettingApiKey.Contains(device.DeviceId)"
-                            title="Reset API key">
-                        @if (resettingApiKey.Contains(device.DeviceId))
-                        {
-                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                        }
-                        else
-                        {
-                            <i class="bi bi-key"></i>
-                        }
-                        <span>Reset Key</span>
-                    </button>
-                    <button class="ps-action ps-action--danger"
-                            @onclick="() => PromptDeleteDevice(device)"
-                            title="Delete device">
-                        <i class="bi bi-trash"></i>
-                        <span>Delete</span>
-                    </button>
+                    <AuthorizeView Roles="Admin">
+                        <Authorized>
+                            <button class="ps-action ps-action--warn"
+                                    @onclick="() => ResetApiKey(device.DeviceId)"
+                                    disabled="@resettingApiKey.Contains(device.DeviceId)"
+                                    title="Reset API key">
+                                @if (resettingApiKey.Contains(device.DeviceId))
+                                {
+                                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-key"></i>
+                                }
+                                <span>Reset Key</span>
+                            </button>
+                            <button class="ps-action ps-action--danger"
+                                    @onclick="() => PromptDeleteDevice(device)"
+                                    title="Delete device">
+                                <i class="bi bi-trash"></i>
+                                <span>Delete</span>
+                            </button>
+                        </Authorized>
+                    </AuthorizeView>
                 </footer>
             </div>
         }

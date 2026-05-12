@@ -82,13 +82,17 @@ else
                             }
                         </h5>
                         <div>
-                            <button class="btn btn-sm btn-outline-primary" @onclick="() => EditPlaylist(playlist.Id)">
-                                <i class="bi bi-pencil"></i>
+                            <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenEditor(playlist)">
+                                <i class="bi bi-pencil"></i> Edit
                             </button>
-                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeletePlaylist(playlist.Id)">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </div>
+                            <AuthorizeView Roles="Admin">
+                                <Authorized>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeletePlaylist(playlist.Id)">
+                                        <i class="bi bi-trash"></i> Delete
+                                    </button>
+                                </Authorized>
+                            </AuthorizeView>
+                            </div>
                     </div>
                     <div class="card-body">
                         @if (!string.IsNullOrEmpty(playlist.Description))

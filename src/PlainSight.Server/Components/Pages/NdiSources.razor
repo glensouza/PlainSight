@@ -194,13 +194,17 @@ else
                             }
                             @if (source.IsManual)
                             {
-                                <button class="btn btn-sm btn-outline-danger ms-1"
-                                        @onclick="() => DeleteSource(source.Id, source.ServiceName)"
-                                        disabled="@isCurrentlyLiveSource"
-                                        title="@(isCurrentlyLiveSource ? "End Live before deleting" : "Delete source")">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            }
+                                <AuthorizeView Roles="Admin">
+                                    <Authorized>
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                @onclick="() => DeleteSource(source.Id, source.ServiceName)"
+                                                disabled="@isCurrentlyLiveSource"
+                                                title="@(isCurrentlyLiveSource ? "End Live before deleting" : "Delete source")">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </Authorized>
+                                </AuthorizeView>
+                                </div>
                         </td>
                     </tr>
                 }
