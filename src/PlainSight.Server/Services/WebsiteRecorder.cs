@@ -102,11 +102,16 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
                                                  (durationSec) => {
                                                              const totalHeight = Math.max(document.body.scrollHeight - window.innerHeight, 0);
                                                              if (totalHeight === 0) return;
+                                                             const delaySec = 3.0;
+                                                             const scrollDurationSec = Math.max(durationSec - delaySec, 0.1);
                                                              const start = performance.now();
                                                              function step(now) {
                                                                  const elapsed = (now - start) / 1000;
                                                                  if (elapsed < durationSec) {
-                                                                     window.scrollTo(0, (elapsed / durationSec) * totalHeight);
+                                                                     if (elapsed > delaySec) {
+                                                                         const scrollElapsed = Math.min(elapsed - delaySec, scrollDurationSec);
+                                                                         window.scrollTo(0, (scrollElapsed / scrollDurationSec) * totalHeight);
+                                                                     }
                                                                      requestAnimationFrame(step);
                                                                  }
                                                              }
