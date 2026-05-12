@@ -303,8 +303,7 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
             "--no-first-run",
             "--disable-background-networking",
             "--disable-default-apps",
-            "--disable-sync",
-            "--single-process"
+            "--disable-sync"
         ];
         return new LaunchOptions
         {
