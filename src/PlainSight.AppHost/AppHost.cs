@@ -14,10 +14,12 @@ IResourceBuilder<ProjectResource> plainsightServer = builder.AddProject<PlainSig
     .WaitFor(plainsightDb)
     .WithReference(plainsightDb);
 
-// Aspire discovers the player's HTTP endpoint from launchSettings.json
-// (profile "http", applicationUrl http://localhost:5200).
-builder.AddProject<PlainSight_Player>("plainsight-player")
-    .WithReference(plainsightServer)
-    .WaitFor(plainsightServer);
+// Player is a Raspberry Pi Linux service and cannot run on Windows dev machines.
+if (!OperatingSystem.IsWindows())
+{
+    builder.AddProject<PlainSight_Player>("plainsight-player")
+        .WithReference(plainsightServer)
+        .WaitFor(plainsightServer);
+}
 
 builder.Build().Run();
