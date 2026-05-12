@@ -10,9 +10,9 @@ public class BrandingService(IDbContextFactory<PlainSightDbContext> dbFactory)
     {
         await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(ct);
 
-        TimeOnly currentTime = TimeOnly.FromDateTime(DateTime.Now); 
-        DayOfWeek currentDay = DateTime.Now.DayOfWeek;
-        DayOfWeekFlags dayFlag = (DayOfWeekFlags)(1 << (int)currentDay);
+        DateTime now = TimeExtensions.GetSystemNow();
+        TimeOnly currentTime = TimeOnly.FromDateTime(now);
+        DayOfWeekFlags dayFlag = now.DayOfWeek.ToFlag();
 
         // Find active scheduled branding for this specific group or Default
         BrandingSchedule? activeSchedule = await context.BrandingSchedules

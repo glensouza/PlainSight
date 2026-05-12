@@ -5,7 +5,6 @@
 @inject IConfiguration Configuration
 @inject ILogger<Branding> Logger
 @inject MediaMetadataService MediaMetadataService
-@inject VideoProcessorService VideoProcessorService
 
 <PageTitle>Branding Management — PlainSight</PageTitle>
 
@@ -207,7 +206,7 @@
                             <option value="Default">Default (Global Fallback)</option>
                             @if (deviceGroups != null)
                             {
-                                @foreach (var g in deviceGroups)
+                                @foreach (DeviceGroup g in deviceGroups)
                                 {
                                     <option value="@g.Name">@g.Name</option>
                                 }
@@ -297,24 +296,28 @@
         deviceGroups = await context.DeviceGroups.Where(g => g.Name != "Default").OrderBy(g => g.Name).ToListAsync();
     }
 
-    private async Task LoadIdleFiles()
+    private Task LoadIdleFiles()
     {
         string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
-        if (Directory.Exists(idlePath))
+        if (!Directory.Exists(idlePath))
         {
-            var files = new DirectoryInfo(idlePath).GetFiles().Where(f => MediaConstants.IsVideo(f.Name)).ToList();
-            
-            // Filter out files already in branding library
-            if (videos != null)
-            {
-                var existingNames = videos.Select(v => v.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                availableIdleFiles = files.Where(f => !existingNames.Contains(f.Name)).ToList();
-            }
-            else
-            {
-                availableIdleFiles = files;
-            }
+            return Task.CompletedTask;
         }
+
+        List<FileInfo> files = new DirectoryInfo(idlePath).GetFiles().Where(f => MediaConstants.IsVideo(f.Name)).ToList();
+
+        // Filter out files already in branding library
+        if (videos != null)
+        {
+            HashSet<string> existingNames = videos.Select(v => v.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            availableIdleFiles = files.Where(f => !existingNames.Contains(f.Name)).ToList();
+        }
+        else
+        {
+            availableIdleFiles = files;
+        }
+
+        return Task.CompletedTask;
     }
 
     private void HandleFileSelected(InputFileChangeEventArgs e)
@@ -325,7 +328,10 @@
 
     private async Task UploadBrandingVideo()
     {
-        if (selectedUploadFile == null) return;
+        if (selectedUploadFile == null)
+        {
+            return;
+        }
 
         uploading = true;
         globalError = null;
@@ -366,10 +372,13 @@
 
     private async Task AddBrandingVideoFromIdle()
     {
-        if (string.IsNullOrEmpty(selectedFileName)) return;
+        if (string.IsNullOrEmpty(selectedFileName))
+        {
+            return;
+        }
 
         await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-        
+
         if (await context.BrandingVideos.AnyAsync(v => v.FileName == selectedFileName))
         {
             selectedFileName = "";
@@ -378,7 +387,7 @@
 
         string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
         string filePath = Path.Combine(idlePath, selectedFileName);
-        
+
         if (!File.Exists(filePath))
         {
             globalError = "File not found in idle library.";
@@ -387,7 +396,7 @@
 
         int duration = await MediaMetadataService.GetVideoDurationAsync(filePath);
 
-        var video = new BrandingVideo
+        BrandingVideo video = new()
         {
             Name = Path.GetFileNameWithoutExtension(selectedFileName),
             FileName = selectedFileName,
@@ -406,8 +415,10 @@
     private async Task SetDefault(BrandingVideo video)
     {
         await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-        await context.BrandingVideos.ExecuteUpdateAsync(s => s.SetProperty(v => v.IsDefault, false));
-        await context.BrandingVideos.Where(v => v.Id == video.Id).ExecuteUpdateAsync(s => s.SetProperty(v => v.IsDefault, true));
+        // Single atomic statement: IsDefault becomes true only for the target row, false for all others.
+        // Avoids the race window of a two-step clear-then-set.
+        await context.BrandingVideos
+            .ExecuteUpdateAsync(s => s.SetProperty(v => v.IsDefault, v => v.Id == video.Id));
         await LoadData();
     }
 
@@ -416,6 +427,20 @@
         await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
         context.BrandingVideos.Remove(video);
         await context.SaveChangesAsync();
+
+        // If we just removed the default, promote the next-oldest remaining video so heartbeat
+        // resolution never falls back to "no branding" while videos still exist.
+        if (video.IsDefault)
+        {
+            BrandingVideo? replacement = await context.BrandingVideos.OrderBy(v => v.Id).FirstOrDefaultAsync();
+            if (replacement != null)
+            {
+                await context.BrandingVideos
+                    .Where(v => v.Id == replacement.Id)
+                    .ExecuteUpdateAsync(s => s.SetProperty(v => v.IsDefault, true));
+            }
+        }
+
         await LoadData();
         await LoadIdleFiles();
     }
@@ -429,14 +454,20 @@
 
     private void ToggleDay(DayOfWeekFlags day, bool value)
     {
-        if (value) newScheduleDays |= day;
-        else newScheduleDays &= ~day;
+        if (value)
+        {
+            newScheduleDays |= day;
+        }
+        else
+        {
+            newScheduleDays &= ~day;
+        }
     }
 
     private async Task SaveSchedule()
     {
         await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-        var schedule = new BrandingSchedule
+        BrandingSchedule schedule = new()
         {
             BrandingVideoId = newScheduleVideoId,
             GroupName = newScheduleGroupName,
@@ -459,10 +490,14 @@
         await LoadData();
     }
 
-    private string GetDaysText(DayOfWeekFlags days)
+    private static string GetDaysText(DayOfWeekFlags days)
     {
-        if (days == DayOfWeekFlags.All) return "Daily";
-        var selected = Enum.GetValues<DayOfWeekFlags>()
+        if (days == DayOfWeekFlags.All)
+        {
+            return "Daily";
+        }
+
+        IEnumerable<string> selected = Enum.GetValues<DayOfWeekFlags>()
             .Where(d => d != DayOfWeekFlags.None && d != DayOfWeekFlags.All && (days & d) != 0)
             .Select(d => d.ToString()[..3]);
         return string.Join(", ", selected);

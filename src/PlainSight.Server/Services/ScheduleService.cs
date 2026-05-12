@@ -4,16 +4,16 @@ using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Services;
 
-public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, ILogger<ScheduleService> logger, IConfiguration configuration)
+public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory)
 {
     public async Task<Schedule?> GetActiveScheduleAsync(string deviceGroup, CancellationToken ct = default)
     {
         await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(ct);
 
-        DateTime now = this.GetSystemTime();
+        DateTime now = TimeExtensions.GetSystemNow();
         DateOnly currentDate = DateOnly.FromDateTime(now);
         TimeOnly currentTime = TimeOnly.FromDateTime(now);
-        DayOfWeekFlags dayFlag = GetDayOfWeekFlag(now.DayOfWeek);
+        DayOfWeekFlags dayFlag = now.DayOfWeek.ToFlag();
 
         // Matches if: (TargetGroups is empty [Global] OR TargetGroups contains deviceGroup)
         // AND ((ScheduledDate matches today) OR (ScheduledDate is null AND DaysOfWeek matches today))
@@ -49,38 +49,4 @@ public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, I
             .FirstOrDefault();
     }
 
-    private DateTime GetSystemTime()
-    {
-        string? tzId = configuration["SystemTimeZone"];
-        if (string.IsNullOrEmpty(tzId))
-        {
-            return DateTime.Now;
-        }
-
-        try
-        {
-            TimeZoneInfo tz = TimeZoneInfo.FindSystemTimeZoneById(tzId);
-            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Invalid SystemTimeZone '{TimeZone}'; falling back to local time", tzId);
-            return DateTime.Now;
-        }
-    }
-
-    private static DayOfWeekFlags GetDayOfWeekFlag(DayOfWeek day)
-    {
-        return day switch
-        {
-            DayOfWeek.Sunday => DayOfWeekFlags.Sunday,
-            DayOfWeek.Monday => DayOfWeekFlags.Monday,
-            DayOfWeek.Tuesday => DayOfWeekFlags.Tuesday,
-            DayOfWeek.Wednesday => DayOfWeekFlags.Wednesday,
-            DayOfWeek.Thursday => DayOfWeekFlags.Thursday,
-            DayOfWeek.Friday => DayOfWeekFlags.Friday,
-            DayOfWeek.Saturday => DayOfWeekFlags.Saturday,
-            _ => DayOfWeekFlags.None
-        };
-    }
 }

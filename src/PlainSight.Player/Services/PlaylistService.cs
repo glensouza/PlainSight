@@ -97,6 +97,14 @@ public class PlaylistService(string contentPath, string idlePath, ILogger<Playli
         }
     }
 
+    public void UpdateBrandingItem(PlaylistItemDto? branding)
+    {
+        lock (this.@lock)
+        {
+            this.brandingItem = branding;
+        }
+    }
+
     public PlaylistItemDto? GetBrandingItem()
     {
         lock (this.@lock)

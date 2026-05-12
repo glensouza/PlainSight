@@ -64,9 +64,9 @@ public class PlayerWorker(
                     }
                     else
                     {
-                        // No scheduled playlist from server, refresh from the local playlist.json (synced from SMB)
-                        // We still update the branding item if available
-                        playlist.UpdatePlaylist(new List<PlaylistItemDto>(), response.BrandingItem);
+                        // No scheduled playlist from server: keep branding fresh but
+                        // do NOT overwrite playlist.json — fall back to the locally synced copy.
+                        playlist.UpdateBrandingItem(response.BrandingItem);
                         await playlist.RefreshAsync(stoppingToken);
                     }
 
