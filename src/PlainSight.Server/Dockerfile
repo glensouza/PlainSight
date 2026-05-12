@@ -23,16 +23,21 @@ RUN dotnet build "PlainSight.Server.csproj" -c Release -o /app/build /p:Version=
 FROM build AS publish
 RUN dotnet publish "PlainSight.Server.csproj" -c Release -o /app/publish /p:UseAppHost=false /p:Version=${BUILD_VERSION}
 
-# Runtime stage — pinned to Debian Trixie so `chromium` is a real .deb, not Ubuntu's Snap stub
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-trixie-slim AS final
+# Runtime stage — Ubuntu Noble (default .NET 10 base). The stock `chromium` package on
+# Noble is a Snap transitional stub that does not work in Docker, so we pull a real
+# Chromium .deb from the xtradeb PPA (publishes both amd64 and arm64 builds).
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 EXPOSE 8080
 EXPOSE 8081
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    fonts-liberation \
-    chromium \
+        software-properties-common gpg-agent ca-certificates \
+    && add-apt-repository -y ppa:xtradeb/apps \
+    && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        fonts-liberation \
+        chromium \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
