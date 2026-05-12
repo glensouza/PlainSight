@@ -35,7 +35,7 @@ public class YouTubeDownloadService(
         if (streamInfo.Size.Bytes > maxBytes)
         {
             throw new InvalidOperationException(
-                $"Video stream size ({streamInfo.Size.MegaBytes:F0} MB) exceeds the configured maximum ({maxBytes / 1024 / 1024} MB).");
+                $"Video stream size ({streamInfo.Size.MegaBytes:F0} MB) exceeds the configured maximum ({maxBytes / 1024.0 / 1024.0:F0} MB).");
         }
 
         int maxDurationSeconds = configuration.GetValue("YouTube:MaxDurationSeconds", DefaultMaxDurationSeconds);
@@ -59,10 +59,17 @@ public class YouTubeDownloadService(
         }
         catch (Exception ex)
         {
+            logger.LogWarning(ex, "YouTube download failed for {Url}", videoUrl);
             if (File.Exists(tempPath))
             {
-                logger.LogWarning(ex, "Download failed; deleting partial file {TempPath}", tempPath);
-                File.Delete(tempPath);
+                try
+                {
+                    File.Delete(tempPath);
+                }
+                catch (IOException cleanupEx)
+                {
+                    logger.LogWarning(cleanupEx, "Failed to delete partial download {TempPath}", tempPath);
+                }
             }
 
             throw;
@@ -102,6 +109,6 @@ public class YouTubeDownloadService(
             sanitized = video.Id.Value;
         }
 
-        return $"{DateTime.UtcNow:yyyyMMddHHmmss}_{sanitized}.{extension}";
+        return $"{DateTime.UtcNow:yyyyMMddHHmmssfff}_{video.Id.Value}_{sanitized}.{extension}";
     }
 }

@@ -113,6 +113,8 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
                                                                          window.scrollTo(0, (scrollElapsed / scrollDurationSec) * totalHeight);
                                                                      }
                                                                      requestAnimationFrame(step);
+                                                                 } else {
+                                                                     window.scrollTo(0, totalHeight);
                                                                  }
                                                              }
                                                              requestAnimationFrame(step);
