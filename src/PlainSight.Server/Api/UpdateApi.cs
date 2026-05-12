@@ -22,7 +22,7 @@ public static class UpdateApi
                 return Results.NotFound("No player versions ingested");
             }
 
-            string root = configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
+            string root = ResolveActualPath(configuration["UpdatesPath"] ?? "/mnt/plainsight/updates");
             string filePath = Path.Combine(root, latest.FileName);
             
             if (!File.Exists(filePath))
@@ -44,7 +44,7 @@ public static class UpdateApi
                 return Results.NotFound($"Version {version} not found");
             }
 
-            string root = configuration["UpdatesPath"] ?? "/mnt/plainsight/updates";
+            string root = ResolveActualPath(configuration["UpdatesPath"] ?? "/mnt/plainsight/updates");
             string filePath = Path.Combine(root, record.FileName);
 
             if (!File.Exists(filePath))
@@ -54,5 +54,24 @@ public static class UpdateApi
 
             return Results.File(filePath, "application/octet-stream", record.FileName);
         });
+    }
+
+    private static string ResolveActualPath(string configuredPath)
+    {
+        if (Directory.Exists(configuredPath)) return configuredPath;
+
+        string? parentDir = Path.GetDirectoryName(configuredPath);
+        string dirName = Path.GetFileName(configuredPath);
+        
+        if (parentDir != null && Directory.Exists(parentDir))
+        {
+            string? match = Directory.GetDirectories(parentDir)
+                .FirstOrDefault(d => string.Equals(Path.GetFileName(d), dirName, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                return match;
+            }
+        }
+        return configuredPath;
     }
 }

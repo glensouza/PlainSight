@@ -94,7 +94,7 @@ else
                                 <button class="btn btn-outline-primary" @onclick="() => PreviewIdleContent(file.Name)" title="Preview">
                                     <i class="bi bi-eye"></i>
                                 </button>
-                                @if (file.Extension.ToLowerInvariant() is ".mp4" or ".mov" or ".avi" or ".webm" or ".mkv")
+                                @if (file.Extension.ToLowerInvariant() is ".mp4" or ".mov" or ".avi" or ".webm" or ".mkv" or ".m4v" or ".ts")
                                 {
                                     <button class="btn btn-outline-info" @onclick="() => StartIdleProcessing(file.Name)" title="Process Video">
                                         <i class="bi bi-gear"></i>
@@ -103,9 +103,13 @@ else
                                 <button class="btn btn-outline-secondary" @onclick="() => StartIdleRename(file.Name)" title="Rename">
                                     <i class="bi bi-pencil"></i>
                                 </button>
-                                <button class="btn btn-outline-danger" @onclick="() => idleFileToDelete = file.Name" title="Delete">
-                                    <i class="bi bi-trash"></i>
-                                </button>
+                                <AuthorizeView Roles="Admin">
+                                    <Authorized>
+                                        <button class="btn btn-outline-danger" @onclick="() => idleFileToDelete = file.Name" title="Delete">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </Authorized>
+                                </AuthorizeView>
                             </div>
                         </td>
                     </tr>
@@ -254,10 +258,39 @@ else
     private string newFileName = "";
     private string? idleFileToDelete;
     private readonly CancellationTokenSource cts = new();
+    private FileSystemWatcher? fileWatcher;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadIdleContent();
+        
+        string idlePath = GetActualIdlePath();
+        if (Directory.Exists(idlePath))
+        {
+            fileWatcher = new FileSystemWatcher(idlePath);
+            fileWatcher.Created += (s, e) => InvokeAsync(async () => { await LoadIdleContent(); StateHasChanged(); });
+            fileWatcher.Deleted += (s, e) => InvokeAsync(async () => { await LoadIdleContent(); StateHasChanged(); });
+            fileWatcher.Renamed += (s, e) => InvokeAsync(async () => { await LoadIdleContent(); StateHasChanged(); });
+            fileWatcher.EnableRaisingEvents = true;
+        }
+    }
+
+    private string GetActualIdlePath()
+    {
+        string configuredPath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+        string parentDir = Path.GetDirectoryName(configuredPath) ?? "/mnt/plainsight";
+        string dirName = Path.GetFileName(configuredPath);
+        
+        if (Directory.Exists(parentDir))
+        {
+            string? match = Directory.GetDirectories(parentDir)
+                .FirstOrDefault(d => string.Equals(Path.GetFileName(d), dirName, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                return match;
+            }
+        }
+        return configuredPath;
     }
 
     private void PreviewIdleContent(string fileName)
@@ -287,7 +320,7 @@ else
         isProcessingExisting = true;
         try
         {
-            string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+            string idlePath = GetActualIdlePath();
             string oldFileName = processingIdleFileName;
             string filePath = Path.Combine(idlePath, oldFileName);
             
@@ -344,7 +377,7 @@ else
 
         try
         {
-            string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+            string idlePath = GetActualIdlePath();
             string oldFileName = renamingIdleFileName;
             string sanitizedInput = Path.GetFileName(newFileName);
             string oldExt = Path.GetExtension(oldFileName);
@@ -395,7 +428,7 @@ else
         {
             try
             {
-                string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+                string idlePath = GetActualIdlePath();
                 if (!Directory.Exists(idlePath))
                 {
                     Directory.CreateDirectory(idlePath);
@@ -439,7 +472,7 @@ else
         try
         {
             const long maxAllowedSize = 512L * 1024 * 1024;
-            string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+            string idlePath = GetActualIdlePath();
             Directory.CreateDirectory(idlePath);
 
             string safeOriginalName = Path.GetFileName(selectedIdleFile.Name);
@@ -475,7 +508,7 @@ else
     {
         try
         {
-            string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+            string idlePath = GetActualIdlePath();
             string filePath = Path.Combine(idlePath, fileName);
 
             if (File.Exists(filePath))
@@ -508,6 +541,11 @@ else
 
     public void Dispose()
     {
+        if (fileWatcher != null)
+        {
+            fileWatcher.EnableRaisingEvents = false;
+            fileWatcher.Dispose();
+        }
         cts.Cancel();
         cts.Dispose();
     }

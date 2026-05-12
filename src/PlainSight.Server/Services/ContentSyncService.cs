@@ -11,7 +11,29 @@ public class ContentSyncService(
     MediaMetadataService metadataService,
     ILogger<ContentSyncService> logger)
 {
-    private string ContentPath => configuration["ContentPath"] ?? "/mnt/plainsight/content";
+    private string ContentPath => ResolveActualPath(configuration["ContentPath"] ?? "/mnt/plainsight/content");
+
+    private static string ResolveActualPath(string configuredPath)
+    {
+        if (Directory.Exists(configuredPath))
+        {
+            return configuredPath;
+        }
+
+        string? parentDir = Path.GetDirectoryName(configuredPath);
+        string dirName = Path.GetFileName(configuredPath);
+
+        if (parentDir != null && Directory.Exists(parentDir))
+        {
+            string? match = Directory.GetDirectories(parentDir)
+                .FirstOrDefault(d => string.Equals(Path.GetFileName(d), dirName, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                return match;
+            }
+        }
+        return configuredPath;
+    }
 
     public async Task<(int Added, int Removed)> SyncAsync(CancellationToken cancellationToken = default)
     {

@@ -3,12 +3,44 @@ using PlainSight.Shared.Models;
 
 namespace PlainSight.Player.Services;
 
-public class PlaylistService(string contentPath, string idlePath, ILogger<PlaylistService> logger)
+public class PlaylistService
 {
+    private readonly string contentPath;
+    private readonly string idlePath;
+    private readonly ILogger<PlaylistService> logger;
     private readonly Lock @lock = new();
     private List<PlaylistItemDto> playlist = [];
     private List<PlaylistItemDto> idlePlaylist = [];
     private string? currentFile;
+
+    public PlaylistService(string contentPath, string idlePath, ILogger<PlaylistService> logger)
+    {
+        this.contentPath = ResolveActualPath(contentPath);
+        this.idlePath = ResolveActualPath(idlePath);
+        this.logger = logger;
+    }
+
+    private static string ResolveActualPath(string configuredPath)
+    {
+        if (Directory.Exists(configuredPath))
+        {
+            return configuredPath;
+        }
+
+        string? parentDir = Path.GetDirectoryName(configuredPath);
+        string dirName = Path.GetFileName(configuredPath);
+
+        if (parentDir != null && Directory.Exists(parentDir))
+        {
+            string? match = Directory.GetDirectories(parentDir)
+                .FirstOrDefault(d => string.Equals(Path.GetFileName(d), dirName, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                return match;
+            }
+        }
+        return configuredPath;
+    }
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
