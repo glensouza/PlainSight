@@ -79,7 +79,19 @@
                                         </small>
                                         @if (!string.IsNullOrWhiteSpace(v.Notes))
                                         {
-                                            <div><small class="text-secondary">@v.Notes</small></div>
+                                            <div>
+                                                <small class="text-secondary">
+                                                    @if (v.Notes.StartsWith("Build from "))
+                                                    {
+                                                        string commitHash = v.Notes.Substring("Build from ".Length);
+                                                        <span>Build from <a href="https://github.com/glensouza/PlainSight/commit/@commitHash" target="_blank" rel="noopener noreferrer">@commitHash</a></span>
+                                                    }
+                                                    else
+                                                    {
+                                                        @v.Notes
+                                                    }
+                                                </small>
+                                            </div>
                                         }
                                     </div>
                                     <button class="btn btn-sm btn-outline-danger"
@@ -175,7 +187,7 @@
             </div>
             <div class="card-body">
                 <ol class="small mb-0">
-                    <li>Push a <code>v*</code> tag &rarr; CI builds, signs the manifest, drops binary + manifest on the share.</li>
+                    <li>Push changes to <code>main</code> (Player/Shared code) &rarr; CI builds an auto-incremented patch version, signs the manifest, and drops the binary + manifest on the share.</li>
                     <li>Server reconciles within 60 s (or click <strong>Sync now</strong>).</li>
                     <li>Assign the new version to a small test group.</li>
                     <li>Monitor; use Screenshot to verify.</li>
