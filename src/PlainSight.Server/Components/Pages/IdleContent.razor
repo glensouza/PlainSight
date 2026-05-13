@@ -83,12 +83,12 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (FileInfo file in idleFiles)
+                @foreach (FileEntry file in idleFiles)
                 {
                     <tr>
                         <td><code>@file.Name</code></td>
                         <td>@FormatFileSize(file.Length)</td>
-                        <td>@file.LastWriteTimeUtc.ToLocalString("yyyy-MM-dd HH:mm")</td>
+                        <td>@file.LastModified.ToLocalString("yyyy-MM-dd HH:mm")</td>
                         <td>
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-primary" @onclick="() => PreviewIdleContent(file.Name)" title="Preview">
@@ -245,10 +245,12 @@ else
 }
 
 @code {
+    private sealed record FileEntry(string Name, long Length, DateTime LastModified, string Extension);
+
     [CascadingParameter]
     private Task<AuthenticationState>? AuthState { get; set; }
 
-    private List<FileInfo>? idleFiles;
+    private List<FileEntry>? idleFiles;
     private bool uploadingIdle;
     private IBrowserFile? selectedIdleFile;
     private bool stripAudio;
@@ -500,9 +502,16 @@ else
                     Directory.CreateDirectory(idlePath);
                 }
 
-                idleFiles = new DirectoryInfo(idlePath)
-                    .GetFiles()
-                    .Where(f => MediaConstants.IsSupported(f.Name))
+                EnumerationOptions options = new() { IgnoreInaccessible = true };
+                string[] filePaths = Directory.GetFiles(idlePath, "*", options);
+                
+                idleFiles = filePaths
+                    .Where(f => MediaConstants.IsSupported(f))
+                    .Select(f =>
+                    {
+                        FileInfo fi = new(f);
+                        return new FileEntry(fi.Name, fi.Length, fi.LastWriteTimeUtc, fi.Extension);
+                    })
                     .OrderBy(f => f.Name)
                     .ToList();
             }

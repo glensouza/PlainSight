@@ -22,7 +22,8 @@ public class BrandingSyncService(
 
         await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        HashSet<string> diskFiles = Directory.GetFiles(this.BrandingPath)
+        EnumerationOptions options = new() { IgnoreInaccessible = true };
+        HashSet<string> diskFiles = Directory.GetFiles(this.BrandingPath, "*", options)
             .Where(f => MediaConstants.IsVideo(f))
             .Select(f => Path.GetFileName(f))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);

@@ -19,7 +19,8 @@ public class ContentSyncService(
             return (0, 0);
         }
 
-        HashSet<string> diskFiles = Directory.GetFiles(contentPath)
+        EnumerationOptions options = new() { IgnoreInaccessible = true };
+        HashSet<string> diskFiles = Directory.GetFiles(contentPath, "*", options)
             .Where(f => MediaConstants.AllSupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
             .Select(f => Path.GetFileName(f))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);

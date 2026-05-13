@@ -45,7 +45,8 @@ internal sealed partial class ManifestReconciler : IPlayerVersionReconciler
             return 0;
         }
 
-        string[] manifestFiles = Directory.GetFiles(this.updatesDir, "*.json");
+        EnumerationOptions options = new() { IgnoreInaccessible = true };
+        string[] manifestFiles = Directory.GetFiles(this.updatesDir, "*.json", options);
         int ingestedCount = 0;
 
         foreach (string manifestPath in manifestFiles)

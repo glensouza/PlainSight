@@ -124,9 +124,9 @@
                             <option value="">-- Select file --</option>
                             @if (availableIdleFiles != null)
                             {
-                                @foreach (FileInfo f in availableIdleFiles)
+                                @foreach (string fileName in availableIdleFiles)
                                 {
-                                    <option value="@f.Name">@f.Name</option>
+                                    <option value="@fileName">@fileName</option>
                                 }
                             }
                         </select>
@@ -304,7 +304,7 @@
     private List<BrandingVideo>? videos;
     private List<BrandingSchedule>? schedules;
     private List<DeviceGroup>? deviceGroups;
-    private List<FileInfo>? availableIdleFiles;
+    private List<string>? availableIdleFiles;
     
     private string selectedFileName = "";
     private IBrowserFile? selectedUploadFile;
@@ -410,16 +410,23 @@
         string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
         if (Directory.Exists(idlePath))
         {
-            List<FileInfo> files = new DirectoryInfo(idlePath).GetFiles().Where(f => MediaConstants.IsVideo(f.Name)).ToList();
+            EnumerationOptions options = new() { IgnoreInaccessible = true };
+            string[] files = Directory.GetFiles(idlePath, "*", options);
+            List<string> videoFiles = files
+                .Where(f => MediaConstants.IsVideo(f))
+                .Select(Path.GetFileName)
+                .Where(n => n != null)
+                .Cast<string>()
+                .ToList();
 
             if (videos != null)
             {
                 HashSet<string> existingNames = videos.Select(v => v.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                availableIdleFiles = files.Where(f => !existingNames.Contains(f.Name)).ToList();
+                availableIdleFiles = videoFiles.Where(n => !existingNames.Contains(n)).ToList();
             }
             else
             {
-                availableIdleFiles = files;
+                availableIdleFiles = videoFiles;
             }
         }
 
