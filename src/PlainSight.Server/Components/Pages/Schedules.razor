@@ -117,13 +117,17 @@ else
                             </div>
                         </td>
                         <td class="text-end">
-                            <div class="btn-group">
-                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => EditSchedule(schedule)">
-                                    <i class="bi bi-pencil"></i>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => EditSchedule(schedule)">
+                                    <i class="bi bi-pencil"></i> Edit
                                 </button>
-                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(schedule)">
-                                    <i class="bi bi-trash"></i>
-                                </button>
+                                <AuthorizeView Roles="Admin">
+                                    <Authorized>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(schedule)">
+                                            <i class="bi bi-trash"></i> Delete
+                                        </button>
+                                    </Authorized>
+                                </AuthorizeView>
                             </div>
                         </td>
                     </tr>
@@ -303,6 +307,19 @@ else
 }
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private async Task<bool> IsAdminAsync()
+    {
+        if (this.AuthState == null)
+        {
+            return false;
+        }
+
+        AuthenticationState state = await this.AuthState;
+        return state.User.IsInRole("Admin");
+    }
+
     private List<Schedule>? schedules;
     private List<Playlist>? playlists;
     private List<DeviceGroup>? deviceGroups;
@@ -489,6 +506,12 @@ else
     {
         if (deleteTarget == null)
         {
+            return;
+        }
+
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted to delete schedule {Id}", deleteTarget.Id);
             return;
         }
 

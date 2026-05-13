@@ -1,6 +1,6 @@
 @page "/logs"
 @rendermode InteractiveServer
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Admin")]
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject ILogger<Logs> Logger
 @inject IJSRuntime JSRuntime

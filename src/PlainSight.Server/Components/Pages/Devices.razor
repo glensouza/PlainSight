@@ -140,21 +140,28 @@ else
                     <div class="ps-cell">
                         <div class="ps-cell__label">GROUP</div>
                         <div class="ps-cell__value">
-                            <select class="ps-cell__select"
-                                    value="@device.Group"
-                                    @onchange="e => ChangeGroup(device.DeviceId, e.Value?.ToString() ?? device.Group)">
-                                @if (deviceGroups != null)
-                                {
-                                    @foreach (DeviceGroup g in deviceGroups)
-                                    {
-                                        <option value="@g.Name">@g.Name</option>
-                                    }
-                                }
-                                else
-                                {
-                                    <option value="@device.Group">@device.Group</option>
-                                }
-                            </select>
+                            <AuthorizeView Roles="Admin">
+                                <Authorized>
+                                    <select class="ps-cell__select"
+                                            value="@device.Group"
+                                            @onchange="e => ChangeGroup(device.DeviceId, e.Value?.ToString() ?? device.Group)">
+                                        @if (deviceGroups != null)
+                                        {
+                                            @foreach (DeviceGroup g in deviceGroups)
+                                            {
+                                                <option value="@g.Name">@g.Name</option>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <option value="@device.Group">@device.Group</option>
+                                        }
+                                    </select>
+                                </Authorized>
+                                <NotAuthorized>
+                                    <span class="ps-cell__text">@device.Group</span>
+                                </NotAuthorized>
+                            </AuthorizeView>
                         </div>
                     </div>
                     <div class="ps-cell ps-cell--interactive" @onclick="() => ShowScreenshotHistory(device)" title="View screenshot history">
@@ -199,26 +206,30 @@ else
                         <i class="bi bi-broadcast"></i>
                         <span>@GetLiveModeLabel(device)</span>
                     </button>
-                    <button class="ps-action ps-action--warn"
-                            @onclick="() => ResetApiKey(device.DeviceId)"
-                            disabled="@resettingApiKey.Contains(device.DeviceId)"
-                            title="Reset API key">
-                        @if (resettingApiKey.Contains(device.DeviceId))
-                        {
-                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                        }
-                        else
-                        {
-                            <i class="bi bi-key"></i>
-                        }
-                        <span>Reset Key</span>
-                    </button>
-                    <button class="ps-action ps-action--danger"
-                            @onclick="() => PromptDeleteDevice(device)"
-                            title="Delete device">
-                        <i class="bi bi-trash"></i>
-                        <span>Delete</span>
-                    </button>
+                    <AuthorizeView Roles="Admin">
+                        <Authorized>
+                            <button class="ps-action ps-action--warn"
+                                    @onclick="() => ResetApiKey(device.DeviceId)"
+                                    disabled="@resettingApiKey.Contains(device.DeviceId)"
+                                    title="Reset API key">
+                                @if (resettingApiKey.Contains(device.DeviceId))
+                                {
+                                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-key"></i>
+                                }
+                                <span>Reset Key</span>
+                            </button>
+                            <button class="ps-action ps-action--danger"
+                                    @onclick="() => PromptDeleteDevice(device)"
+                                    title="Delete device">
+                                <i class="bi bi-trash"></i>
+                                <span>Delete</span>
+                            </button>
+                        </Authorized>
+                    </AuthorizeView>
                 </footer>
             </div>
         }
@@ -436,69 +447,86 @@ else
                 Screenshot (@selectedDeviceIds.Count)
             </button>
 
-            <span class="bulk-action-bar__sep d-none d-md-inline">|</span>
+            <AuthorizeView Roles="Admin">
+                <Authorized>
+                    <span class="bulk-action-bar__sep d-none d-md-inline">|</span>
 
-            <div class="bulk-action-bar__group d-flex gap-2 align-items-center">
-                <select class="form-select form-select-sm bulk-action-bar__select"
-                        @bind="bulkGroupSelection">
-                    <option value="">— Move to group —</option>
-                    @foreach (DeviceGroup g in deviceGroups ?? [])
-                    {
-                        <option value="@g.Name">@g.Name</option>
-                    }
-                </select>
-                <button class="btn btn-sm btn-secondary"
-                        @onclick="BulkMoveGroup"
-                        disabled="@(isBulkMovingGroup || string.IsNullOrEmpty(bulkGroupSelection))">
-                    @if (isBulkMovingGroup)
-                    {
-                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                    }
-                    Move
-                </button>
-            </div>
+                    <div class="bulk-action-bar__group d-flex gap-2 align-items-center">
+                        <select class="form-select form-select-sm bulk-action-bar__select"
+                                @bind="bulkGroupSelection">
+                            <option value="">— Move to group —</option>
+                            @foreach (DeviceGroup g in deviceGroups ?? [])
+                            {
+                                <option value="@g.Name">@g.Name</option>
+                            }
+                        </select>
+                        <button class="btn btn-sm btn-secondary"
+                                @onclick="BulkMoveGroup"
+                                disabled="@(isBulkMovingGroup || string.IsNullOrEmpty(bulkGroupSelection))">
+                            @if (isBulkMovingGroup)
+                            {
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            }
+                            Move
+                        </button>
+                    </div>
 
-            <span class="bulk-action-bar__sep d-none d-md-inline">|</span>
+                    <span class="bulk-action-bar__sep d-none d-md-inline">|</span>
 
-            <div class="bulk-action-bar__version d-flex gap-2 align-items-center">
-                <select class="form-select form-select-sm bulk-action-bar__select"
-                        @bind="bulkVersionGroup">
-                    <option value="">— Group —</option>
-                    @foreach (DeviceGroup g in deviceGroups ?? [])
-                    {
-                        <option value="@g.Name">@g.Name</option>
-                    }
-                </select>
-                <select class="form-select form-select-sm bulk-action-bar__select"
-                        @bind="bulkVersionSelection">
-                    <option value="">— Version —</option>
-                    @foreach (PlayerVersion v in playerVersions ?? [])
-                    {
-                        <option value="@v.VersionNumber">@v.VersionNumber</option>
-                    }
-                </select>
-                <button class="btn btn-sm btn-warning"
-                        @onclick="BulkAssignVersion"
-                        disabled="@(isBulkAssigningVersion || string.IsNullOrEmpty(bulkVersionGroup) || string.IsNullOrEmpty(bulkVersionSelection))">
-                    @if (isBulkAssigningVersion)
-                    {
-                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                    }
-                    Assign Version
-                </button>
-            </div>
+                    <div class="bulk-action-bar__version d-flex gap-2 align-items-center">
+                        <select class="form-select form-select-sm bulk-action-bar__select"
+                                @bind="bulkVersionGroup">
+                            <option value="">— Group —</option>
+                            @foreach (DeviceGroup g in deviceGroups ?? [])
+                            {
+                                <option value="@g.Name">@g.Name</option>
+                            }
+                        </select>
+                        <select class="form-select form-select-sm bulk-action-bar__select"
+                                @bind="bulkVersionSelection">
+                            <option value="">— Version —</option>
+                            @foreach (PlayerVersion v in playerVersions ?? [])
+                            {
+                                <option value="@v.VersionNumber">@v.VersionNumber</option>
+                            }
+                        </select>
+                        <button class="btn btn-sm btn-warning"
+                                @onclick="BulkAssignVersion"
+                                disabled="@(isBulkAssigningVersion || string.IsNullOrEmpty(bulkVersionGroup) || string.IsNullOrEmpty(bulkVersionSelection))">
+                            @if (isBulkAssigningVersion)
+                            {
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            }
+                            Assign Version
+                        </button>
+                    </div>
 
-            <span class="bulk-action-bar__sep d-none d-md-inline">|</span>
+                    <span class="bulk-action-bar__sep d-none d-md-inline">|</span>
 
-            <button class="btn btn-sm btn-danger" @onclick="PromptBulkDelete">
-                <i class="bi bi-trash"></i>
-                Delete (@selectedDeviceIds.Count)
-            </button>
+                    <button class="btn btn-sm btn-danger" @onclick="PromptBulkDelete">
+                        <i class="bi bi-trash"></i>
+                        Delete (@selectedDeviceIds.Count)
+                    </button>
+                </Authorized>
+            </AuthorizeView>
         </div>
     </div>
 }
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private async Task<bool> IsAdminAsync()
+    {
+        if (this.AuthState == null)
+        {
+            return false;
+        }
+
+        AuthenticationState state = await this.AuthState;
+        return state.User.IsInRole("Admin");
+    }
+
     private List<Device>? devices;
     private readonly HashSet<string> requestingScreenshot = [];
     private readonly HashSet<string> resettingApiKey = [];
@@ -806,6 +834,12 @@ else
 
     private async Task ChangeGroup(string deviceId, string newGroup)
     {
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted to change group for device {DeviceId}", deviceId);
+            return;
+        }
+
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
@@ -882,6 +916,12 @@ else
 
     private async Task ResetApiKey(string deviceId)
     {
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted to reset API key for device {DeviceId}", deviceId);
+            return;
+        }
+
         resettingApiKey.Add(deviceId);
         try
         {
@@ -1040,6 +1080,12 @@ else
             return;
         }
 
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted bulk group move");
+            return;
+        }
+
         isBulkMovingGroup = true;
         try
         {
@@ -1077,6 +1123,12 @@ else
     {
         if (string.IsNullOrEmpty(bulkVersionGroup) || string.IsNullOrEmpty(bulkVersionSelection))
         {
+            return;
+        }
+
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted bulk version assignment");
             return;
         }
 
@@ -1271,6 +1323,12 @@ else
 
     private async Task DeleteDeviceAsync(string deviceId)
     {
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted to delete device {DeviceId}", deviceId);
+            return;
+        }
+
         await using PlainSightDbContext context = await this.DbFactory.CreateDbContextAsync();
         Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
         if (device == null)
@@ -1305,6 +1363,12 @@ else
 
     private async Task BulkDeleteAsync()
     {
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted bulk device delete ({Count} devices)", this.selectedDeviceIds.Count);
+            return;
+        }
+
         HashSet<string> ids = [..this.selectedDeviceIds];
         await using PlainSightDbContext context = await this.DbFactory.CreateDbContextAsync();
 

@@ -287,9 +287,13 @@ else
                                 <button class="btn btn-outline-secondary" @onclick="() => StartRename(item)" title="Rename">
                                     <i class="bi bi-pencil"></i>
                                 </button>
-                                <button class="btn btn-outline-danger" @onclick="() => ConfirmDelete(item)" title="Delete">
-                                    <i class="bi bi-trash"></i>
-                                </button>
+                                <AuthorizeView Roles="Admin">
+                                    <Authorized>
+                                        <button class="btn btn-outline-danger" @onclick="() => ConfirmDelete(item)" title="Delete">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </Authorized>
+                                </AuthorizeView>
                             </div>
                         </td>
                     </tr>
@@ -464,6 +468,19 @@ else
         public string? DownloadedTitle { get; set; }
     }
 
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private async Task<bool> IsAdminAsync()
+    {
+        if (this.AuthState == null)
+        {
+            return false;
+        }
+
+        AuthenticationState state = await this.AuthState;
+        return state.User.IsInRole("Admin");
+    }
+
     private List<ContentItem>? contentItems;
     private bool uploading;
     private bool syncing;
@@ -592,7 +609,7 @@ else
         isProcessingExisting = true;
         try
         {
-            string folderPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+            string folderPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
             
             string oldFileName = processingItem.FileName;
             string filePath = Path.Combine(folderPath, oldFileName);
@@ -677,7 +694,7 @@ else
                 return;
             }
 
-            string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+            string contentPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
             string oldFileName = item.FileName;
             string sanitizedInput = Path.GetFileName(newFileName);
             string oldExt = Path.GetExtension(oldFileName);
@@ -788,7 +805,7 @@ else
         try
         {
             const long maxAllowedSize = 512L * 1024 * 1024;
-            string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+            string contentPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
             Directory.CreateDirectory(contentPath);
 
             string safeOriginalName = Path.GetFileName(selectedFile.Name);
@@ -870,7 +887,7 @@ else
                     return Task.CompletedTask;
                 }
 
-                string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+                string contentPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
                 Directory.CreateDirectory(contentPath);
 
                 string fileName = $"rendered_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.CreateVersion7():N}.mp4";
@@ -957,13 +974,19 @@ else
 
     private async Task DeleteContent(int id)
     {
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted to delete content {Id}", id);
+            return;
+        }
+
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             ContentItem? item = await context.ContentItems.FindAsync(id);
             if (item != null)
             {
-                string contentPath = Configuration["ContentPath"] ?? "/mnt/plainsight/content";
+                string contentPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
                 string filePath = Path.Combine(contentPath, item.FileName);
                 
                 if (File.Exists(filePath))

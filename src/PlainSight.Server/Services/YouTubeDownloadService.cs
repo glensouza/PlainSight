@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Data;
+using PlainSight.Shared;
 using PlainSight.Shared.Models;
 using YoutubeExplode;
 using YoutubeExplode.Videos;
@@ -50,7 +51,7 @@ public class YouTubeDownloadService(
                 $"Video duration ({video.Duration.Value:hh\\:mm\\:ss}) exceeds the configured maximum of {TimeSpan.FromSeconds(maxDurationSeconds):hh\\:mm\\:ss}.");
         }
 
-        string contentPath = configuration["ContentPath"] ?? "/mnt/plainsight/content";
+        string contentPath = MediaPathResolver.Resolve(configuration["ContentPath"] ?? "/mnt/plainsight/content");
         Directory.CreateDirectory(contentPath);
 
         string fileName = BuildFileName(video, streamInfo.Container.Name);

@@ -6,7 +6,7 @@
 @inject IConfiguration Configuration
 @inject ILogger<IdleContent> Logger
 
-@implements IDisposable
+@implements IAsyncDisposable
 
 <PageTitle>Idle Content Library — PlainSight</PageTitle>
 
@@ -94,7 +94,7 @@ else
                                 <button class="btn btn-outline-primary" @onclick="() => PreviewIdleContent(file.Name)" title="Preview">
                                     <i class="bi bi-eye"></i>
                                 </button>
-                                @if (file.Extension.ToLowerInvariant() is ".mp4" or ".mov" or ".avi" or ".webm" or ".mkv")
+                                @if (file.Extension.ToLowerInvariant() is ".mp4" or ".mov" or ".avi" or ".webm" or ".mkv" or ".m4v" or ".ts")
                                 {
                                     <button class="btn btn-outline-info" @onclick="() => StartIdleProcessing(file.Name)" title="Process Video">
                                         <i class="bi bi-gear"></i>
@@ -103,9 +103,13 @@ else
                                 <button class="btn btn-outline-secondary" @onclick="() => StartIdleRename(file.Name)" title="Rename">
                                     <i class="bi bi-pencil"></i>
                                 </button>
-                                <button class="btn btn-outline-danger" @onclick="() => idleFileToDelete = file.Name" title="Delete">
-                                    <i class="bi bi-trash"></i>
-                                </button>
+                                <AuthorizeView Roles="Admin">
+                                    <Authorized>
+                                        <button class="btn btn-outline-danger" @onclick="() => idleFileToDelete = file.Name" title="Delete">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </Authorized>
+                                </AuthorizeView>
                             </div>
                         </td>
                     </tr>
@@ -209,7 +213,7 @@ else
 {
     string previewName = previewIdleFileName;
     string apiPath = $"/api/media/idle/{previewIdleFileName}";
-    bool isImage = previewIdleFileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || previewIdleFileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || previewIdleFileName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase);
+    bool isImage = MediaConstants.IsImage(previewIdleFileName);
     long fileSize = idleFiles?.FirstOrDefault(f => f.Name == previewIdleFileName)?.Length ?? 0;
 
     <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.8);">
@@ -241,6 +245,9 @@ else
 }
 
 @code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
     private List<FileInfo>? idleFiles;
     private bool uploadingIdle;
     private IBrowserFile? selectedIdleFile;
@@ -254,10 +261,98 @@ else
     private string newFileName = "";
     private string? idleFileToDelete;
     private readonly CancellationTokenSource cts = new();
+    private FileSystemWatcher? fileWatcher;
+    private Timer? refreshDebounce;
+    private readonly Lock refreshLock = new();
+    private bool refreshInFlight;
+    private bool refreshPending;
+    private static readonly TimeSpan RefreshDebounceWindow = TimeSpan.FromMilliseconds(400);
 
     protected override async Task OnInitializedAsync()
     {
         await LoadIdleContent();
+
+        string idlePath = GetActualIdlePath();
+        if (Directory.Exists(idlePath))
+        {
+            fileWatcher = new FileSystemWatcher(idlePath)
+            {
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime
+            };
+            fileWatcher.Created += this.OnIdleFolderChanged;
+            fileWatcher.Deleted += this.OnIdleFolderChanged;
+            fileWatcher.Renamed += this.OnIdleFolderChanged;
+            fileWatcher.Changed += this.OnIdleFolderChanged;
+            fileWatcher.EnableRaisingEvents = true;
+        }
+    }
+
+    private string GetActualIdlePath() =>
+        MediaPathResolver.Resolve(Configuration["IdlePath"] ?? "/mnt/plainsight/idle");
+
+    private void OnIdleFolderChanged(object sender, FileSystemEventArgs e)
+    {
+        Timer? existing;
+        lock (this.refreshLock)
+        {
+            existing = this.refreshDebounce;
+            this.refreshDebounce = new Timer(_ => this.RunDebouncedRefresh(), null, RefreshDebounceWindow, Timeout.InfiniteTimeSpan);
+        }
+        existing?.Dispose();
+    }
+
+    private void RunDebouncedRefresh()
+    {
+        lock (this.refreshLock)
+        {
+            if (this.refreshInFlight)
+            {
+                this.refreshPending = true;
+                return;
+            }
+            this.refreshInFlight = true;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    await LoadIdleContent();
+                    StateHasChanged();
+
+                    lock (this.refreshLock)
+                    {
+                        if (!this.refreshPending)
+                        {
+                            this.refreshInFlight = false;
+                            return;
+                        }
+                        this.refreshPending = false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Debounced idle refresh failed");
+                lock (this.refreshLock)
+                {
+                    this.refreshInFlight = false;
+                    this.refreshPending = false;
+                }
+            }
+        });
+    }
+
+    private async Task<bool> UserIsAdminAsync()
+    {
+        if (AuthState == null)
+        {
+            return false;
+        }
+        AuthenticationState state = await AuthState;
+        return state.User.IsInRole("Admin");
     }
 
     private void PreviewIdleContent(string fileName)
@@ -287,7 +382,7 @@ else
         isProcessingExisting = true;
         try
         {
-            string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+            string idlePath = GetActualIdlePath();
             string oldFileName = processingIdleFileName;
             string filePath = Path.Combine(idlePath, oldFileName);
             
@@ -344,7 +439,7 @@ else
 
         try
         {
-            string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+            string idlePath = GetActualIdlePath();
             string oldFileName = renamingIdleFileName;
             string sanitizedInput = Path.GetFileName(newFileName);
             string oldExt = Path.GetExtension(oldFileName);
@@ -385,6 +480,10 @@ else
         return Path.GetExtension(fileName).ToLowerInvariant() switch
         {
             ".webm" => "video/webm",
+            ".mkv" => "video/x-matroska",
+            ".avi" => "video/x-msvideo",
+            ".mov" => "video/quicktime",
+            ".ts" => "video/mp2t",
             _ => "video/mp4"
         };
     }
@@ -395,7 +494,7 @@ else
         {
             try
             {
-                string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+                string idlePath = GetActualIdlePath();
                 if (!Directory.Exists(idlePath))
                 {
                     Directory.CreateDirectory(idlePath);
@@ -439,7 +538,7 @@ else
         try
         {
             const long maxAllowedSize = 512L * 1024 * 1024;
-            string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+            string idlePath = GetActualIdlePath();
             Directory.CreateDirectory(idlePath);
 
             string safeOriginalName = Path.GetFileName(selectedIdleFile.Name);
@@ -475,8 +574,24 @@ else
     {
         try
         {
-            string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
-            string filePath = Path.Combine(idlePath, fileName);
+            if (!await UserIsAdminAsync())
+            {
+                Logger.LogWarning("Non-admin user attempted to delete idle file {FileName}", fileName);
+                idleUploadError = "Only administrators can delete idle content.";
+                idleFileToDelete = null;
+                return;
+            }
+
+            string sanitized = Path.GetFileName(fileName);
+            if (string.IsNullOrEmpty(sanitized) || sanitized != fileName)
+            {
+                idleUploadError = "Invalid file name.";
+                idleFileToDelete = null;
+                return;
+            }
+
+            string idlePath = GetActualIdlePath();
+            string filePath = Path.Combine(idlePath, sanitized);
 
             if (File.Exists(filePath))
             {
@@ -506,8 +621,30 @@ else
         return $"{len:0.##} {sizes[order]}";
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        if (fileWatcher != null)
+        {
+            fileWatcher.EnableRaisingEvents = false;
+            fileWatcher.Created -= this.OnIdleFolderChanged;
+            fileWatcher.Deleted -= this.OnIdleFolderChanged;
+            fileWatcher.Renamed -= this.OnIdleFolderChanged;
+            fileWatcher.Changed -= this.OnIdleFolderChanged;
+            fileWatcher.Dispose();
+            fileWatcher = null;
+        }
+
+        Timer? timer;
+        lock (this.refreshLock)
+        {
+            timer = this.refreshDebounce;
+            this.refreshDebounce = null;
+        }
+        if (timer != null)
+        {
+            await timer.DisposeAsync();
+        }
+
         cts.Cancel();
         cts.Dispose();
     }

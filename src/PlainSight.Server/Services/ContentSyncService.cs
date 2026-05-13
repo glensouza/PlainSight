@@ -11,16 +11,15 @@ public class ContentSyncService(
     MediaMetadataService metadataService,
     ILogger<ContentSyncService> logger)
 {
-    private string ContentPath => configuration["ContentPath"] ?? "/mnt/plainsight/content";
-
     public async Task<(int Added, int Removed)> SyncAsync(CancellationToken cancellationToken = default)
     {
-        if (!Directory.Exists(this.ContentPath))
+        string contentPath = MediaPathResolver.Resolve(configuration["ContentPath"] ?? "/mnt/plainsight/content");
+        if (!Directory.Exists(contentPath))
         {
             return (0, 0);
         }
 
-        HashSet<string> diskFiles = Directory.GetFiles(this.ContentPath)
+        HashSet<string> diskFiles = Directory.GetFiles(contentPath)
             .Where(f => MediaConstants.AllSupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
             .Select(f => Path.GetFileName(f))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -61,7 +60,7 @@ public class ContentSyncService(
                 ? ContentType.RenderedWebsite
                 : isVideo ? ContentType.Video : ContentType.Image;
 
-            string filePath = Path.Combine(this.ContentPath, fileName);
+            string filePath = Path.Combine(contentPath, fileName);
             FileInfo fileInfo = new(filePath);
 
             int duration = 10;

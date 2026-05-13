@@ -1,15 +1,26 @@
 using System.Text.Json;
+using PlainSight.Shared;
 using PlainSight.Shared.Models;
 
 namespace PlainSight.Player.Services;
 
-public class PlaylistService(string contentPath, string idlePath, ILogger<PlaylistService> logger)
+public class PlaylistService
 {
+    private readonly string contentPath;
+    private readonly string idlePath;
+    private readonly ILogger<PlaylistService> logger;
     private readonly Lock @lock = new();
     private List<PlaylistItemDto> playlist = [];
     private List<PlaylistItemDto> idlePlaylist = [];
     private PlaylistItemDto? brandingItem;
     private string? currentFile;
+
+    public PlaylistService(string contentPath, string idlePath, ILogger<PlaylistService> logger)
+    {
+        this.contentPath = MediaPathResolver.Resolve(contentPath);
+        this.idlePath = MediaPathResolver.Resolve(idlePath);
+        this.logger = logger;
+    }
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {

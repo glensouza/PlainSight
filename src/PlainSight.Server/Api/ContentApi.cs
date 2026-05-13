@@ -1,11 +1,11 @@
-namespace PlainSight.Server.Api;
-
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
+using PlainSight.Shared;
 using System.IO;
-using System.Linq;
+
+namespace PlainSight.Server.Api;
 
 public static class ContentApi
 {
@@ -17,91 +17,57 @@ public static class ContentApi
 
         group.MapGet("/content/{fileName}", (string fileName, IConfiguration configuration) =>
         {
-            string root = ResolveActualPath(configuration["ContentPath"] ?? "/mnt/plainsight/content");
-            string filePath = Path.Combine(root, fileName);
-            if (!File.Exists(filePath))
-            {
-                return Results.NotFound();
-            }
-
-            string contentType = Path.GetExtension(fileName).ToLowerInvariant() switch
-            {
-                ".mp4" => "video/mp4",
-                ".webm" => "video/webm",
-                ".png" => "image/png",
-                ".jpg" or ".jpeg" => "image/jpeg",
-                _ => "application/octet-stream"
-            };
-            return Results.File(filePath, contentType, enableRangeProcessing: true);
+            string root = MediaPathResolver.Resolve(configuration["ContentPath"] ?? "/mnt/plainsight/content");
+            return ServeMedia(root, fileName);
         });
 
         group.MapGet("/idle/{fileName}", (string fileName, IConfiguration configuration) =>
         {
-            string root = ResolveActualPath(configuration["IdlePath"] ?? "/mnt/plainsight/idle");
-            string filePath = Path.Combine(root, fileName);
-            if (!File.Exists(filePath))
-            {
-                return Results.NotFound();
-            }
-
-            string contentType = Path.GetExtension(fileName).ToLowerInvariant() switch
-            {
-                ".mp4" => "video/mp4",
-                ".webm" => "video/webm",
-                ".png" => "image/png",
-                ".jpg" or ".jpeg" => "image/jpeg",
-                _ => "application/octet-stream"
-            };
-            return Results.File(filePath, contentType, enableRangeProcessing: true);
+            string root = MediaPathResolver.Resolve(configuration["IdlePath"] ?? "/mnt/plainsight/idle");
+            return ServeMedia(root, fileName);
         });
 
         group.MapGet("/branding/{fileName}", (string fileName, IConfiguration configuration) =>
         {
-            string root = ResolveActualPath(configuration["BrandingPath"] ?? "/mnt/plainsight/branding");
-            string filePath = Path.Combine(root, fileName);
-            if (!File.Exists(filePath))
-            {
-                return Results.NotFound();
-            }
-
-            string contentType = Path.GetExtension(fileName).ToLowerInvariant() switch
-            {
-                ".mp4" => "video/mp4",
-                ".webm" => "video/webm",
-                ".png" => "image/png",
-                ".jpg" or ".jpeg" => "image/jpeg",
-                _ => "application/octet-stream"
-            };
-            return Results.File(filePath, contentType, enableRangeProcessing: true);
+            string root = MediaPathResolver.Resolve(configuration["BrandingPath"] ?? "/mnt/plainsight/branding");
+            return ServeMedia(root, fileName);
         });
 
         group.MapGet("/screenshot/{deviceId}/{fileName}", (string deviceId, string fileName, IConfiguration configuration) =>
         {
-            string root = ResolveActualPath(configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots");
+            string root = MediaPathResolver.Resolve(configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots");
             string filePath = Path.Combine(root, deviceId, fileName);
             return !File.Exists(filePath) ? Results.NotFound() : Results.File(filePath, "image/png");
         });
     }
 
-    private static string ResolveActualPath(string configuredPath)
+    private static IResult ServeMedia(string root, string fileName)
     {
-        if (Directory.Exists(configuredPath))
+        string filePath = Path.Combine(root, fileName);
+        if (!File.Exists(filePath))
         {
-            return configuredPath;
+            return Results.NotFound();
         }
 
-        string? parentDir = Path.GetDirectoryName(configuredPath);
-        string dirName = Path.GetFileName(configuredPath);
-        
-        if (parentDir != null && Directory.Exists(parentDir))
-        {
-            string? match = Directory.GetDirectories(parentDir)
-                .FirstOrDefault(d => string.Equals(Path.GetFileName(d), dirName, StringComparison.OrdinalIgnoreCase));
-            if (match != null)
-            {
-                return match;
-            }
-        }
-        return configuredPath;
+        string ext = Path.GetExtension(fileName).ToLowerInvariant();
+        string contentType = MediaContentTypes.TryGetValue(ext, out string? mapped) ? mapped : "application/octet-stream";
+        return Results.File(filePath, contentType, enableRangeProcessing: true);
     }
+
+    private static readonly Dictionary<string, string> MediaContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".mp4"] = "video/mp4",
+        [".m4v"] = "video/mp4",
+        [".webm"] = "video/webm",
+        [".mkv"] = "video/x-matroska",
+        [".avi"] = "video/x-msvideo",
+        [".mov"] = "video/quicktime",
+        [".ts"] = "video/mp2t",
+        [".png"] = "image/png",
+        [".jpg"] = "image/jpeg",
+        [".jpeg"] = "image/jpeg",
+        [".gif"] = "image/gif",
+        [".bmp"] = "image/bmp",
+        [".webp"] = "image/webp"
+    };
 }
