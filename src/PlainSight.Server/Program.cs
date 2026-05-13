@@ -83,6 +83,8 @@ builder.Services.AddSingleton<SignatureVerifier>(sp =>
 builder.Services.AddScoped<IPlayerVersionReconciler, ManifestReconciler>();
 builder.Services.AddHostedService<ReconciliationBackgroundService>();
 builder.Services.AddScoped<ScheduleService>();
+builder.Services.AddScoped<BrandingService>();
+builder.Services.AddScoped<BrandingSyncService>();
 builder.Services.AddHostedService<AutoScreenshotService>();
 builder.Services.AddHostedService<DeviceMonitorService>();
 builder.Services.AddHostedService<NdiDiscoveryService>();
@@ -216,6 +218,7 @@ using (IServiceScope scope = app.Services.CreateScope())
     [
         config["ContentPath"] ?? "/mnt/plainsight/content",
         config["IdlePath"] ?? "/mnt/plainsight/idle",
+        config["BrandingPath"] ?? "/mnt/plainsight/branding",
         config["UpdatesPath"] ?? "/mnt/plainsight/updates",
         config["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots"
     ];

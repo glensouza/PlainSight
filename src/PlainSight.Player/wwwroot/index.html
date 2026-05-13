@@ -160,6 +160,7 @@
         const idleEl = document.getElementById('idle-screen');
 
         let currentPlaylist = [];
+        let brandingItem = null;
         let currentIndex = 0;
         let isSwapping = false;
         let imageTimer = null;
@@ -245,9 +246,20 @@
 
         function prepareNextMedia() {
             if (currentPlaylist.length === 0) return;
-            
-            const nextIndex = (currentIndex + 1) % currentPlaylist.length;
-            const nextItem = currentPlaylist[nextIndex];
+
+            let nextItem;
+            if (currentIndex === -1) {
+                // Currently playing branding, next is first item
+                nextItem = currentPlaylist[0];
+            } else if (currentIndex === currentPlaylist.length - 1 && brandingItem) {
+                // At the end, next is branding
+                nextItem = brandingItem;
+            } else {
+                const nextIndex = (currentIndex + 1) % currentPlaylist.length;
+                nextItem = currentPlaylist[nextIndex];
+            }
+
+            if (!nextItem) return;
             const nextFilename = nextItem.fileName;
             const nextSrc = new URL(`/content/${encodeURIComponent(nextFilename)}`, window.location.origin).href;
             
@@ -265,13 +277,16 @@
                 showIdle();
                 return;
             }
+            currentIndex = index % currentPlaylist.length;
+            const item = currentPlaylist[currentIndex];
+            await playItemInternal(item, false);
+        }
 
+        async function playItemInternal(item, isBranding) {
             if (isSwapping) return;
             isSwapping = true;
             clearTimeout(imageTimer);
 
-            currentIndex = index % currentPlaylist.length;
-            const item = currentPlaylist[currentIndex];
             const filename = item.fileName;
             const duration = item.durationSeconds || 10;
 
@@ -287,13 +302,15 @@
             // If we are already playing this file and it's a video that hasn't ended, stay on it.
             // (Unless it's the ONLY item, then we loop it)
             if (activePlayer && activePlayer.src === src && activePlayer.tagName === 'VIDEO' && 
-                !activePlayer.paused && !activePlayer.ended && currentPlaylist.length > 1) {
+                !activePlayer.paused && !activePlayer.ended && (currentPlaylist.length > 1 || isBranding)) {
                 isSwapping = false;
                 prepareNextMedia();
                 return;
             }
 
-            updateStatus(`Playing: ${filename} (${currentIndex + 1}/${currentPlaylist.length}) [${duration}s]`);
+            const statusPrefix = isBranding ? '[BRANDING] ' : '';
+            const statusIndex = isBranding ? '' : ` (${currentIndex + 1}/${currentPlaylist.length})`;
+            updateStatus(`Playing: ${statusPrefix}${filename}${statusIndex} [${duration}s]`);
             hideIdle();
 
             // Prepare next element
@@ -307,7 +324,6 @@
                 if (nextPlayer.tagName === 'VIDEO') {
                     nextPlayer.loop = false;
                     // For videos, we rely on the 'ended' event and natural duration.
-                    // The server-provided duration is primarily for the UI/Manifest.
                     await nextPlayer.play();
                 } else {
                     // For images, we wait for load
@@ -351,6 +367,20 @@
         }
 
         function playNext() {
+            if (currentIndex === -1) {
+                // Branding finished, play first item
+                currentIndex = 0;
+                playMedia(0);
+                return;
+            }
+
+            if (currentIndex === currentPlaylist.length - 1 && brandingItem) {
+                // Playlist end reached, play branding
+                playItemInternal(brandingItem, true);
+                currentIndex = -1;
+                return;
+            }
+
             currentIndex = (currentIndex + 1) % currentPlaylist.length;
             playMedia(currentIndex);
         }
@@ -381,20 +411,28 @@
             try {
                 const res = await fetch('/api/playlist');
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const incoming = await res.json();
+                const data = await res.json();
+                
+                const incomingItems = data.items || [];
+                const incomingBranding = data.branding || null;
 
-                if (JSON.stringify(incoming) === JSON.stringify(currentPlaylist)) return;
+                const hasItemsChanged = JSON.stringify(incomingItems) !== JSON.stringify(currentPlaylist);
+                const hasBrandingChanged = JSON.stringify(incomingBranding) !== JSON.stringify(brandingItem);
 
-                const wasIdle = currentPlaylist.length === 0;
-                currentPlaylist = incoming;
+                if (!hasItemsChanged && !hasBrandingChanged) return;
+
+                const wasEmpty = currentPlaylist.length === 0;
+                currentPlaylist = incomingItems;
+                brandingItem = incomingBranding;
 
                 if (currentPlaylist.length === 0) {
                     showIdle();
                     return;
                 }
 
-                updateStatus(`Playlist updated: ${currentPlaylist.length} item(s)`);
-                if (wasIdle) {
+                updateStatus(`Playlist updated: ${currentPlaylist.length} item(s)` + (brandingItem ? ' + Branding' : ''));
+                if (wasEmpty) {
+                    currentIndex = 0;
                     playMedia(0);
                 } else {
                     prepareNextMedia();

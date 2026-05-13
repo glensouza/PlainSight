@@ -37,7 +37,7 @@ public static class DeviceApi
             .WithGroupName("Device API")
             .DisableAntiforgery();
 
-        group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ScheduleService scheduleService, ScheduleChangeTracker scheduleChangeTracker, ObsDiscoveryService obsService, IConfiguration configuration, ILoggerFactory loggerFactory, CancellationToken ct) =>
+        group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ScheduleService scheduleService, BrandingService brandingService, ScheduleChangeTracker scheduleChangeTracker, ObsDiscoveryService obsService, IConfiguration configuration, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             ILogger logger = loggerFactory.CreateLogger("DeviceApi");
             
@@ -111,6 +111,9 @@ public static class DeviceApi
                 Schedule? activeSchedule = await scheduleService.GetActiveScheduleAsync(device.Group, ct);
                 Playlist? activePlaylist = activeSchedule?.Playlist;
 
+                // Resolve branding
+                BrandingVideo? branding = await brandingService.GetActiveBrandingAsync(device.Group, ct);
+
                 // Resolve live mode: explicit override wins, otherwise auto-switch.
                 int sourceStaleness = configuration.GetValue("Ndi:StalenessSeconds", 60);
                 bool liveMode = false;
@@ -182,6 +185,7 @@ public static class DeviceApi
                             DurationSeconds = i.OverrideDurationSeconds ?? i.ContentItem.DurationSeconds
                         })
                         .ToList(),
+                    BrandingItem = branding != null ? new PlaylistItemDto { FileName = branding.FileName, DurationSeconds = branding.DurationSeconds } : null,
                     LiveMode = liveMode,
                     NdiSourceName = liveSourceName,
                     LogMinLevel = logMinLevel,

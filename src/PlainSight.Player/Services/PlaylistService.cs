@@ -12,6 +12,7 @@ public class PlaylistService
     private readonly Lock @lock = new();
     private List<PlaylistItemDto> playlist = [];
     private List<PlaylistItemDto> idlePlaylist = [];
+    private PlaylistItemDto? brandingItem;
     private string? currentFile;
 
     public PlaylistService(string contentPath, string idlePath, ILogger<PlaylistService> logger)
@@ -74,7 +75,7 @@ public class PlaylistService
         }
     }
 
-    public void UpdatePlaylist(List<PlaylistItemDto> items)
+    public void UpdatePlaylist(List<PlaylistItemDto> items, PlaylistItemDto? branding = null)
     {
         List<PlaylistItemDto> validFiles = items
             .Where(i => IsValidFilename(i.FileName))
@@ -83,6 +84,7 @@ public class PlaylistService
 
         lock (this.@lock)
         {
+            this.brandingItem = branding;
             // Simple sequence check for change
             bool hasChanged = this.playlist.Count != validFiles.Count || this.playlist.Zip(validFiles).Any(pair => pair.First.FileName != pair.Second.FileName || pair.First.DurationSeconds != pair.Second.DurationSeconds);
 
@@ -103,6 +105,22 @@ public class PlaylistService
                     logger.LogWarning(ex, "Failed to persist playlist.json for offline use");
                 }
             }
+        }
+    }
+
+    public void UpdateBrandingItem(PlaylistItemDto? branding)
+    {
+        lock (this.@lock)
+        {
+            this.brandingItem = branding;
+        }
+    }
+
+    public PlaylistItemDto? GetBrandingItem()
+    {
+        lock (this.@lock)
+        {
+            return this.brandingItem;
         }
     }
 

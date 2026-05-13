@@ -21,6 +21,9 @@ string cachePath = MediaPathResolver.Resolve(builder.Configuration["CachePath"] 
 string idleSourcePath = MediaPathResolver.Resolve(builder.Configuration["IdlePath"] ?? "/mnt/plainsight/idle");
 string idleCachePath = MediaPathResolver.Resolve(builder.Configuration["IdleCachePath"] ?? "/var/cache/plainsight/idle");
 
+string brandingSourcePath = builder.Configuration["BrandingPath"] ?? "/mnt/plainsight/branding";
+string brandingCachePath = builder.Configuration["BrandingCachePath"] ?? "/var/cache/plainsight/branding";
+
 // Under Aspire the ServerUrl resolves via service discovery ("http://plainsight-server").
 // On the Pi without Aspire, override ServerUrl in appsettings or env to the real address.
 string serverUrl = builder.Configuration["ServerUrl"] ?? "http://plainsight-server";
@@ -60,11 +63,12 @@ builder.Services.AddHttpClient<LogShipperService>(client =>
 builder.Services.AddSingleton<ScreenCaptureService>();
 builder.Services.AddSingleton<NdiPlayerService>();
 
-// Register cache manager for both content and idle folders
+// Register cache manager for content, idle, and branding folders
 builder.Services.AddSingleton(sp => new CacheManager(
     [
         (contentPath, cachePath),
-        (idleSourcePath, idleCachePath)
+        (idleSourcePath, idleCachePath),
+        (brandingSourcePath, brandingCachePath)
     ],
     sp.GetRequiredService<ILogger<CacheService>>()));
 
@@ -76,7 +80,7 @@ builder.Services.AddHostedService<PlayerWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LogShipperService>());
 
 // Ensure storage directories exist
-string[] storagePaths = [contentPath, cachePath, idleSourcePath, idleCachePath];
+string[] storagePaths = [contentPath, cachePath, idleSourcePath, idleCachePath, brandingSourcePath, brandingCachePath];
 foreach (string path in storagePaths)
 {
     if (!Directory.Exists(path))
@@ -113,7 +117,7 @@ app.MapGet("/player", async () =>
     return Results.Content(html, "text/html; charset=utf-8");
 });
 
-// Serve content files from both local cache and idle cache
+// Serve content files from local cache, idle cache, or branding cache
 app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
 {
     if (string.IsNullOrWhiteSpace(filename) ||
@@ -129,12 +133,15 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
         return Results.BadRequest("Unsupported file type");
     }
 
-    // Check main cache first
+    // Check caches in priority order
     string filePath = Path.Combine(cachePath, filename);
     if (!File.Exists(filePath))
     {
-        // Fallback to idle cache
         filePath = Path.Combine(idleCachePath, filename);
+        if (!File.Exists(filePath))
+        {
+            filePath = Path.Combine(brandingCachePath, filename);
+        }
     }
 
     if (!File.Exists(filePath))
@@ -148,7 +155,11 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
 
 // Return current playlist (switches to idle automatically)
 app.MapGet("/api/playlist", (PlaylistService playlist) =>
-    Results.Json(playlist.GetCurrentPlaylist()));
+    Results.Json(new
+    {
+        Items = playlist.GetCurrentPlaylist(),
+        Branding = playlist.GetBrandingItem()
+    }));
 
 // Direct live screenshot API called by the server
 app.MapGet("/api/screenshot", async (ScreenCaptureService screenCapture) =>

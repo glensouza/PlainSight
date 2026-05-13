@@ -7,6 +7,7 @@ public class HeartbeatResponse
     public string? ExpectedSha256 { get; set; }
     public string? AssignedApiKey { get; set; }
     public List<PlaylistItemDto>? PlaylistItems { get; set; }
+    public PlaylistItemDto? BrandingItem { get; set; }
 
     /// <summary>
     /// True when the player should be displaying the live NDI feed instead of the cached signage playlist.

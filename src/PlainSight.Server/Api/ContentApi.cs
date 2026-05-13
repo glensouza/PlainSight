@@ -1,11 +1,11 @@
-namespace PlainSight.Server.Api;
-
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using PlainSight.Shared;
 using System.IO;
+
+namespace PlainSight.Server.Api;
 
 public static class ContentApi
 {
@@ -24,6 +24,12 @@ public static class ContentApi
         group.MapGet("/idle/{fileName}", (string fileName, IConfiguration configuration) =>
         {
             string root = MediaPathResolver.Resolve(configuration["IdlePath"] ?? "/mnt/plainsight/idle");
+            return ServeMedia(root, fileName);
+        });
+
+        group.MapGet("/branding/{fileName}", (string fileName, IConfiguration configuration) =>
+        {
+            string root = MediaPathResolver.Resolve(configuration["BrandingPath"] ?? "/mnt/plainsight/branding");
             return ServeMedia(root, fileName);
         });
 

@@ -1,0 +1,580 @@
+@page "/branding"
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Admin")]
+@inject IDbContextFactory<PlainSightDbContext> DbFactory
+@inject IConfiguration Configuration
+@inject ILogger<Branding> Logger
+@inject MediaMetadataService MediaMetadataService
+@inject BrandingSyncService SyncService
+
+@implements IDisposable
+
+<PageTitle>Branding Management — PlainSight</PageTitle>
+
+<div class="page-header d-flex align-items-center justify-content-between">
+    <div>
+        <h1>Branding Management</h1>
+        <p class="text-muted mb-0">Manage logo branding videos played between playlist loops</p>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary" @onclick="RefreshAll">
+        <i class="bi bi-arrow-repeat"></i> Refresh
+    </button>
+</div>
+
+@if (globalError != null)
+{
+    <div class="alert alert-danger mt-3">
+        <i class="bi bi-exclamation-octagon"></i> @globalError
+        <button type="button" class="btn-close float-end" @onclick="() => globalError = null"></button>
+    </div>
+}
+
+<div class="row g-4 mt-2">
+    <div class="col-lg-6">
+        <div class="card h-100 shadow-sm">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fs-6"><i class="bi bi-play-btn"></i> Branding Library</h5>
+            </div>
+            <div class="card-body">
+                @if (videos == null)
+                {
+                    <div class="text-center py-4">
+                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                    </div>
+                }
+                else if (videos.Count == 0)
+                {
+                    <div class="alert alert-info small">
+                        No branding videos found. Upload a new video or add one from the idle library.
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle small">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Default</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (BrandingVideo v in videos)
+                                {
+                                    <tr class="@(v.IsDefault ? "table-primary-subtle" : "")">
+                                        <td>
+                                            <strong>@v.Name</strong><br/>
+                                            <code class="text-muted">@v.FileName</code>
+                                        </td>
+                                        <td>
+                                            @if (v.IsDefault)
+                                            {
+                                                <span class="badge bg-primary">Default</span>
+                                            }
+                                        </td>
+                                        <td class="text-end">
+                                            <div class="btn-group btn-group-sm">
+                                                <button class="btn btn-outline-primary" @onclick="() => PreviewVideo(v.FileName)" title="Preview">
+                                                    <i class="bi bi-eye"></i>
+                                                </button>
+                                                @if (!v.IsDefault)
+                                                {
+                                                    <button class="btn btn-outline-primary" @onclick="() => SetDefault(v)" title="Set as Default">
+                                                        <i class="bi bi-star"></i>
+                                                    </button>
+                                                }
+                                                <button class="btn btn-outline-danger" @onclick="() => DeleteVideo(v)" title="Remove from Branding library">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+
+                <hr/>
+                
+                <div class="mb-4">
+                    <h6 class="fs-7 fw-bold mb-2">Direct Upload</h6>
+                    <div class="input-group input-group-sm">
+                        <InputFile class="form-control" OnChange="HandleFileSelected" accept="video/*" />
+                        <button class="btn btn-primary" @onclick="UploadBrandingVideo" disabled="@(selectedUploadFile == null || uploading)">
+                            @if (uploading)
+                            {
+                                <span class="spinner-border spinner-border-sm" role="status"></span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-upload"></i>
+                                <span> Upload</span>
+                            }
+                        </button>
+                    </div>
+                    <small class="text-muted">Uploads directly to the branding folder.</small>
+                </div>
+
+                <div>
+                    <h6 class="fs-7 fw-bold mb-2">Add from Idle Library</h6>
+                    <div class="input-group input-group-sm">
+                        <select class="form-select" @bind="selectedFileName">
+                            <option value="">-- Select file --</option>
+                            @if (availableIdleFiles != null)
+                            {
+                                @foreach (FileInfo f in availableIdleFiles)
+                                {
+                                    <option value="@f.Name">@f.Name</option>
+                                }
+                            }
+                        </select>
+                        <button class="btn btn-outline-primary" @onclick="AddBrandingVideoFromIdle" disabled="@(string.IsNullOrEmpty(selectedFileName))">
+                            Add to Branding
+                        </button>
+                    </div>
+                    <small class="text-muted">Copies file from idle to branding folder.</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card h-100 shadow-sm">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fs-6"><i class="bi bi-calendar-event"></i> Branding Schedules</h5>
+                <button class="btn btn-sm btn-outline-light" @onclick="ShowCreateSchedule">
+                    <i class="bi bi-plus-lg"></i> New
+                </button>
+            </div>
+            <div class="card-body">
+                @if (schedules == null)
+                {
+                    <div class="text-center py-4">
+                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                    </div>
+                }
+                else if (schedules.Count == 0)
+                {
+                    <div class="alert alert-light border small text-center py-4">
+                        <i class="bi bi-info-circle fs-4 d-block mb-2 text-muted"></i>
+                        No branding schedules defined. The default video will play at all times.
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle small">
+                            <thead>
+                                <tr>
+                                    <th>Group</th>
+                                    <th>Video</th>
+                                    <th>Timing</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (BrandingSchedule s in schedules)
+                                {
+                                    <tr>
+                                        <td><span class="badge bg-secondary">@s.GroupName</span></td>
+                                        <td><strong>@s.BrandingVideo.Name</strong></td>
+                                        <td>
+                                            <code>@s.StartTime.ToString("HH:mm")</code> – <code>@s.EndTime.ToString("HH:mm")</code>
+                                            <div class="text-muted" style="font-size: 0.75rem;">@GetDaysText(s.DaysOfWeek)</div>
+                                        </td>
+                                        <td class="text-end">
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteSchedule(s)">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (showScheduleForm)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content shadow-lg">
+                <div class="modal-header">
+                    <h5 class="modal-title fs-6">New Branding Schedule</h5>
+                    <button type="button" class="btn-close" @onclick="() => showScheduleForm = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Target Group</label>
+                        <select class="form-select form-select-sm" @bind="newScheduleGroupName">
+                            <option value="Default">Default (Global Fallback)</option>
+                            @if (deviceGroups != null)
+                            {
+                                @foreach (DeviceGroup g in deviceGroups)
+                                {
+                                    <option value="@g.Name">@g.Name</option>
+                                }
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Video</label>
+                        <select class="form-select form-select-sm" @bind="newScheduleVideoId">
+                            <option value="0">-- Select Video --</option>
+                            @if (videos != null)
+                            {
+                                @foreach (BrandingVideo v in videos)
+                                {
+                                    <option value="@v.Id">@v.Name</option>
+                                }
+                            }
+                        </select>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">Start Time</label>
+                            <input type="time" class="form-control form-control-sm" @bind="newScheduleStartTime" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">End Time</label>
+                            <input type="time" class="form-control form-control-sm" @bind="newScheduleEndTime" />
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold d-block">Days of Week</label>
+                        <div class="d-flex flex-wrap gap-2">
+                            @foreach (DayOfWeekFlags day in Enum.GetValues<DayOfWeekFlags>().Where(d => d != DayOfWeekFlags.None && d != DayOfWeekFlags.All))
+                            {
+                                <div class="form-check form-check-inline m-0">
+                                    <input class="form-check-input" type="checkbox" id="day-@day" 
+                                           checked="@((newScheduleDays & day) != 0)"
+                                           @onchange="e => ToggleDay(day, (bool)e.Value!)" />
+                                    <label class="form-check-label small" for="day-@day">@day.ToString()[..3]</label>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-secondary" @onclick="() => showScheduleForm = false">Cancel</button>
+                    <button class="btn btn-sm btn-primary" @onclick="SaveSchedule" disabled="@(newScheduleVideoId == 0)">Save Schedule</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (previewFileName != null)
+{
+    string previewPath = $"/api/media/branding/{previewFileName}";
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.8);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0">
+                <div class="modal-header py-2">
+                    <h6 class="modal-title text-truncate">@previewFileName</h6>
+                    <button type="button" class="btn-close" @onclick="() => previewFileName = null"></button>
+                </div>
+                <div class="modal-body p-0 bg-dark d-flex align-items-center justify-content-center" style="min-height: 400px;">
+                    <video controls autoplay class="w-100" style="max-height: 70vh;">
+                        <source src="@previewPath" type="video/mp4" />
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<BrandingVideo>? videos;
+    private List<BrandingSchedule>? schedules;
+    private List<DeviceGroup>? deviceGroups;
+    private List<FileInfo>? availableIdleFiles;
+    
+    private string selectedFileName = "";
+    private IBrowserFile? selectedUploadFile;
+    private bool uploading;
+    private string? globalError;
+    private string? previewFileName;
+
+    private bool showScheduleForm;
+    private string newScheduleGroupName = "Default";
+    private int newScheduleVideoId;
+    private TimeOnly newScheduleStartTime = new(0, 0);
+    private TimeOnly newScheduleEndTime = new(23, 59, 59);
+    private DayOfWeekFlags newScheduleDays = DayOfWeekFlags.All;
+
+    private FileSystemWatcher? fileWatcher;
+    private Timer? debounceTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        await LoadIdleFiles();
+
+        string brandingPath = Configuration["BrandingPath"] ?? "/mnt/plainsight/branding";
+        if (Directory.Exists(brandingPath))
+        {
+            try
+            {
+                fileWatcher = new FileSystemWatcher(brandingPath) { NotifyFilter = NotifyFilters.FileName };
+                fileWatcher.Created += this.OnFileChanged;
+                fileWatcher.Deleted += this.OnFileChanged;
+                fileWatcher.Renamed += (_, e) => this.OnFileChanged(null, e);
+                fileWatcher.Error += this.OnFileWatcherError;
+                fileWatcher.EnableRaisingEvents = true;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Could not start FileSystemWatcher for branding path {Path}", brandingPath);
+            }
+        }
+    }
+
+    private void OnFileChanged(object? sender, FileSystemEventArgs e)
+    {
+        if (this.debounceTimer == null)
+        {
+            this.debounceTimer = new Timer(_ => InvokeAsync(RefreshAll), null, TimeSpan.FromSeconds(1), Timeout.InfiniteTimeSpan);
+        }
+        else
+        {
+            this.debounceTimer.Change(TimeSpan.FromSeconds(1), Timeout.InfiniteTimeSpan);
+        }
+    }
+
+    private void OnFileWatcherError(object sender, System.IO.ErrorEventArgs e)
+    {
+        Logger.LogWarning(e.GetException(), "FileSystemWatcher error on branding path");
+    }
+
+    private async Task RefreshAll()
+    {
+        await SyncService.SyncAsync();
+        await LoadData();
+        await LoadIdleFiles();
+        StateHasChanged();
+    }
+
+    private async Task LoadData()
+    {
+        await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+        videos = await context.BrandingVideos.OrderBy(v => v.Name).ToListAsync();
+        schedules = await context.BrandingSchedules
+            .Include(s => s.BrandingVideo)
+            .OrderBy(s => s.GroupName)
+            .ThenBy(s => s.StartTime)
+            .ToListAsync();
+        deviceGroups = await context.DeviceGroups.Where(g => g.Name != "Default").OrderBy(g => g.Name).ToListAsync();
+    }
+
+    private Task LoadIdleFiles()
+    {
+        string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+        if (Directory.Exists(idlePath))
+        {
+            List<FileInfo> files = new DirectoryInfo(idlePath).GetFiles().Where(f => MediaConstants.IsVideo(f.Name)).ToList();
+
+            if (videos != null)
+            {
+                HashSet<string> existingNames = videos.Select(v => v.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                availableIdleFiles = files.Where(f => !existingNames.Contains(f.Name)).ToList();
+            }
+            else
+            {
+                availableIdleFiles = files;
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedUploadFile = e.File;
+        globalError = null;
+    }
+
+    private async Task UploadBrandingVideo()
+    {
+        if (selectedUploadFile == null) return;
+
+        uploading = true;
+        globalError = null;
+        try
+        {
+            string brandingPath = Configuration["BrandingPath"] ?? "/mnt/plainsight/branding";
+            Directory.CreateDirectory(brandingPath);
+
+            string fileName = Path.GetFileName(selectedUploadFile.Name);
+            string filePath = Path.Combine(brandingPath, fileName);
+
+            if (File.Exists(filePath))
+            {
+                globalError = "A file with this name already exists in the branding folder.";
+                return;
+            }
+
+            await using (Stream stream = selectedUploadFile.OpenReadStream(512L * 1024 * 1024))
+            await using (FileStream fileStream = new(filePath, FileMode.Create))
+            {
+                await stream.CopyToAsync(fileStream);
+            }
+
+            // SyncService will pick it up via FileSystemWatcher, but we force it here for immediate feedback
+            await RefreshAll();
+            selectedUploadFile = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error uploading branding video");
+            globalError = "Upload failed: " + ex.Message;
+        }
+        finally
+        {
+            uploading = false;
+        }
+    }
+
+    private async Task AddBrandingVideoFromIdle()
+    {
+        if (string.IsNullOrEmpty(selectedFileName)) return;
+
+        string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
+        string brandingPath = Configuration["BrandingPath"] ?? "/mnt/plainsight/branding";
+        Directory.CreateDirectory(brandingPath);
+
+        string sourcePath = Path.Combine(idlePath, selectedFileName);
+        string destPath = Path.Combine(brandingPath, selectedFileName);
+        
+        if (!File.Exists(sourcePath))
+        {
+            globalError = "File not found in idle library.";
+            return;
+        }
+
+        try 
+        {
+            if (!File.Exists(destPath))
+            {
+                File.Copy(sourcePath, destPath);
+            }
+
+            selectedFileName = "";
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error copying file from idle to branding");
+            globalError = "Failed to copy file: " + ex.Message;
+        }
+    }
+
+    private void PreviewVideo(string fileName)
+    {
+        previewFileName = fileName;
+    }
+
+    private async Task SetDefault(BrandingVideo video)
+    {
+        await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+        await context.BrandingVideos.ExecuteUpdateAsync(s => s.SetProperty(v => v.IsDefault, v => v.Id == video.Id));
+        await LoadData();
+    }
+
+    private async Task DeleteVideo(BrandingVideo video)
+    {
+        await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+        await context.BrandingVideos.Where(v => v.Id == video.Id).ExecuteDeleteAsync();
+
+        if (video.IsDefault)
+        {
+            BrandingVideo? next = await context.BrandingVideos.OrderBy(v => v.Name).FirstOrDefaultAsync();
+            if (next != null)
+            {
+                await context.BrandingVideos.Where(v => v.Id == next.Id)
+                    .ExecuteUpdateAsync(s => s.SetProperty(v => v.IsDefault, true));
+            }
+        }
+
+        string brandingPath = Configuration["BrandingPath"] ?? "/mnt/plainsight/branding";
+        string filePath = Path.Combine(brandingPath, video.FileName);
+        if (File.Exists(filePath))
+        {
+            try
+            {
+                File.Delete(filePath);
+            }
+            catch (IOException ex)
+            {
+                Logger.LogWarning(ex, "Could not delete branding file {FileName}", video.FileName);
+            }
+        }
+
+        await RefreshAll();
+    }
+
+    private void ShowCreateSchedule()
+    {
+        newScheduleVideoId = videos?.FirstOrDefault()?.Id ?? 0;
+        newScheduleGroupName = "Default";
+        showScheduleForm = true;
+    }
+
+    private void ToggleDay(DayOfWeekFlags day, bool value)
+    {
+        if (value) newScheduleDays |= day;
+        else newScheduleDays &= ~day;
+    }
+
+    private async Task SaveSchedule()
+    {
+        await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+        BrandingSchedule schedule = new()
+        {
+            BrandingVideoId = newScheduleVideoId,
+            GroupName = newScheduleGroupName,
+            StartTime = newScheduleStartTime,
+            EndTime = newScheduleEndTime,
+            DaysOfWeek = newScheduleDays,
+            IsActive = true
+        };
+        context.BrandingSchedules.Add(schedule);
+        await context.SaveChangesAsync();
+        showScheduleForm = false;
+        await LoadData();
+    }
+
+    private async Task DeleteSchedule(BrandingSchedule schedule)
+    {
+        await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+        context.BrandingSchedules.Remove(schedule);
+        await context.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private static string GetDaysText(DayOfWeekFlags days)
+    {
+        if (days == DayOfWeekFlags.All)
+        {
+            return "Daily";
+        }
+
+        IEnumerable<string> selected = Enum.GetValues<DayOfWeekFlags>()
+            .Where(d => d != DayOfWeekFlags.None && d != DayOfWeekFlags.All && (days & d) != 0)
+            .Select(d => d.ToString()[..3]);
+        return string.Join(", ", selected);
+    }
+
+    public void Dispose()
+    {
+        this.debounceTimer?.Dispose();
+        this.fileWatcher?.Dispose();
+    }
+}
