@@ -48,6 +48,26 @@ public static class ContentApi
             return Results.File(filePath, contentType, enableRangeProcessing: true);
         });
 
+        group.MapGet("/branding/{fileName}", (string fileName, IConfiguration configuration) =>
+        {
+            string root = ResolveActualPath(configuration["BrandingPath"] ?? "/mnt/plainsight/branding");
+            string filePath = Path.Combine(root, fileName);
+            if (!File.Exists(filePath))
+            {
+                return Results.NotFound();
+            }
+
+            string contentType = Path.GetExtension(fileName).ToLowerInvariant() switch
+            {
+                ".mp4" => "video/mp4",
+                ".webm" => "video/webm",
+                ".png" => "image/png",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                _ => "application/octet-stream"
+            };
+            return Results.File(filePath, contentType, enableRangeProcessing: true);
+        });
+
         group.MapGet("/screenshot/{deviceId}/{fileName}", (string deviceId, string fileName, IConfiguration configuration) =>
         {
             string root = configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots";

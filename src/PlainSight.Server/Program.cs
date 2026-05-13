@@ -217,6 +217,7 @@ using (IServiceScope scope = app.Services.CreateScope())
     [
         config["ContentPath"] ?? "/mnt/plainsight/content",
         config["IdlePath"] ?? "/mnt/plainsight/idle",
+        config["BrandingPath"] ?? "/mnt/plainsight/branding",
         config["UpdatesPath"] ?? "/mnt/plainsight/updates",
         config["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots"
     ];
