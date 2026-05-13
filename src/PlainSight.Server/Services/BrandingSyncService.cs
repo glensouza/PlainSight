@@ -6,7 +6,7 @@ using PlainSight.Shared.Models;
 namespace PlainSight.Server.Services;
 
 public class BrandingSyncService(
-    PlainSightDbContext context,
+    IDbContextFactory<PlainSightDbContext> dbFactory,
     IConfiguration configuration,
     MediaMetadataService metadataService,
     ILogger<BrandingSyncService> logger)
@@ -19,6 +19,8 @@ public class BrandingSyncService(
         {
             return (0, 0);
         }
+
+        await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         HashSet<string> diskFiles = Directory.GetFiles(this.BrandingPath)
             .Where(f => MediaConstants.IsVideo(f))
@@ -44,6 +46,10 @@ public class BrandingSyncService(
             }
         }
 
+        // Determine if any default video survives after pending removals; ensures
+        // exactly one new entry gets IsDefault=true when the table would otherwise be empty.
+        bool hasDefault = dbItems.Any(i => i.IsDefault && !itemsToRemove.Contains(i));
+
         // Add DB entries for files found on disk but not yet tracked
         foreach (string fileName in diskFiles.Where(f => !dbFiles.Contains(f)))
         {
@@ -52,6 +58,9 @@ public class BrandingSyncService(
 
             int duration = await metadataService.GetVideoDurationAsync(filePath);
 
+            bool assignDefault = !hasDefault;
+            hasDefault = true;
+
             context.BrandingVideos.Add(new BrandingVideo
             {
                 Name = Path.GetFileNameWithoutExtension(fileName),
@@ -59,7 +68,7 @@ public class BrandingSyncService(
                 FileSizeBytes = fileInfo.Length,
                 DurationSeconds = duration,
                 UploadedAt = fileInfo.CreationTimeUtc,
-                IsDefault = !await context.BrandingVideos.AnyAsync(cancellationToken)
+                IsDefault = assignDefault
             });
             added++;
             logger.LogInformation("Sync added new branding clip from disk: {FileName} ({Duration}s)", fileName, duration);
