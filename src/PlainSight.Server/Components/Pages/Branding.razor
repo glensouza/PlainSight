@@ -6,6 +6,9 @@
 @inject ILogger<Branding> Logger
 @inject MediaMetadataService MediaMetadataService
 @inject VideoProcessorService VideoProcessorService
+@inject BrandingSyncService SyncService
+
+@implements IDisposable
 
 <PageTitle>Branding Management — PlainSight</PageTitle>
 
@@ -14,6 +17,9 @@
         <h1>Branding Management</h1>
         <p class="text-muted mb-0">Manage logo branding videos played between playlist loops</p>
     </div>
+    <button class="btn btn-sm btn-outline-secondary" @onclick="RefreshAll">
+        <i class="bi bi-arrow-repeat"></i> Refresh
+    </button>
 </div>
 
 @if (globalError != null)
@@ -70,6 +76,9 @@
                                         </td>
                                         <td class="text-end">
                                             <div class="btn-group btn-group-sm">
+                                                <button class="btn btn-outline-primary" @onclick="() => PreviewVideo(v.FileName)" title="Preview">
+                                                    <i class="bi bi-eye"></i>
+                                                </button>
                                                 @if (!v.IsDefault)
                                                 {
                                                     <button class="btn btn-outline-primary" @onclick="() => SetDefault(v)" title="Set as Default">
@@ -262,6 +271,27 @@
     </div>
 }
 
+@if (previewFileName != null)
+{
+    string previewPath = $"/api/media/branding/{previewFileName}";
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.8);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0">
+                <div class="modal-header py-2">
+                    <h6 class="modal-title text-truncate">@previewFileName</h6>
+                    <button type="button" class="btn-close" @onclick="() => previewFileName = null"></button>
+                </div>
+                <div class="modal-body p-0 bg-dark d-flex align-items-center justify-content-center" style="min-height: 400px;">
+                    <video controls autoplay class="w-100" style="max-height: 70vh;">
+                        <source src="@previewPath" type="video/mp4" />
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<BrandingVideo>? videos;
     private List<BrandingSchedule>? schedules;
@@ -272,6 +302,7 @@
     private IBrowserFile? selectedUploadFile;
     private bool uploading;
     private string? globalError;
+    private string? previewFileName;
 
     private bool showScheduleForm;
     private string newScheduleGroupName = "Default";
@@ -280,10 +311,30 @@
     private TimeOnly newScheduleEndTime = new(23, 59, 59);
     private DayOfWeekFlags newScheduleDays = DayOfWeekFlags.All;
 
+    private FileSystemWatcher? fileWatcher;
+
     protected override async Task OnInitializedAsync()
     {
         await LoadData();
         await LoadIdleFiles();
+
+        string brandingPath = Configuration["BrandingPath"] ?? "/mnt/plainsight/branding";
+        if (Directory.Exists(brandingPath))
+        {
+            fileWatcher = new FileSystemWatcher(brandingPath);
+            fileWatcher.Created += (s, e) => InvokeAsync(RefreshAll);
+            fileWatcher.Deleted += (s, e) => InvokeAsync(RefreshAll);
+            fileWatcher.Renamed += (s, e) => InvokeAsync(RefreshAll);
+            fileWatcher.EnableRaisingEvents = true;
+        }
+    }
+
+    private async Task RefreshAll()
+    {
+        await SyncService.SyncAsync();
+        await LoadData();
+        await LoadIdleFiles();
+        StateHasChanged();
     }
 
     private async Task LoadData()
@@ -350,24 +401,9 @@
                 await stream.CopyToAsync(fileStream);
             }
 
-            int duration = await MediaMetadataService.GetVideoDurationAsync(filePath);
-
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-            BrandingVideo video = new()
-            {
-                Name = Path.GetFileNameWithoutExtension(fileName),
-                FileName = fileName,
-                FileSizeBytes = new FileInfo(filePath).Length,
-                DurationSeconds = duration,
-                IsDefault = !await context.BrandingVideos.AnyAsync()
-            };
-
-            context.BrandingVideos.Add(video);
-            await context.SaveChangesAsync();
-
+            // SyncService will pick it up via FileSystemWatcher, but we force it here for immediate feedback
+            await RefreshAll();
             selectedUploadFile = null;
-            await LoadData();
-            await LoadIdleFiles();
         }
         catch (Exception ex)
         {
@@ -384,14 +420,6 @@
     {
         if (string.IsNullOrEmpty(selectedFileName)) return;
 
-        await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-        
-        if (await context.BrandingVideos.AnyAsync(v => v.FileName == selectedFileName))
-        {
-            selectedFileName = "";
-            return;
-        }
-
         string idlePath = Configuration["IdlePath"] ?? "/mnt/plainsight/idle";
         string brandingPath = Configuration["BrandingPath"] ?? "/mnt/plainsight/branding";
         Directory.CreateDirectory(brandingPath);
@@ -405,28 +433,26 @@
             return;
         }
 
-        // Copy file to branding folder for isolation
-        if (!File.Exists(destPath))
+        try 
         {
-            File.Copy(sourcePath, destPath);
+            if (!File.Exists(destPath))
+            {
+                File.Copy(sourcePath, destPath);
+            }
+
+            selectedFileName = "";
+            await RefreshAll();
         }
-
-        int duration = await MediaMetadataService.GetVideoDurationAsync(destPath);
-
-        BrandingVideo video = new()
+        catch (Exception ex)
         {
-            Name = Path.GetFileNameWithoutExtension(selectedFileName),
-            FileName = selectedFileName,
-            FileSizeBytes = new FileInfo(destPath).Length,
-            DurationSeconds = duration,
-            IsDefault = !await context.BrandingVideos.AnyAsync()
-        };
+            Logger.LogError(ex, "Error copying file from idle to branding");
+            globalError = "Failed to copy file: " + ex.Message;
+        }
+    }
 
-        context.BrandingVideos.Add(video);
-        await context.SaveChangesAsync();
-        selectedFileName = "";
-        await LoadData();
-        await LoadIdleFiles();
+    private void PreviewVideo(string fileName)
+    {
+        previewFileName = fileName;
     }
 
     private async Task SetDefault(BrandingVideo video)
@@ -442,8 +468,15 @@
         await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
         context.BrandingVideos.Remove(video);
         await context.SaveChangesAsync();
-        await LoadData();
-        await LoadIdleFiles();
+
+        string brandingPath = Configuration["BrandingPath"] ?? "/mnt/plainsight/branding";
+        string filePath = Path.Combine(brandingPath, video.FileName);
+        if (File.Exists(filePath))
+        {
+            try { File.Delete(filePath); } catch { /* ignore */ }
+        }
+
+        await RefreshAll();
     }
 
     private void ShowCreateSchedule()
@@ -492,5 +525,10 @@
             .Where(d => d != DayOfWeekFlags.None && d != DayOfWeekFlags.All && (days & d) != 0)
             .Select(d => d.ToString()[..3]);
         return string.Join(", ", selected);
+    }
+
+    public void Dispose()
+    {
+        fileWatcher?.Dispose();
     }
 }
