@@ -179,7 +179,16 @@
                                 {
                                     <tr>
                                         <td><span class="badge bg-secondary">@s.GroupName</span></td>
-                                        <td><strong>@s.BrandingVideo.Name</strong></td>
+                                        <td>
+                                            @if (s.BrandingVideo != null)
+                                            {
+                                                <strong>@s.BrandingVideo.Name</strong>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-danger small"><i class="bi bi-exclamation-triangle"></i> Video Missing (ID: @s.BrandingVideoId)</span>
+                                            }
+                                        </td>
                                         <td>
                                             <code>@s.StartTime.ToString("HH:mm")</code> – <code>@s.EndTime.ToString("HH:mm")</code>
                                             <div class="text-muted" style="font-size: 0.75rem;">@GetDaysText(s.DaysOfWeek)</div>
@@ -315,25 +324,38 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadData();
-        await LoadIdleFiles();
-
-        string brandingPath = Configuration["BrandingPath"] ?? "/mnt/plainsight/branding";
-        if (Directory.Exists(brandingPath))
+        try
         {
-            try
+            await LoadData();
+            await LoadIdleFiles();
+
+            string brandingPath = Configuration["BrandingPath"] ?? "/mnt/plainsight/branding";
+            if (Directory.Exists(brandingPath))
             {
-                fileWatcher = new FileSystemWatcher(brandingPath) { NotifyFilter = NotifyFilters.FileName };
-                fileWatcher.Created += this.OnFileChanged;
-                fileWatcher.Deleted += this.OnFileChanged;
-                fileWatcher.Renamed += (_, e) => this.OnFileChanged(null, e);
-                fileWatcher.Error += this.OnFileWatcherError;
-                fileWatcher.EnableRaisingEvents = true;
+                try
+                {
+                    fileWatcher = new FileSystemWatcher(brandingPath) { NotifyFilter = NotifyFilters.FileName };
+                    fileWatcher.Created += this.OnFileChanged;
+                    fileWatcher.Deleted += this.OnFileChanged;
+                    fileWatcher.Renamed += (_, e) => this.OnFileChanged(null, e);
+                    fileWatcher.Error += this.OnFileWatcherError;
+                    fileWatcher.EnableRaisingEvents = true;
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Could not start FileSystemWatcher for branding path {Path}", brandingPath);
+                }
             }
-            catch (Exception ex)
-            {
-                Logger.LogWarning(ex, "Could not start FileSystemWatcher for branding path {Path}", brandingPath);
-            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error initializing branding page");
+            globalError = "Failed to load branding data: " + ex.Message;
+            
+            // Ensure lists are at least initialized to empty to avoid secondary null refs in UI
+            videos ??= [];
+            schedules ??= [];
+            deviceGroups ??= [];
         }
     }
 
@@ -356,10 +378,19 @@
 
     private async Task RefreshAll()
     {
-        await SyncService.SyncAsync();
-        await LoadData();
-        await LoadIdleFiles();
-        StateHasChanged();
+        try
+        {
+            await SyncService.SyncAsync();
+            await LoadData();
+            await LoadIdleFiles();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error refreshing branding data");
+            globalError = "Refresh failed: " + ex.Message;
+            StateHasChanged();
+        }
     }
 
     private async Task LoadData()
