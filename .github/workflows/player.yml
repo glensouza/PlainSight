@@ -164,6 +164,10 @@ jobs:
         echo "MANIFEST_PATH=${MANIFEST_PATH}" >> "$GITHUB_ENV"
         echo "Manifest written to ${MANIFEST_PATH}"
 
+    - name: Announce Version
+      run: |
+        echo "::notice title=Player Build Complete::Version ${{ env.VERSION }} is now available on the update share."
+
     - name: Prune old player binaries (keep 3 newest)
       env:
         UPDATES_PATH_RAW: ${{ vars.UPDATES_PATH }}

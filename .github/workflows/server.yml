@@ -103,6 +103,7 @@ jobs:
 
         if [ $SUCCESS -eq 1 ]; then
           echo "Deployment successful!"
+          echo "::notice title=Server Deployed::Successfully deployed version ${{ env.BUILD_TAG }} to production."
           # Cleanup: Keep only 5 most recent images (excluding 'current', 'previous').
           # Escape dots in MAJOR_MINOR for use as a regex pattern.
           ESCAPED=$(printf '%s' "${{ env.MAJOR_MINOR }}" | sed 's/\./\\./g')
