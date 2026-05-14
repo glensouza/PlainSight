@@ -1,6 +1,5 @@
 <Solution>
   <Folder Name="/SolutionFiles/">
-    <File Path=".env.example" />
     <File Path=".gitignore" />
     <File Path="aspire.config.json" />
     <File Path="CLAUDE.md" />
@@ -12,15 +11,15 @@
     <File Path="docs/github-actions.md" />
     <File Path="docs/gmail-setup.md" />
     <File Path="docs/IMPLEMENTATION.md" />
-    <File Path="docs/NDI-Discovery-Setup.md" />
     <File Path="docs/NDI-OBS-Setup.md" />
     <File Path="docs/NETWORK-MANAGEMENT.md" />
-    <File Path="docs/plans/issue-38-version-automation.md" />
     <File Path="docs/raspberry-pi-setup.md" />
     <File Path="docs/README.md" />
     <File Path="docs/SECURITY.md" />
     <File Path="GEMINI.md" />
+    <File Path="opencode.json" />
     <File Path="README.md" />
+    <File Path="version.txt" />
   </Folder>
   <Project Path="src/PlainSight.AppHost/PlainSight.AppHost.csproj" />
   <Project Path="src/PlainSight.Player/PlainSight.Player.csproj" />

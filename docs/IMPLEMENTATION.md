@@ -162,7 +162,7 @@ Device Table:
 ```
 GitHub Actions (CI/CD)
     │
-    ├─► Build Server Docker Image → ghcr.io
+    ├─► Build Server Docker Image (Local)
     └─► Build Player ARM64 Binary → GitHub Releases
     
 Production Server (Docker)

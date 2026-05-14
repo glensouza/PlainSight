@@ -11,6 +11,12 @@ PlainSight is an enterprise-grade digital signage solution optimized for Raspber
 
 ## 📏 Development Conventions
 
+### Essential Tooling Files
+The following files are required for specialized development workflows and must not be removed:
+- `opencode.json`: Configuration for LM Studio / OpenCode integration.
+- `CLAUDE.md`: Guidance for Claude Code (claude.ai/code) users.
+- `aspire.config.json`: Configuration for the .NET Aspire orchestration environment.
+
 ### Infrastructure & Storage — hard requirements
 
 - **SMB-First Logic**: Components must prioritize direct file access via `/mnt/plainsight` for large payloads (Updates, Screenshots, Videos) before falling back to HTTP APIs.
