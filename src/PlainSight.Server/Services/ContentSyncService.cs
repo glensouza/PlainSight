@@ -10,6 +10,10 @@ public class ContentSyncService(
     MediaMetadataService metadataService,
     ILogger<ContentSyncService> logger)
 {
+    // Serializes all sync executions in this process so the background worker
+    // and UI-triggered refreshes cannot race into the unique FileName index.
+    private static readonly SemaphoreSlim SyncLock = new(1, 1);
+
     public async Task<(int Added, int Removed)> SyncAsync(CancellationToken cancellationToken = default)
     {
         string contentPath = MediaPathResolver.Resolve(configuration["ContentPath"] ?? "/mnt/plainsight/content");
@@ -18,13 +22,43 @@ public class ContentSyncService(
             return (0, 0);
         }
 
+        await SyncLock.WaitAsync(cancellationToken);
+        try
+        {
+            return await this.SyncCoreAsync(contentPath, cancellationToken);
+        }
+        finally
+        {
+            SyncLock.Release();
+        }
+    }
+
+    private async Task<(int Added, int Removed)> SyncCoreAsync(string contentPath, CancellationToken cancellationToken)
+    {
         EnumerationOptions options = new() { IgnoreInaccessible = true };
+
+        bool directoryIsEmpty = !Directory.EnumerateFileSystemEntries(contentPath, "*", options).Any();
+
         HashSet<string> diskFiles = Directory.GetFiles(contentPath, "*", options)
             .Where(f => MediaConstants.AllSupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
             .Select(f => Path.GetFileName(f))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         List<ContentItem> dbItems = await context.ContentItems.ToListAsync(cancellationToken);
+
+        // Guard against an unmounted/empty storage path destructively wiping records.
+        // Program.cs auto-creates the ContentPath if missing, so a failed SMB mount
+        // looks like an empty directory rather than a missing one. If there are
+        // existing DB records but the directory is truly empty, treat it as storage-unavailable
+        // and skip reconciliation rather than cascade-delete all content + playlists.
+        if (directoryIsEmpty && dbItems.Count > 0)
+        {
+            logger.LogWarning(
+                "Skipping content sync: '{Path}' is empty but {Count} DB record(s) exist (possible unmounted storage)",
+                contentPath, dbItems.Count);
+            return (0, 0);
+        }
+
         HashSet<string> dbFiles = dbItems.Select(i => i.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         int added = 0;
