@@ -117,14 +117,17 @@ app.MapGet("/player", async () =>
     return Results.Content(html, "text/html; charset=utf-8");
 });
 
-// Serve the splash screen PNG generated at startup
-app.MapGet("/splash.png", () =>
+// Serve the splash screen PNG generated at startup. The Cache-Control header
+// forces revalidation so a regenerated splash (e.g. on a version bump) is
+// always picked up on the next page load instead of a stale cached copy.
+app.MapGet("/splash.png", (HttpContext ctx) =>
 {
-    if (File.Exists(splashPath))
+    if (!File.Exists(splashPath))
     {
-        return Results.File(splashPath, "image/png", enableRangeProcessing: true);
+        return Results.NotFound();
     }
-    return Results.NotFound();
+    ctx.Response.Headers.CacheControl = "no-cache, must-revalidate";
+    return Results.File(splashPath, "image/png");
 });
 
 // Serve content files from local cache, idle cache, or branding cache
