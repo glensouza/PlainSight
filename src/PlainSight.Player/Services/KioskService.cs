@@ -78,17 +78,22 @@ public class KioskService(
             "--disable-infobars",
             "--disable-restore-session-state",
             "--autoplay-policy=no-user-gesture-required",
+            "--hide-scrollbars",
             $"\"{playerUrl}\""
         ]);
+
+        ProcessStartInfo info = new(browser, args)
+        {
+            UseShellExecute = false
+        };
+        // Minimize cursor size on Wayland/X11 (will be invisible in kiosk mode)
+        info.Environment["XCURSOR_SIZE"] = "1";
 
         logger.LogInformation("Launching {Browser} {Args}", browser, args);
 
         try
         {
-            this.chromiumProcess = Process.Start(new ProcessStartInfo(browser, args)
-            {
-                UseShellExecute = false
-            });
+            this.chromiumProcess = Process.Start(info);
             logger.LogInformation("Chromium started (PID {Pid})", this.chromiumProcess?.Id);
         }
         catch (Exception ex)
