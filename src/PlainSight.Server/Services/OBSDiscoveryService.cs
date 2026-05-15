@@ -59,7 +59,7 @@ public class ObsDiscoveryService(
         this.SyncWithRecording = syncRecording;
 
         await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync();
-        
+
         SystemSetting? streamSetting = await context.SystemSettings.FirstOrDefaultAsync(s => s.Key == "OBS:SyncWithStreaming");
         if (streamSetting == null)
         {
@@ -119,7 +119,7 @@ public class ObsDiscoveryService(
             await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(stoppingToken);
             SystemSetting? streamSetting = await context.SystemSettings.FirstOrDefaultAsync(s => s.Key == "OBS:SyncWithStreaming", stoppingToken);
             SystemSetting? recordSetting = await context.SystemSettings.FirstOrDefaultAsync(s => s.Key == "OBS:SyncWithRecording", stoppingToken);
-            
+
             if (streamSetting != null && bool.TryParse(streamSetting.Value, out bool streamVal))
             {
                 this.SyncWithStreaming = streamVal;
@@ -254,7 +254,7 @@ public class ObsDiscoveryService(
                 // Wait for messages with a timeout to allow periodic status refreshes even if no events occur
                 using CancellationTokenSource receiveTimeout = new(TimeSpan.FromSeconds(30));
                 using CancellationTokenSource linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, receiveTimeout.Token);
-                
+
                 using JsonDocument msg = await ReceiveMessageAsync(ws, linkedCts.Token);
                 await this.HandleMessageAsync(msg, ws, configuredOutputName, ndiSourceName, cancellationToken);
             }
@@ -284,7 +284,7 @@ public class ObsDiscoveryService(
                 }
             }
         }
-        
+
         if (ws.State != WebSocketState.Open && !cancellationToken.IsCancellationRequested)
         {
             throw new InvalidOperationException($"WebSocket closed prematurely (State: {ws.State})");
@@ -343,27 +343,27 @@ public class ObsDiscoveryService(
                 this.HandleOutputStatusResponse(d);
                 break;
             case "GetStreamStatus":
-            {
-                if (d.TryGetProperty("responseData", out JsonElement respData) &&
-                    respData.TryGetProperty("outputActive", out JsonElement activeEl))
                 {
-                    this.IsStreaming = activeEl.GetBoolean();
-                    logger.LogInformation("OBS streaming is {State}", this.IsStreaming ? "ACTIVE" : "inactive");
-                }
+                    if (d.TryGetProperty("responseData", out JsonElement respData) &&
+                        respData.TryGetProperty("outputActive", out JsonElement activeEl))
+                    {
+                        this.IsStreaming = activeEl.GetBoolean();
+                        logger.LogInformation("OBS streaming is {State}", this.IsStreaming ? "ACTIVE" : "inactive");
+                    }
 
-                break;
-            }
+                    break;
+                }
             case "GetRecordStatus":
-            {
-                if (d.TryGetProperty("responseData", out JsonElement respData) &&
-                    respData.TryGetProperty("outputActive", out JsonElement activeEl))
                 {
-                    this.IsRecording = activeEl.GetBoolean();
-                    logger.LogInformation("OBS recording is {State}", this.IsRecording ? "ACTIVE" : "inactive");
-                }
+                    if (d.TryGetProperty("responseData", out JsonElement respData) &&
+                        respData.TryGetProperty("outputActive", out JsonElement activeEl))
+                    {
+                        this.IsRecording = activeEl.GetBoolean();
+                        logger.LogInformation("OBS recording is {State}", this.IsRecording ? "ACTIVE" : "inactive");
+                    }
 
-                break;
-            }
+                    break;
+                }
         }
 
         if (this.IsLiveActive())
@@ -470,54 +470,54 @@ public class ObsDiscoveryService(
         switch (eventType)
         {
             case "OutputStateChanged":
-            {
-                if (!evData.TryGetProperty("outputName", out JsonElement outNameEl) || !evData.TryGetProperty("outputActive", out JsonElement evActiveEl))
                 {
-                    return;
+                    if (!evData.TryGetProperty("outputName", out JsonElement outNameEl) || !evData.TryGetProperty("outputActive", out JsonElement evActiveEl))
+                    {
+                        return;
+                    }
+
+                    string eventOutputName = outNameEl.GetString() ?? string.Empty;
+
+                    // Match against the resolved name (or any output containing "ndi" if not yet resolved)
+                    bool isOurOutput = !string.IsNullOrWhiteSpace(this.resolvedNdiOutputName)
+                        ? string.Equals(eventOutputName, this.resolvedNdiOutputName, StringComparison.OrdinalIgnoreCase)
+                        : eventOutputName.Contains("ndi", StringComparison.OrdinalIgnoreCase);
+
+                    if (!isOurOutput)
+                    {
+                        return;
+                    }
+
+                    // Update resolved name from the event if we didn't have it yet
+                    if (string.IsNullOrWhiteSpace(this.resolvedNdiOutputName))
+                    {
+                        this.resolvedNdiOutputName = eventOutputName;
+                    }
+
+                    this.IsNdiOutputActive = evActiveEl.GetBoolean();
+                    logger.LogInformation("OBS NDI Output '{Name}' changed: {State}", eventOutputName, this.IsNdiOutputActive ? "ACTIVE" : "inactive");
+                    break;
                 }
-
-                string eventOutputName = outNameEl.GetString() ?? string.Empty;
-
-                // Match against the resolved name (or any output containing "ndi" if not yet resolved)
-                bool isOurOutput = !string.IsNullOrWhiteSpace(this.resolvedNdiOutputName)
-                    ? string.Equals(eventOutputName, this.resolvedNdiOutputName, StringComparison.OrdinalIgnoreCase)
-                    : eventOutputName.Contains("ndi", StringComparison.OrdinalIgnoreCase);
-
-                if (!isOurOutput)
-                {
-                    return;
-                }
-
-                // Update resolved name from the event if we didn't have it yet
-                if (string.IsNullOrWhiteSpace(this.resolvedNdiOutputName))
-                {
-                    this.resolvedNdiOutputName = eventOutputName;
-                }
-
-                this.IsNdiOutputActive = evActiveEl.GetBoolean();
-                logger.LogInformation("OBS NDI Output '{Name}' changed: {State}", eventOutputName, this.IsNdiOutputActive ? "ACTIVE" : "inactive");
-                break;
-            }
             case "StreamStateChanged" when this.SyncWithStreaming:
-            {
-                if (evData.TryGetProperty("outputActive", out JsonElement activeEl))
                 {
-                    this.IsStreaming = activeEl.GetBoolean();
-                    logger.LogInformation("OBS streaming changed: {State}", this.IsStreaming ? "ACTIVE" : "inactive");
-                }
+                    if (evData.TryGetProperty("outputActive", out JsonElement activeEl))
+                    {
+                        this.IsStreaming = activeEl.GetBoolean();
+                        logger.LogInformation("OBS streaming changed: {State}", this.IsStreaming ? "ACTIVE" : "inactive");
+                    }
 
-                break;
-            }
+                    break;
+                }
             case "RecordStateChanged" when this.SyncWithRecording:
-            {
-                if (evData.TryGetProperty("outputActive", out JsonElement activeEl))
                 {
-                    this.IsRecording = activeEl.GetBoolean();
-                    logger.LogInformation("OBS recording changed: {State}", this.IsRecording ? "ACTIVE" : "inactive");
-                }
+                    if (evData.TryGetProperty("outputActive", out JsonElement activeEl))
+                    {
+                        this.IsRecording = activeEl.GetBoolean();
+                        logger.LogInformation("OBS recording changed: {State}", this.IsRecording ? "ACTIVE" : "inactive");
+                    }
 
-                break;
-            }
+                    break;
+                }
         }
 
         if (this.IsLiveActive())

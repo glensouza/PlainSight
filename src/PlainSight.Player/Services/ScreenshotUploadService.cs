@@ -5,8 +5,8 @@ using PlainSight.Shared;
 namespace PlainSight.Player.Services;
 
 public class ScreenshotUploadService(
-    HttpClient http, 
-    HeartbeatService heartbeat, 
+    HttpClient http,
+    HeartbeatService heartbeat,
     IConfiguration configuration,
     ILogger<ScreenshotUploadService> logger)
 {
@@ -24,7 +24,7 @@ public class ScreenshotUploadService(
             // 1. Save to SMB share
             string screenshotsRoot = MediaPathResolver.Resolve(configuration["ScreenshotsPath"] ?? "/mnt/plainsight/screenshots");
             string deviceDir = Path.Combine(screenshotsRoot, this.deviceId);
-            
+
             if (!Directory.Exists(deviceDir))
             {
                 Directory.CreateDirectory(deviceDir);
@@ -62,7 +62,7 @@ public class ScreenshotUploadService(
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-             /* Operation was canceled */
+            /* Operation was canceled */
         }
         catch (Exception ex)
         {

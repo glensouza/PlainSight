@@ -35,7 +35,7 @@ public class CacheService(string sourcePath, string cachePath, ILogger logger)
                 sourceFileNames.Add(fileName);
 
                 string destFile = Path.Combine(cachePath, fileName);
-                
+
                 if (await ShouldUpdateAsync(sourceFile, destFile))
                 {
                     logger.LogInformation("Syncing {FileName} to cache {CachePath}", fileName, cachePath);
@@ -76,8 +76,8 @@ public class CacheService(string sourcePath, string cachePath, ILogger logger)
             FileInfo sourceInfo = new(sourceFile);
             FileInfo destInfo = new(destFile);
 
-            return sourceInfo.Length != destInfo.Length 
-                ? Task.FromResult(true) 
+            return sourceInfo.Length != destInfo.Length
+                ? Task.FromResult(true)
                 : Task.FromResult(Math.Abs((sourceInfo.LastWriteTimeUtc - destInfo.LastWriteTimeUtc).TotalSeconds) > 1);
         }
         catch (Exception exception)
@@ -97,7 +97,7 @@ public class CacheService(string sourcePath, string cachePath, ILogger logger)
         }
 
         File.SetLastWriteTimeUtc(tempFile, File.GetLastWriteTimeUtc(sourceFile));
-        
+
         if (File.Exists(destFile)) File.Delete(destFile);
         File.Move(tempFile, destFile);
     }

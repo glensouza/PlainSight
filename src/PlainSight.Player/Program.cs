@@ -71,6 +71,9 @@ builder.Services.AddSingleton(sp => new CacheManager(
 builder.Services.AddSingleton(sp =>
     new PlaylistService(cachePath, idleCachePath, sp.GetRequiredService<ILogger<PlaylistService>>()));
 
+string splashPath = builder.Configuration["SplashPath"] ?? "/opt/plainsight/splash.png";
+
+builder.Services.AddHostedService<SplashGeneratorService>();
 builder.Services.AddHostedService<KioskService>();
 builder.Services.AddHostedService<PlayerWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LogShipperService>());
@@ -112,6 +115,16 @@ app.MapGet("/player", async () =>
     string html = (await reader.ReadToEndAsync())
         .Replace("{{DEVICE_NAME}}", Environment.MachineName);
     return Results.Content(html, "text/html; charset=utf-8");
+});
+
+// Serve the splash screen PNG generated at startup
+app.MapGet("/splash.png", () =>
+{
+    if (File.Exists(splashPath))
+    {
+        return Results.File(splashPath, "image/png", enableRangeProcessing: true);
+    }
+    return Results.NotFound();
 });
 
 // Serve content files from local cache, idle cache, or branding cache

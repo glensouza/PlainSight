@@ -85,35 +85,16 @@
             height: 100vh;
             background: linear-gradient(135deg, #0a0a14 0%, #0f172a 100%);
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
             color: #fff;
+            z-index: 50;
         }
 
-        .loading-title {
-            font-size: 48px;
-            font-weight: bold;
-            letter-spacing: 4px;
-            text-transform: uppercase;
-            color: #ffffff;
-            margin-bottom: 8px;
-        }
-
-        .loading-subtitle {
-            font-size: 16px;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-            color: rgba(255, 255, 255, 0.45);
-        }
-
-        .loading-device-name {
-            position: absolute;
-            bottom: 24px;
-            right: 32px;
-            font-size: 13px;
-            letter-spacing: 1px;
-            color: rgba(255, 255, 255, 0.35);
+        #splash-img {
+            width: 100%;
+            height: 100%;
+            object-fit: fill;
         }
 
         #idle-screen {
@@ -164,9 +145,7 @@
     <div id="status"></div>
     <div id="error-message"></div>
     <div id="loading">
-        <div class="loading-title">PlainSight</div>
-        <div class="loading-subtitle">Loading content&hellip;</div>
-        <div class="loading-device-name">{{DEVICE_NAME}}</div>
+        <img id="splash-img" src="/splash.png" alt="Loading...">
     </div>
     
     <div id="idle-screen">
@@ -197,11 +176,15 @@
         const loadingEl = document.getElementById('loading');
         const idleEl = document.getElementById('idle-screen');
 
+        const bootStartedAt = performance.now();
+        const ColdStartSplashMs = 10_000;
+
         let currentPlaylist = [];
         let brandingItem = null;
         let currentIndex = 0;
         let isSwapping = false;
         let imageTimer = null;
+        let splashMinimumMet = false;
 
         const debugOverlayEnabled = new URLSearchParams(window.location.search).get('debugOverlay') === '1';
         document.addEventListener('keydown', e => {
@@ -450,7 +433,7 @@
                 const res = await fetch('/api/playlist');
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
-                
+
                 const incomingItems = data.items || [];
                 const incomingBranding = data.branding || null;
 
@@ -471,12 +454,22 @@
                 updateStatus(`Playlist updated: ${currentPlaylist.length} item(s)` + (brandingItem ? ' + Branding' : ''));
                 if (wasEmpty) {
                     currentIndex = 0;
-                    playMedia(0);
+                    startPlaybackWhenReady(0);
                 } else {
                     prepareNextMedia();
                 }
             } catch (err) {
                 updateStatus('Waiting for playlist...');
+            }
+        }
+
+        function startPlaybackWhenReady(index) {
+            const elapsed = performance.now() - bootStartedAt;
+            if (elapsed >= ColdStartSplashMs) {
+                playMedia(index);
+            } else {
+                const delay = ColdStartSplashMs - elapsed;
+                setTimeout(() => playMedia(index), delay);
             }
         }
 

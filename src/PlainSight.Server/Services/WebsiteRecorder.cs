@@ -49,7 +49,7 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
     public async Task ConvertUrlToVideoAsync(string url, int durationSec, string outputPath, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Starting screencast render: {Url} ({Duration}s) -> {OutputPath}", url, durationSec, outputPath);
-        
+
         // Log environment details for diagnostics
         if (OperatingSystem.IsLinux())
         {
