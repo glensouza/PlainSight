@@ -184,7 +184,6 @@
         let currentIndex = 0;
         let isSwapping = false;
         let imageTimer = null;
-        let splashMinimumMet = false;
 
         const debugOverlayEnabled = new URLSearchParams(window.location.search).get('debugOverlay') === '1';
         document.addEventListener('keydown', e => {
@@ -447,14 +446,15 @@
                 brandingItem = incomingBranding;
 
                 if (currentPlaylist.length === 0) {
-                    showIdle();
+                    // Honor the 10-second splash hold on first boot — never swap straight from splash to idle screen.
+                    afterSplashHold(showIdle);
                     return;
                 }
 
                 updateStatus(`Playlist updated: ${currentPlaylist.length} item(s)` + (brandingItem ? ' + Branding' : ''));
                 if (wasEmpty) {
                     currentIndex = 0;
-                    startPlaybackWhenReady(0);
+                    afterSplashHold(() => playMedia(0));
                 } else {
                     prepareNextMedia();
                 }
@@ -463,13 +463,13 @@
             }
         }
 
-        function startPlaybackWhenReady(index) {
+        // Runs fn now if the 10s cold-start splash window has already elapsed; otherwise schedules it for when it has.
+        function afterSplashHold(fn) {
             const elapsed = performance.now() - bootStartedAt;
             if (elapsed >= ColdStartSplashMs) {
-                playMedia(index);
+                fn();
             } else {
-                const delay = ColdStartSplashMs - elapsed;
-                setTimeout(() => playMedia(index), delay);
+                setTimeout(fn, ColdStartSplashMs - elapsed);
             }
         }
 
