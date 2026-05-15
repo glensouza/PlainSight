@@ -43,7 +43,8 @@ unclutter -display :99 -idle 1 -root &
 
 # Start Chromium in fullscreen kiosk mode (--kiosk enables true fullscreen via X11)
 # Points to the local .NET Kestrel server on port 5555
-chromium --no-first-run --kiosk http://localhost:5555/player &
+# Force X11 rendering backend to ensure content renders to Xvfb (not Wayland)
+chromium --no-first-run --kiosk --ozone-platform=x11 http://localhost:5555/player &
 CHROMIUM_PID=$!
 
 # Wait for Chromium to exit; systemd will restart on signal/crash via Restart=always
