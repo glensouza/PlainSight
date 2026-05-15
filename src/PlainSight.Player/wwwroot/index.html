@@ -107,6 +107,15 @@
             color: rgba(255, 255, 255, 0.45);
         }
 
+        .loading-device-name {
+            position: absolute;
+            bottom: 24px;
+            right: 32px;
+            font-size: 13px;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.35);
+        }
+
         #idle-screen {
             position: absolute;
             top: 0;
@@ -157,6 +166,7 @@
     <div id="loading">
         <div class="loading-title">PlainSight</div>
         <div class="loading-subtitle">Loading content&hellip;</div>
+        <div class="loading-device-name" id="loading-device-name"></div>
     </div>
     
     <div id="idle-screen">
@@ -473,6 +483,19 @@
         loadPlaylistFromServer();
         setInterval(loadPlaylistFromServer, 30000);
         updateStatus('Waiting for content...');
+
+        (async () => {
+            try {
+                const res = await fetch('/api/device-name');
+                if (res.ok) {
+                    const data = await res.json();
+                    const el = document.getElementById('loading-device-name');
+                    if (el && data.name) {
+                        el.textContent = data.name;
+                    }
+                }
+            } catch (_) { /* non-critical */ }
+        })();
     </script>
 </body>
 </html>

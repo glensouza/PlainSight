@@ -149,6 +149,9 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
     return Results.File(filePath, contentType, enableRangeProcessing: true);
 });
 
+// Return the device name shown in the admin Devices page
+app.MapGet("/api/device-name", () => Results.Ok(new { Name = Environment.MachineName }));
+
 // Return current playlist (switches to idle automatically)
 app.MapGet("/api/playlist", (PlaylistService playlist) =>
     Results.Json(new
