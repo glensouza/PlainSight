@@ -173,6 +173,10 @@ fi
 
 # Disable screen sleep/power saving
 swayidle -w timeout 31536000 'wlopm --off \*' resume 'wlopm --on \*' &
+
+# Hide the X11 cursor as soon as XWayland is available.
+# labwc starts XWayland before running autostart, but add a brief wait as safety.
+(WAIT=0; while [ ! -S /tmp/.X11-unix/X0 ] && [ "$WAIT" -lt 10 ]; do sleep 0.2; WAIT=$((WAIT+1)); done; unclutter -display :0 -idle 0.1 -root) &
 EOF
 
 chmod +x ~/.config/labwc/autostart
@@ -301,9 +305,15 @@ echo "Configuring boot target, autologin, and enabling services..."
 sudo systemctl set-default graphical.target
 sudo raspi-config nonint do_boot_behaviour B2
 
-# Ensure labwc starts on login
+# Ensure labwc starts on tty1 login; clear the screen first to wipe the agetty
+# login line before the compositor renders its first frame.
 if ! grep -q "exec labwc" ~/.bash_profile 2>/dev/null; then
-  echo 'if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then exec labwc; fi' >> ~/.bash_profile
+  cat >> ~/.bash_profile << 'EOF'
+if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+    printf "\033c"
+    exec labwc
+fi
+EOF
 fi
 
 # Suppress tty1 login text so nothing is visible before labwc takes the screen.
