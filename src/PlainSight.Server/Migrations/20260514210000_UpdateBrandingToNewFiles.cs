@@ -24,19 +24,22 @@ namespace PlainSight.Server.Migrations
             // Clear IsDefault flag on all existing branding videos before setting new default
             migrationBuilder.Sql("UPDATE \"BrandingVideos\" SET \"IsDefault\" = false");
 
-            // Insert new branding videos
+            // Insert new branding videos using INSERT ... ON CONFLICT to handle existing data
             migrationBuilder.Sql(
                 "INSERT INTO \"BrandingVideos\" (\"Name\", \"FileName\", \"FileSizeBytes\", \"DurationSeconds\", \"IsDefault\", \"UploadedAt\") " +
-                "VALUES ('Pixel Logo', 'Pixel Logo.mp4', 0, 7, true, NOW())");
+                "VALUES ('Pixel Logo', 'Pixel Logo.mp4', 0, 7, true, NOW()) " +
+                "ON CONFLICT (\"FileName\") DO UPDATE SET \"IsDefault\" = true, \"Name\" = 'Pixel Logo'");
 
             migrationBuilder.Sql(
                 "INSERT INTO \"BrandingVideos\" (\"Name\", \"FileName\", \"FileSizeBytes\", \"DurationSeconds\", \"IsDefault\", \"UploadedAt\") " +
-                "VALUES ('Discoid Logo', 'Discoid Logo.mp4', 0, 7, false, NOW())");
+                "VALUES ('Discoid Logo', 'Discoid Logo.mp4', 0, 7, false, NOW()) " +
+                "ON CONFLICT (\"FileName\") DO UPDATE SET \"Name\" = 'Discoid Logo'");
 
             // Create an active schedule for the default branding (Pixel Logo) for all days, all times
             migrationBuilder.Sql(
                 "INSERT INTO \"BrandingSchedules\" (\"BrandingVideoId\", \"DaysOfWeek\", \"StartTime\", \"EndTime\", \"IsActive\", \"GroupName\", \"CreatedAt\", \"UpdatedAt\") " +
-                "SELECT \"Id\", 127, '00:00:00', '23:59:59', true, 'Default', NOW(), NOW() FROM \"BrandingVideos\" WHERE \"FileName\" = 'Pixel Logo.mp4'");
+                "SELECT \"Id\", 127, '00:00:00', '23:59:59', true, 'Default', NOW(), NOW() FROM \"BrandingVideos\" WHERE \"FileName\" = 'Pixel Logo.mp4' " +
+                "ON CONFLICT DO NOTHING");
         }
 
         /// <inheritdoc />
