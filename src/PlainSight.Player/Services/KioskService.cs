@@ -73,6 +73,7 @@ public class KioskService(
         string browser = FindChromium();
         string args = string.Join(' ', [
             "--kiosk",
+            "--start-maximized",
             "--noerrdialogs",
             "--disable-infobars",
             "--disable-restore-session-state",
