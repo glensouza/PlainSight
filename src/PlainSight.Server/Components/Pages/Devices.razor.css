@@ -456,11 +456,14 @@
     color: var(--ps-text-2);
 }
 
-.ps-code-block:hover .btn-copy {
+.ps-code-block:hover .btn-copy,
+.ps-code-block:focus-within .btn-copy {
     opacity: 1;
 }
 
-.ps-code-block .btn-copy:hover {
+.ps-code-block .btn-copy:hover,
+.ps-code-block .btn-copy:focus,
+.ps-code-block .btn-copy:focus-visible {
     background: var(--ps-bg-3);
     color: var(--ps-text);
     border-color: var(--ps-cyan);
