@@ -62,8 +62,6 @@ public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
                 info.Arguments = $"-c \"DISPLAY=:99 scrot '{tempFile}'\"";
             }
 
-            logger.LogDebug("Starting {Tool} with args: {Args}", info.FileName, info.Arguments);
-
             using Process? process = Process.Start(info);
 
             if (process == null)
@@ -73,10 +71,7 @@ public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
             }
 
             string stderr = await process.StandardError.ReadToEndAsync();
-            string stdout = await process.StandardOutput.ReadToEndAsync();
             await process.WaitForExitAsync();
-
-            logger.LogDebug("Process exited with code {ExitCode}, stderr: {StdErr}, stdout: {StdOut}", process.ExitCode, string.IsNullOrWhiteSpace(stderr) ? "(empty)" : stderr.Trim(), string.IsNullOrWhiteSpace(stdout) ? "(empty)" : stdout.Trim());
 
             if (process.ExitCode != 0)
             {
@@ -91,9 +86,7 @@ public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
                 return [];
             }
 
-            byte[] bytes = await File.ReadAllBytesAsync(tempFile);
-            logger.LogDebug("Screenshot captured successfully: {Bytes} bytes", bytes.Length);
-            return bytes;
+            return await File.ReadAllBytesAsync(tempFile);
         }
         catch (Exception ex)
         {
