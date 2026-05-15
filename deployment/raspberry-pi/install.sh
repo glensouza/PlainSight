@@ -264,7 +264,7 @@ for PARAM in quiet splash loglevel=0 logo.nologo vt.global_cursor_default=0; do
 done
 echo "$CMDLINE" | sudo tee "$CMDLINE_FILE" > /dev/null
 
-# Create PlainSight Plymouth theme — solid black screen, no distracting animation
+# Create PlainSight Plymouth theme — dark gradient with centered "PlainSight / Digital Signage" text
 THEME_DIR="/usr/share/plymouth/themes/plainsight"
 sudo mkdir -p "$THEME_DIR"
 
