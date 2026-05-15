@@ -10,6 +10,10 @@ public class BrandingSyncService(
     MediaMetadataService metadataService,
     ILogger<BrandingSyncService> logger)
 {
+    // Serializes all sync executions in this process so the background worker
+    // and UI-triggered refreshes cannot race into the unique FileName index.
+    private static readonly SemaphoreSlim SyncLock = new(1, 1);
+
     private string BrandingPath => configuration["BrandingPath"] ?? "/mnt/plainsight/branding";
 
     public async Task<(int Added, int Removed)> SyncAsync(CancellationToken cancellationToken = default)
@@ -19,6 +23,19 @@ public class BrandingSyncService(
             return (0, 0);
         }
 
+        await SyncLock.WaitAsync(cancellationToken);
+        try
+        {
+            return await this.SyncCoreAsync(cancellationToken);
+        }
+        finally
+        {
+            SyncLock.Release();
+        }
+    }
+
+    private async Task<(int Added, int Removed)> SyncCoreAsync(CancellationToken cancellationToken)
+    {
         await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         EnumerationOptions options = new() { IgnoreInaccessible = true };
@@ -28,6 +45,20 @@ public class BrandingSyncService(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         List<BrandingVideo> dbItems = await context.BrandingVideos.ToListAsync(cancellationToken);
+
+        // Guard against an unmounted/empty storage path destructively wiping records.
+        // Program.cs auto-creates the BrandingPath if missing, so a failed SMB mount
+        // looks like an empty directory rather than a missing one. If there are
+        // existing DB records but zero files visible, treat it as storage-unavailable
+        // and skip reconciliation rather than cascade-delete all branding + schedules.
+        if (diskFiles.Count == 0 && dbItems.Count > 0)
+        {
+            logger.LogWarning(
+                "Skipping branding sync: '{Path}' contains no files but {Count} DB record(s) exist (possible unmounted storage)",
+                this.BrandingPath, dbItems.Count);
+            return (0, 0);
+        }
+
         HashSet<string> dbFiles = dbItems.Select(i => i.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         int added = 0;
