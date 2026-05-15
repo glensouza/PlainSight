@@ -40,17 +40,31 @@ public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
         string tempFile = Path.Combine(Path.GetTempPath(), $"plainsight_screenshot_{Guid.NewGuid():N}.png");
         try
         {
-            using Process? process = Process.Start(new ProcessStartInfo
+            string? displayServer = Environment.GetEnvironmentVariable("WAYLAND_DISPLAY");
+            bool isWayland = !string.IsNullOrEmpty(displayServer);
+
+            ProcessStartInfo info = new()
             {
-                FileName = "grim",
-                Arguments = tempFile,
                 UseShellExecute = false,
                 RedirectStandardError = true
-            });
+            };
+
+            if (isWayland)
+            {
+                info.FileName = "grim";
+                info.Arguments = tempFile;
+            }
+            else
+            {
+                info.FileName = "/bin/bash";
+                info.Arguments = $"-c \"DISPLAY=:99 scrot '{tempFile}'\"";
+            }
+
+            using Process? process = Process.Start(info);
 
             if (process == null)
             {
-                logger.LogError("Failed to start grim process");
+                logger.LogError("Failed to start screenshot process ({Tool})", isWayland ? "grim" : "scrot");
                 return [];
             }
 
@@ -60,7 +74,7 @@ public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
             if (process.ExitCode != 0)
             {
                 string detail = string.IsNullOrWhiteSpace(stderr) ? "(no output)" : stderr.Trim();
-                logger.LogError("grim exited with code {ExitCode}: {Detail} — is a display connected and powered on?", process.ExitCode, detail);
+                logger.LogError("{Tool} exited with code {ExitCode}: {Detail} — is a display connected and powered on?", isWayland ? "grim" : "scrot", process.ExitCode, detail);
                 return [];
             }
 
@@ -68,7 +82,7 @@ public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error capturing screenshot via grim");
+            logger.LogError(ex, "Error capturing screenshot");
             return [];
         }
         finally
