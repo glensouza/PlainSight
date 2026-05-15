@@ -47,58 +47,55 @@ public class KioskService(
 
     private void LaunchChromium()
     {
-        // Read the actual bound address from Kestrel — works whether the port
-        // was set by our config, Aspire's dynamic allocation, or ASPNETCORE_URLS.
-        IServerAddressesFeature? addressFeature = server.Features.Get<IServerAddressesFeature>();
-        string baseUrl = addressFeature?.Addresses.FirstOrDefault() ?? "http://localhost:5555";
-
-        // Wildcard bind addresses ([::]  0.0.0.0  *) are valid for Kestrel but not for a
-        // browser client — translate them to localhost so Chromium can actually connect.
-        Uri uri = new(baseUrl);
-        if (uri.Host is "[::]" or "0.0.0.0" or "*")
-        {
-            baseUrl = new UriBuilder(uri) { Host = "localhost" }.Uri.ToString().TrimEnd('/');
-        }
-
-        string playerUrl = $"{baseUrl}/player";
-
         if (!OperatingSystem.IsLinux())
         {
+            IServerAddressesFeature? addressFeature = server.Features.Get<IServerAddressesFeature>();
+            string baseUrl = addressFeature?.Addresses.FirstOrDefault() ?? "http://localhost:5555";
+            Uri uri = new(baseUrl);
+            if (uri.Host is "[::]" or "0.0.0.0" or "*")
+            {
+                baseUrl = new UriBuilder(uri) { Host = "localhost" }.Uri.ToString().TrimEnd('/');
+            }
+            string playerUrl = $"{baseUrl}/player";
             logger.LogInformation(
-                "Not running on Linux — skipping Chromium launch. " +
+                "Not running on Linux — skipping display server launch. " +
                 "Open {Url} in a browser to test the player.", playerUrl);
             return;
         }
 
-        string browser = FindChromium();
-        string args = string.Join(' ', [
-            "--kiosk",
-            "--noerrdialogs",
-            "--disable-infobars",
-            "--disable-restore-session-state",
-            "--autoplay-policy=no-user-gesture-required",
-            $"\"{playerUrl}\""
-        ]);
+        this.LaunchDisplayServer();
+    }
 
-        logger.LogInformation("Launching {Browser} {Args}", browser, args);
+    private void LaunchDisplayServer()
+    {
+        string script = "/opt/plainsight/start-player.sh";
+        if (!File.Exists(script))
+        {
+            logger.LogWarning("Display server script not found at {Script}", script);
+            return;
+        }
+
+        ProcessStartInfo info = new("/bin/bash", script)
+        {
+            UseShellExecute = false
+        };
+
+        logger.LogInformation("Launching display server");
 
         try
         {
-            this.chromiumProcess = Process.Start(new ProcessStartInfo(browser, args)
-            {
-                UseShellExecute = false
-            });
-            logger.LogInformation("Chromium started (PID {Pid})", this.chromiumProcess?.Id);
+            this.chromiumProcess = Process.Start(info);
+            logger.LogInformation("Display server started (PID {Pid})", this.chromiumProcess?.Id);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to launch {Browser}. Ensure chromium-browser is installed.", browser);
+            logger.LogError(ex, "Failed to launch display server script");
         }
     }
 
     private static string FindChromium()
     {
-        string[] candidates = ["chromium-browser", "chromium", "google-chrome", "google-chrome-stable"];
+        string[] candidates = ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable"];
         foreach (string candidate in candidates)
         {
             try
@@ -125,6 +122,6 @@ public class KioskService(
                 /* which not available or candidate not found */
             }
         }
-        return "chromium-browser";
+        return "chromium";
     }
 }
