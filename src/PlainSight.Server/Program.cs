@@ -85,6 +85,7 @@ builder.Services.AddHostedService<ReconciliationBackgroundService>();
 builder.Services.AddScoped<ScheduleService>();
 builder.Services.AddScoped<BrandingService>();
 builder.Services.AddScoped<BrandingSyncService>();
+builder.Services.AddHostedService<BrandingSyncWorkerService>();
 builder.Services.AddHostedService<AutoScreenshotService>();
 builder.Services.AddHostedService<DeviceMonitorService>();
 builder.Services.AddHostedService<NdiDiscoveryService>();
