@@ -71,6 +71,9 @@ builder.Services.AddSingleton(sp => new CacheManager(
 builder.Services.AddSingleton(sp =>
     new PlaylistService(cachePath, idleCachePath, sp.GetRequiredService<ILogger<PlaylistService>>()));
 
+string splashPath = builder.Configuration["SplashPath"] ?? "/opt/plainsight/splash.png";
+
+builder.Services.AddHostedService<SplashGeneratorService>();
 builder.Services.AddHostedService<KioskService>();
 builder.Services.AddHostedService<PlayerWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LogShipperService>());
@@ -112,6 +115,19 @@ app.MapGet("/player", async () =>
     string html = (await reader.ReadToEndAsync())
         .Replace("{{DEVICE_NAME}}", Environment.MachineName);
     return Results.Content(html, "text/html; charset=utf-8");
+});
+
+// Serve the splash screen PNG generated at startup. The Cache-Control header
+// forces revalidation so a regenerated splash (e.g. on a version bump) is
+// always picked up on the next page load instead of a stale cached copy.
+app.MapGet("/splash.png", (HttpContext ctx) =>
+{
+    if (!File.Exists(splashPath))
+    {
+        return Results.NotFound();
+    }
+    ctx.Response.Headers.CacheControl = "no-cache, must-revalidate";
+    return Results.File(splashPath, "image/png");
 });
 
 // Serve content files from local cache, idle cache, or branding cache

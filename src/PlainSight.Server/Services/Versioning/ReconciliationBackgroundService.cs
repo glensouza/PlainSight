@@ -15,7 +15,7 @@ internal sealed class ReconciliationBackgroundService : BackgroundService
 
         this.serviceProvider = serviceProvider;
         this.logger = logger;
-        
+
         double intervalSeconds = configuration.GetValue("PlayerVersions:ReconcileIntervalSeconds", 60.0);
         this.reconcileInterval = TimeSpan.FromSeconds(intervalSeconds);
         this.reconcileEnabled = configuration.GetValue("PlayerVersions:ReconcileEnabled", true);
@@ -57,7 +57,7 @@ internal sealed class ReconciliationBackgroundService : BackgroundService
             using IServiceScope scope = this.serviceProvider.CreateScope();
             IPlayerVersionReconciler reconciler = scope.ServiceProvider.GetRequiredService<IPlayerVersionReconciler>();
             int ingestedCount = await reconciler.ReconcileAsync(ct);
-            
+
             if (ingestedCount > 0)
             {
                 this.logger.LogDebug("Background reconciliation tick complete. Ingested {Count} new version(s).", ingestedCount);

@@ -14,7 +14,7 @@ public class NdiDiscoveryService(
     IConfiguration configuration,
     ILogger<NdiDiscoveryService> logger) : BackgroundService
 {
-    private static readonly string[] DiscoveryProtocols = 
+    private static readonly string[] DiscoveryProtocols =
     [
         "_ndi._tcp.local",
         "_ndi._tcp",
@@ -39,7 +39,7 @@ public class NdiDiscoveryService(
                 foreach (string protocol in DiscoveryProtocols)
                 {
                     logger.LogDebug("Probing NDI via mDNS: {Protocol}...", protocol);
-                    
+
                     try
                     {
                         IReadOnlyList<IZeroconfHost> hosts = await ZeroconfResolver.ResolveAsync(
@@ -59,7 +59,7 @@ public class NdiDiscoveryService(
                         logger.LogDebug("Probe failed for {Protocol}: {Message}", protocol, ex.Message);
                     }
                 }
-                
+
                 await this.PruneStaleAsync(stalenessWindow, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

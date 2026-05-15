@@ -40,7 +40,7 @@ public static class DeviceApi
         group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ScheduleService scheduleService, BrandingService brandingService, ScheduleChangeTracker scheduleChangeTracker, ObsDiscoveryService obsService, IConfiguration configuration, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             ILogger logger = loggerFactory.CreateLogger("DeviceApi");
-            
+
             if (data == null || string.IsNullOrEmpty(data.DeviceId))
             {
                 logger.LogWarning("Heartbeat rejected: missing data or DeviceId");

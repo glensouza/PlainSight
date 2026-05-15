@@ -83,7 +83,7 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
                 .WithMany()
                 .HasForeignKey(e => e.PlaylistId)
                 .OnDelete(DeleteBehavior.Cascade);
-            
+
             entity.HasMany(e => e.TargetGroups)
                 .WithOne(e => e.Schedule)
                 .HasForeignKey(e => e.ScheduleId)

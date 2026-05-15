@@ -15,7 +15,7 @@ public class RenderQueue
     {
         this.jobs[job.Id] = (job, DateTime.UtcNow.Add(JobTtl));
         this.channel.Writer.TryWrite(job);
-        
+
         // Occasional cleanup
         if (this.jobs.Count > 100)
         {

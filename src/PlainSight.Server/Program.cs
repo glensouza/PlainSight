@@ -213,8 +213,8 @@ using (IServiceScope scope = app.Services.CreateScope())
 {
     IConfiguration config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
     ILogger startupLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
-    
-    string[] paths = 
+
+    string[] paths =
     [
         config["ContentPath"] ?? "/mnt/plainsight/content",
         config["IdlePath"] ?? "/mnt/plainsight/idle",

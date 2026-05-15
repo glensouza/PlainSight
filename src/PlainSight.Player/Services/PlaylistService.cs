@@ -47,9 +47,9 @@ public class PlaylistService
             {
                 newIdlePlaylist = Directory.GetFiles(idlePath)
                     .Where(f => VideoFormats.SupportedMediaExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
-                    .Select(f => new PlaylistItemDto 
-                    { 
-                        FileName = Path.GetFileName(f), 
+                    .Select(f => new PlaylistItemDto
+                    {
+                        FileName = Path.GetFileName(f),
                         DurationSeconds = 10 // Idle images default to 10s
                     })
                     .Where(i => !string.IsNullOrEmpty(i.FileName))
