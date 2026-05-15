@@ -1,8 +1,16 @@
 #!/bin/bash
-# PlainSight Player Autostart Script for labwc
-
-# Solid black desktop so there is no flash between Plymouth exit and the player window appearing
-swaybg -c 000000 &
+# Show custom splash image while the player starts up.
+# Replace /opt/plainsight/splash.png with your own 1920x1080 PNG to brand the loading screen.
+SPLASH=/opt/plainsight/splash.png
+if [ -f "$SPLASH" ]; then
+  swaybg -i "$SPLASH" -m fill &
+else
+  swaybg -c 0a0a14 &
+fi
 
 # Disable screen sleep/power saving
 swayidle -w timeout 31536000 'wlopm --off \*' resume 'wlopm --on \*' &
+
+# Hide the X11 cursor as soon as XWayland is available.
+# labwc starts XWayland before running autostart, but add a brief wait as safety.
+(WAIT=0; while [ ! -S /tmp/.X11-unix/X0 ] && [ "$WAIT" -lt 10 ]; do sleep 0.2; WAIT=$((WAIT+1)); done; unclutter -display :0 -idle 0.1 -root) &

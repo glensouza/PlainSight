@@ -109,7 +109,8 @@ app.MapGet("/player", async () =>
         return Results.NotFound();
     }
     using StreamReader reader = new(stream);
-    string html = await reader.ReadToEndAsync();
+    string html = (await reader.ReadToEndAsync())
+        .Replace("{{DEVICE_NAME}}", Environment.MachineName);
     return Results.Content(html, "text/html; charset=utf-8");
 });
 

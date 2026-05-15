@@ -1,55 +1,43 @@
 #!/bin/bash
 set -e
 
-# PlainSight Player Display Server Startup Script
-# Initializes X11/Openbox display stack for Raspberry Pi fullscreen kiosk display.
+# PlainSight Player Display Startup Script
+# Launches Chromium in kiosk mode via labwc/XWayland on the physical HDMI screen.
 #
-# Dependencies (must be installed before deployment):
-#   - xvfb: virtual X11 framebuffer
-#   - openbox: minimal window manager
-#   - chromium: web browser
-#   - unclutter: cursor hiding tool
+# labwc (Wayland compositor) must be running and have started XWayland before
+# this script is called. DISPLAY=:0 and WAYLAND_DISPLAY are set by the systemd
+# unit so Chromium routes output through XWayland → labwc → physical HDMI.
 #
-# Install via: sudo apt-get install -y xvfb openbox chromium unclutter
+# Dependencies: chromium, grim
+# Install: sudo apt-get install -y chromium grim
 
-export DISPLAY=:99
-export XAUTHORITY=/home/pi/.Xauthority
-unset WAYLAND_DISPLAY
-
-# Terminate any processes from previous runs to ensure clean startup
-pkill -f Xvfb || true
-pkill -f openbox || true
+# Kill any stale Chromium from a previous run
 pkill -f chromium || true
-sleep 1
 
-# Start Xvfb virtual framebuffer on display :99
-# Resolution: 1920x1080, Color depth: 24-bit
-Xvfb :99 -screen 0 1920x1080x24 &
-XVFB_PID=$!
-sleep 2
+# Wait up to 30 s for labwc to expose the XWayland socket
+WAIT=0
+while [ ! -S /tmp/.X11-unix/X0 ] && [ "$WAIT" -lt 30 ]; do
+    sleep 1
+    WAIT=$((WAIT + 1))
+done
 
-# Verify Xvfb is actually running before proceeding
-if ! kill -0 $XVFB_PID 2>/dev/null; then
-    echo "ERROR: Xvfb failed to start (PID $XVFB_PID)" >&2
+if [ ! -S /tmp/.X11-unix/X0 ]; then
+    echo "ERROR: XWayland socket /tmp/.X11-unix/X0 not available after 30 s" >&2
+    echo "Is labwc running? Check: systemctl --user status labwc or ~/.bash_profile" >&2
     exit 1
 fi
 
-# Start Openbox minimal window manager (no panels, decorations, or overhead)
-openbox --replace &
-OPENBOX_PID=$!
-sleep 2
+# Hide the X11 cursor (parked at 0,0 with no mouse on a kiosk display).
+# Runs on DISPLAY=:0 (XWayland) so it hides the compositor-level cursor.
+unclutter -display :0 -idle 0.5 -root &
 
-# Hide cursor after 1 second of inactivity using unclutter
-unclutter -display :99 -idle 1 -root &
-
-# Start Chromium in fullscreen kiosk mode (--kiosk enables true fullscreen via X11)
-# Points to the local .NET Kestrel server on port 5555
-# Force X11 rendering backend to ensure content renders to Xvfb (not Wayland)
-chromium --no-first-run --kiosk --ozone-platform=x11 http://localhost:5555/player &
+# Chromium renders via X11 backend → XWayland → labwc → physical HDMI.
+# DISPLAY=:0 and WAYLAND_DISPLAY=wayland-0 are inherited from the systemd unit.
+chromium \
+    --no-first-run \
+    --kiosk \
+    --ozone-platform=x11 \
+    http://localhost:5555/player &
 CHROMIUM_PID=$!
 
-# Wait for Chromium to exit; systemd will restart on signal/crash via Restart=always
 wait $CHROMIUM_PID
-
-# Clean up remaining display server processes on exit
-kill $XVFB_PID $OPENBOX_PID 2>/dev/null || true

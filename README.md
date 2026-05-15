@@ -87,3 +87,4 @@ dotnet publish src/PlainSight.Player/PlainSight.Player.csproj \
 - [Deployment Guide](docs/deployment.md)
 - [API Reference](docs/api.md)
 - [Raspberry Pi Setup](docs/raspberry-pi-setup.md)
+- [Boot Splash Customization](docs/boot-splash.md)

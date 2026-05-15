@@ -52,6 +52,7 @@ sudo apt install -y \
   swayidle \
   swaybg \
   wlopm \
+  unclutter \
   curl
 
 # 3. Create directories
@@ -136,6 +137,7 @@ Restart=always
 RestartSec=3
 Environment=DISPLAY=:0
 Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
 Environment=ServerUrl=http://${SERVER_IP}:8080
 Environment=PLAINSIGHT_APIKEY_PATH=/var/cache/plainsight/apikey
@@ -153,7 +155,6 @@ cat > ~/.config/labwc/rc.xml << 'EOF'
   <windowRules>
     <windowRule identifier="PlainSight.Player">
       <action name="ToggleFullscreen" />
-      <action name="KeepAbove" />
     </windowRule>
   </windowRules>
 </labwc_config>
@@ -161,14 +162,65 @@ EOF
 
 cat > ~/.config/labwc/autostart << 'EOF'
 #!/bin/bash
-# Solid black desktop so there is no flash between Plymouth exit and the player window appearing
-swaybg -c 000000 &
+# Show custom splash image while the player starts up.
+# Replace /opt/plainsight/splash.png with your own 1920x1080 PNG to brand the loading screen.
+SPLASH=/opt/plainsight/splash.png
+if [ -f "$SPLASH" ]; then
+  swaybg -i "$SPLASH" -m fill &
+else
+  swaybg -c 0a0a14 &
+fi
 
 # Disable screen sleep/power saving
 swayidle -w timeout 31536000 'wlopm --off \*' resume 'wlopm --on \*' &
+
+# Hide the X11 cursor as soon as XWayland is available.
+# labwc starts XWayland before running autostart, but add a brief wait as safety.
+(WAIT=0; while [ ! -S /tmp/.X11-unix/X0 ] && [ "$WAIT" -lt 10 ]; do sleep 0.2; WAIT=$((WAIT+1)); done; unclutter -display :0 -idle 0.1 -root) &
 EOF
 
 chmod +x ~/.config/labwc/autostart
+
+# Create the display startup script that KioskService calls at runtime.
+# It waits for XWayland to be ready, then launches Chromium on the physical screen.
+cat > /opt/plainsight/start-player.sh << 'EOF'
+#!/bin/bash
+set -e
+
+# Kill any stale Chromium from a previous run
+pkill -f chromium || true
+
+# Wait up to 30 s for labwc to expose the XWayland socket
+WAIT=0
+while [ ! -S /tmp/.X11-unix/X0 ] && [ "$WAIT" -lt 30 ]; do
+    sleep 1
+    WAIT=$((WAIT + 1))
+done
+
+if [ ! -S /tmp/.X11-unix/X0 ]; then
+    echo "ERROR: XWayland socket /tmp/.X11-unix/X0 not available after 30 s" >&2
+    exit 1
+fi
+
+# Hide the X11 cursor (parked at 0,0 with no mouse on a kiosk display).
+# Runs on DISPLAY=:0 (XWayland) so it hides the compositor-level cursor.
+unclutter -display :0 -idle 0.5 -root &
+
+# DISPLAY=:0 and WAYLAND_DISPLAY=wayland-0 are set by the systemd unit.
+# Chromium renders via X11 → XWayland → labwc → physical HDMI.
+chromium \
+    --no-first-run \
+    --kiosk \
+    --ozone-platform=x11 \
+    http://localhost:5555/player &
+CHROMIUM_PID=$!
+
+wait $CHROMIUM_PID
+EOF
+chmod +x /opt/plainsight/start-player.sh
+
+# Suppress the login MOTD/banner on tty1 so it doesn't flash before labwc starts
+touch ~/.hushlogin
 
 # 7. Configure silent boot for signage displays
 echo "Configuring silent boot..."
@@ -212,7 +264,7 @@ for PARAM in quiet splash loglevel=0 logo.nologo vt.global_cursor_default=0; do
 done
 echo "$CMDLINE" | sudo tee "$CMDLINE_FILE" > /dev/null
 
-# Create PlainSight Plymouth theme — solid black screen, no distracting animation
+# Create PlainSight Plymouth theme — dark gradient with centered "PlainSight / Digital Signage" text
 THEME_DIR="/usr/share/plymouth/themes/plainsight"
 sudo mkdir -p "$THEME_DIR"
 
@@ -228,8 +280,21 @@ ScriptFile=/usr/share/plymouth/themes/plainsight/plainsight.script
 EOF
 
 sudo tee "$THEME_DIR/plainsight.script" > /dev/null << 'EOF'
-Window.SetBackgroundTopColor(0.0, 0.0, 0.0);
-Window.SetBackgroundBottomColor(0.0, 0.0, 0.0);
+Window.SetBackgroundTopColor(0.05, 0.05, 0.10);
+Window.SetBackgroundBottomColor(0.00, 0.00, 0.00);
+
+title_image = Image.Text("PlainSight", 1.0, 1.0, 1.0);
+sub_image   = Image.Text("Digital Signage", 0.60, 0.60, 0.65);
+
+title_sprite = Sprite(title_image);
+title_sprite.SetX(Window.GetWidth() / 2 - title_image.GetWidth() / 2);
+title_sprite.SetY(Window.GetHeight() / 2 - title_image.GetHeight() - 8);
+title_sprite.SetOpacity(1);
+
+sub_sprite = Sprite(sub_image);
+sub_sprite.SetX(Window.GetWidth() / 2 - sub_image.GetWidth() / 2);
+sub_sprite.SetY(Window.GetHeight() / 2 + 8);
+sub_sprite.SetOpacity(1);
 EOF
 
 echo "Applying PlainSight Plymouth theme (rebuilding initramfs, please wait)..."
@@ -240,10 +305,34 @@ echo "Configuring boot target, autologin, and enabling services..."
 sudo systemctl set-default graphical.target
 sudo raspi-config nonint do_boot_behaviour B2
 
-# Ensure labwc starts on login
+# Ensure labwc starts on tty1 login; clear the screen first to wipe the agetty
+# login line before the compositor renders its first frame.
 if ! grep -q "exec labwc" ~/.bash_profile 2>/dev/null; then
-  echo 'if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then exec labwc; fi' >> ~/.bash_profile
+  cat >> ~/.bash_profile << 'EOF'
+if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+    printf "\033c"
+    exec labwc
 fi
+EOF
+fi
+
+# Suppress tty1 login text so nothing is visible before labwc takes the screen.
+# /etc/issue and /etc/issue.d/IP.issue are shown by agetty before autologin.
+sudo truncate -s 0 /etc/issue
+sudo truncate -s 0 /etc/issue.net
+[ -f /etc/issue.d/IP.issue ] && sudo truncate -s 0 /etc/issue.d/IP.issue
+
+# Silence getty@tty1 stdout/stderr so the "login: pi (automatic login)" line
+# and any remaining agetty output never reach the HDMI display.
+sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
+sudo tee /etc/systemd/system/getty@tty1.service.d/silent.conf > /dev/null << 'EOF'
+[Service]
+StandardOutput=null
+StandardError=null
+EOF
+
+# Suppress login MOTD and /etc/profile.d banner scripts
+touch ~/.hushlogin
 
 sudo systemctl daemon-reload
 sudo systemctl enable mnt-plainsight.automount
