@@ -161,8 +161,14 @@ EOF
 
 cat > ~/.config/labwc/autostart << 'EOF'
 #!/bin/bash
-# Solid black desktop so there is no flash between Plymouth exit and the player window appearing
-swaybg -c 000000 &
+# Show custom splash image while the player starts up.
+# Replace /opt/plainsight/splash.png with your own 1920x1080 PNG to brand the loading screen.
+SPLASH=/opt/plainsight/splash.png
+if [ -f "$SPLASH" ]; then
+  swaybg -i "$SPLASH" -m fill &
+else
+  swaybg -c 0a0a14 &
+fi
 
 # Disable screen sleep/power saving
 swayidle -w timeout 31536000 'wlopm --off \*' resume 'wlopm --on \*' &
@@ -228,8 +234,21 @@ ScriptFile=/usr/share/plymouth/themes/plainsight/plainsight.script
 EOF
 
 sudo tee "$THEME_DIR/plainsight.script" > /dev/null << 'EOF'
-Window.SetBackgroundTopColor(0.0, 0.0, 0.0);
-Window.SetBackgroundBottomColor(0.0, 0.0, 0.0);
+Window.SetBackgroundTopColor(0.05, 0.05, 0.10);
+Window.SetBackgroundBottomColor(0.00, 0.00, 0.00);
+
+title_image = Image.Text("PlainSight", 1.0, 1.0, 1.0);
+sub_image   = Image.Text("Digital Signage", 0.60, 0.60, 0.65);
+
+title_sprite = Sprite(title_image);
+title_sprite.SetX(Window.GetWidth() / 2 - title_image.GetWidth() / 2);
+title_sprite.SetY(Window.GetHeight() / 2 - title_image.GetHeight() - 8);
+title_sprite.SetOpacity(1);
+
+sub_sprite = Sprite(sub_image);
+sub_sprite.SetX(Window.GetWidth() / 2 - sub_image.GetWidth() / 2);
+sub_sprite.SetY(Window.GetHeight() / 2 + 8);
+sub_sprite.SetOpacity(1);
 EOF
 
 echo "Applying PlainSight Plymouth theme (rebuilding initramfs, please wait)..."

@@ -79,11 +79,32 @@
 
         #loading {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, #0a0a14 0%, #0f172a 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
             color: #fff;
-            font-size: 24px;
+        }
+
+        .loading-title {
+            font-size: 48px;
+            font-weight: bold;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            color: #ffffff;
+            margin-bottom: 8px;
+        }
+
+        .loading-subtitle {
+            font-size: 16px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.45);
         }
 
         #idle-screen {
@@ -133,7 +154,10 @@
     
     <div id="status"></div>
     <div id="error-message"></div>
-    <div id="loading">Loading content...</div>
+    <div id="loading">
+        <div class="loading-title">PlainSight</div>
+        <div class="loading-subtitle">Loading content&hellip;</div>
+    </div>
     
     <div id="idle-screen">
         <div class="logo-icon">👁️</div>
