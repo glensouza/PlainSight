@@ -281,7 +281,7 @@ else
                     </div>
 
                     <h6><i class="bi bi-3-circle"></i> Run Installation Script</h6>
-                    <p>SSH into your Raspberry Pi and run the automated installer. You will need the server URL: <code>@GetServerUrl()</code></p>
+                    <p>SSH into your Raspberry Pi and run the automated installer. When prompted, enter the PlainSight server host name or IP address, not the full URL. Your server is available at: <code>@GetServerUrl()</code></p>
                     <div class="ps-code-block">
                         <pre><code>curl -sSL https://raw.githubusercontent.com/glensouza/PlainSight/main/deployment/raspberry-pi/install.sh -o install.sh && chmod +x install.sh && ./install.sh</code></pre>
                         <button class="btn btn-sm btn-copy" @onclick='() => CopyToClipboard("curl -sSL https://raw.githubusercontent.com/glensouza/PlainSight/main/deployment/raspberry-pi/install.sh -o install.sh && chmod +x install.sh && ./install.sh")'>
