@@ -47,75 +47,33 @@ public class KioskService(
 
     private void LaunchChromium()
     {
-        // Read the actual bound address from Kestrel — works whether the port
-        // was set by our config, Aspire's dynamic allocation, or ASPNETCORE_URLS.
-        IServerAddressesFeature? addressFeature = server.Features.Get<IServerAddressesFeature>();
-        string baseUrl = addressFeature?.Addresses.FirstOrDefault() ?? "http://localhost:5555";
-
-        // Wildcard bind addresses ([::]  0.0.0.0  *) are valid for Kestrel but not for a
-        // browser client — translate them to localhost so Chromium can actually connect.
-        Uri uri = new(baseUrl);
-        if (uri.Host is "[::]" or "0.0.0.0" or "*")
-        {
-            baseUrl = new UriBuilder(uri) { Host = "localhost" }.Uri.ToString().TrimEnd('/');
-        }
-
-        string playerUrl = $"{baseUrl}/player";
-
         if (!OperatingSystem.IsLinux())
         {
+            IServerAddressesFeature? addressFeature = server.Features.Get<IServerAddressesFeature>();
+            string baseUrl = addressFeature?.Addresses.FirstOrDefault() ?? "http://localhost:5555";
+            Uri uri = new(baseUrl);
+            if (uri.Host is "[::]" or "0.0.0.0" or "*")
+            {
+                baseUrl = new UriBuilder(uri) { Host = "localhost" }.Uri.ToString().TrimEnd('/');
+            }
+            string playerUrl = $"{baseUrl}/player";
             logger.LogInformation(
-                "Not running on Linux — skipping Chromium launch. " +
+                "Not running on Linux — skipping window manager launch. " +
                 "Open {Url} in a browser to test the player.", playerUrl);
             return;
         }
 
-        string browser = FindChromium();
-        string args = string.Join(' ', [
-            "--kiosk",
-            "--start-maximized",
-            "--ozone-platform=wayland",
-            "--disable-gpu",
-            "--disable-gpu-sandbox",
-            "--noerrdialogs",
-            "--disable-infobars",
-            "--disable-restore-session-state",
-            "--autoplay-policy=no-user-gesture-required",
-            "--hide-scrollbars",
-            $"\"{playerUrl}\""
-        ]);
+        this.EnsureSwayIsRunning();
+    }
 
-        ProcessStartInfo info = new(browser, args)
-        {
-            UseShellExecute = false
-        };
-        // Ensure display and Wayland environment variables are set for Chromium
-        if (!info.Environment.ContainsKey("DISPLAY"))
-        {
-            info.Environment["DISPLAY"] = Environment.GetEnvironmentVariable("DISPLAY") ?? ":0";
-        }
-        if (!info.Environment.ContainsKey("WAYLAND_DISPLAY"))
-        {
-            info.Environment["WAYLAND_DISPLAY"] = Environment.GetEnvironmentVariable("WAYLAND_DISPLAY") ?? "wayland-0";
-        }
-        info.Environment["XCURSOR_SIZE"] = "1";
-
-        logger.LogInformation("Launching {Browser} {Args}", browser, args);
-
-        try
-        {
-            this.chromiumProcess = Process.Start(info);
-            logger.LogInformation("Chromium started (PID {Pid})", this.chromiumProcess?.Id);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to launch {Browser}. Ensure chromium-browser is installed.", browser);
-        }
+    private void EnsureSwayIsRunning()
+    {
+        logger.LogInformation("Sway is managed by systemd user service and should be running alongside this application");
     }
 
     private static string FindChromium()
     {
-        string[] candidates = ["chromium-browser", "chromium", "google-chrome", "google-chrome-stable"];
+        string[] candidates = ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable"];
         foreach (string candidate in candidates)
         {
             try
@@ -142,6 +100,6 @@ public class KioskService(
                 /* which not available or candidate not found */
             }
         }
-        return "chromium-browser";
+        return "chromium";
     }
 }
