@@ -9,7 +9,7 @@ public class SplashGeneratorService(
     private const int Width = 1920;
     private const int Height = 1080;
     private const string SplashVersionFile = "splash.version";
-    private const int LogoRadius = 120;
+    private const int LogoSize = 220;
     private const int Padding = 32;
 
     private static readonly SKColor BackgroundColor = new(10, 10, 20);
@@ -62,9 +62,10 @@ public class SplashGeneratorService(
             }
 
             string hostname = Environment.MachineName;
+            string displayVersion = GetDisplayVersion();
             tempPath = Path.Combine(splashDir, "splash.png.tmp");
 
-            RenderSplash(tempPath, hostname);
+            RenderSplash(tempPath, hostname, displayVersion);
 
             // Atomic replace: overwrite ensures /splash.png is never momentarily missing.
             File.Move(tempPath, splashPath, overwrite: true);
@@ -94,7 +95,7 @@ public class SplashGeneratorService(
         }
     }
 
-    private static void RenderSplash(string outputPath, string hostname)
+    private static void RenderSplash(string outputPath, string hostname, string version)
     {
         SKImageInfo info = new(Width, Height, SKColorType.Rgba8888, SKAlphaType.Opaque);
         using SKSurface surface = SKSurface.Create(info);
@@ -103,13 +104,14 @@ public class SplashGeneratorService(
         canvas.Clear(BackgroundColor);
 
         int centerX = Width / 2;
-        int logoCenterY = Height / 2 - 80;
-        int textBaselineY = Height / 2 + 90;
+        int logoCenterY = (Height / 2) - 60;
+        int titleBaselineY = logoCenterY + (LogoSize / 2) + 40 + 56;
+        int subtitleBaselineY = titleBaselineY + 14 + 22;
 
         DrawLogo(canvas, centerX, logoCenterY);
-        DrawCenteredText(canvas, "PlainSight", 56, SKFontStyle.Bold, SKColors.White, centerX, textBaselineY);
-        DrawCenteredText(canvas, "Digital Signage", 22, SKFontStyle.Normal, SubtleText, centerX, textBaselineY + 50);
-        DrawHostname(canvas, hostname);
+        DrawCenteredText(canvas, "PlainSight", 56, SKFontStyle.Bold, SKColors.White, centerX, titleBaselineY);
+        DrawCenteredText(canvas, "Digital Signage", 22, SKFontStyle.Normal, SubtleText, centerX, subtitleBaselineY);
+        DrawDeviceInfo(canvas, hostname, version);
 
         using SKImage image = surface.Snapshot();
         using SKData data = image.Encode(SKEncodedImageFormat.Png, 100);
@@ -117,17 +119,37 @@ public class SplashGeneratorService(
         data.SaveTo(stream);
     }
 
+    // Mirrors the favicon.svg design: rounded-rect border (gradient) + concentric rings + center dot.
+    // All dimensions are derived from the SVG's 32×32 viewBox scaled to LogoSize.
     private static void DrawLogo(SKCanvas canvas, int centerX, int centerY)
     {
-        using SKPaint outer = new() { Color = CyanAccent, Style = SKPaintStyle.Stroke, StrokeWidth = 3, IsAntialias = true };
-        using SKPaint mid = new() { Color = CyanAccent.WithAlpha(127), Style = SKPaintStyle.Stroke, StrokeWidth = 2, IsAntialias = true };
-        using SKPaint inner = new() { Color = BlueAccent.WithAlpha(100), Style = SKPaintStyle.Stroke, StrokeWidth = 2, IsAntialias = true };
-        using SKPaint dot = new() { Color = CyanAccent, Style = SKPaintStyle.Fill, IsAntialias = true };
+        float scale = LogoSize / 32f;
+        float half = LogoSize / 2f;
 
-        canvas.DrawCircle(centerX, centerY, LogoRadius, outer);
-        canvas.DrawCircle(centerX, centerY, LogoRadius * 2f / 3f, mid);
-        canvas.DrawCircle(centerX, centerY, LogoRadius * 2f / 5f, inner);
-        canvas.DrawCircle(centerX, centerY, 10, dot);
+        // Rounded rect border: inset 2 SVG units, rx=7, gradient cyan→blue top-left to bottom-right
+        float inset = 2f * scale;
+        SKRect rect = new(centerX - half + inset, centerY - half + inset,
+                          centerX + half - inset, centerY + half - inset);
+        float rx = 7f * scale;
+        using SKShader shader = SKShader.CreateLinearGradient(
+            new SKPoint(rect.Left, rect.Top),
+            new SKPoint(rect.Right, rect.Bottom),
+            [CyanAccent, BlueAccent],
+            SKShaderTileMode.Clamp);
+        using SKPaint border = new() { Style = SKPaintStyle.Stroke, StrokeWidth = 1.5f * scale, Shader = shader, IsAntialias = true };
+        canvas.DrawRoundRect(rect, rx, rx, border);
+
+        // Outer ring: r=11 SVG units, blue at 40% opacity
+        using SKPaint outer = new() { Style = SKPaintStyle.Stroke, StrokeWidth = scale, Color = BlueAccent.WithAlpha(100), IsAntialias = true };
+        canvas.DrawCircle(centerX, centerY, 11f * scale, outer);
+
+        // Mid ring: r=7, cyan at 50% opacity
+        using SKPaint mid = new() { Style = SKPaintStyle.Stroke, StrokeWidth = scale, Color = CyanAccent.WithAlpha(127), IsAntialias = true };
+        canvas.DrawCircle(centerX, centerY, 7f * scale, mid);
+
+        // Center dot: r=3.2, solid cyan
+        using SKPaint dot = new() { Style = SKPaintStyle.Fill, Color = CyanAccent, IsAntialias = true };
+        canvas.DrawCircle(centerX, centerY, 3.2f * scale, dot);
     }
 
     private static void DrawCenteredText(SKCanvas canvas, string text, float size, SKFontStyle style, SKColor color, float x, float y)
@@ -140,13 +162,12 @@ public class SplashGeneratorService(
         canvas.DrawText(text, x, y, align, font, paint);
     }
 
-    private static void DrawHostname(SKCanvas canvas, string hostname)
+    private static void DrawDeviceInfo(SKCanvas canvas, string hostname, string version)
     {
         using SKTypeface typeface = ResolveTypeface(SKFontStyle.Normal);
         using SKFont font = new(typeface, 18);
         using SKPaint paint = new() { Color = SubtleText, IsAntialias = true };
-
-        canvas.DrawText(hostname, Width - Padding, Height - Padding, SKTextAlign.Right, font, paint);
+        canvas.DrawText($"{hostname}  ·  {version}", Width - Padding, Height - Padding, SKTextAlign.Right, font, paint);
     }
 
     private static SKTypeface ResolveTypeface(SKFontStyle style)
@@ -167,5 +188,11 @@ public class SplashGeneratorService(
     {
         string? version = typeof(SplashGeneratorService).Assembly.GetName().Version?.ToString();
         return version ?? "unknown";
+    }
+
+    private static string GetDisplayVersion()
+    {
+        Version? v = typeof(SplashGeneratorService).Assembly.GetName().Version;
+        return v is not null ? $"v{v.Major}.{v.Minor}.{v.Build}" : "v?";
     }
 }

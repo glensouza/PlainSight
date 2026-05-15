@@ -112,8 +112,13 @@ app.MapGet("/player", async () =>
         return Results.NotFound();
     }
     using StreamReader reader = new(stream);
+    Version? assemblyVersion = Assembly.GetExecutingAssembly().GetName().Version;
+    string displayVersion = assemblyVersion is not null
+        ? $"v{assemblyVersion.Major}.{assemblyVersion.Minor}.{assemblyVersion.Build}"
+        : "";
     string html = (await reader.ReadToEndAsync())
-        .Replace("{{DEVICE_NAME}}", Environment.MachineName);
+        .Replace("{{DEVICE_NAME}}", Environment.MachineName)
+        .Replace("{{VERSION}}", displayVersion);
     return Results.Content(html, "text/html; charset=utf-8");
 });
 
