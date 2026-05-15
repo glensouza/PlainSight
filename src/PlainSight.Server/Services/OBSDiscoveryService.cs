@@ -4,7 +4,6 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Data;
-using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Services;
 

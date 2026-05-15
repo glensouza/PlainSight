@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Data;
 using PlainSight.Shared;
-using PlainSight.Shared.Models;
 using YoutubeExplode;
 using YoutubeExplode.Videos;
 using YoutubeExplode.Videos.Streams;

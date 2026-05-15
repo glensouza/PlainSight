@@ -1,4 +1,4 @@
-namespace PlainSight.Shared.Models;
+namespace PlainSight.Server.Models;
 
 public class ContentItem
 {
@@ -10,7 +10,7 @@ public class ContentItem
     public int DurationSeconds { get; set; }
     public DateTime UploadedAt { get; init; }
     public string? Description { get; set; }
-    public string? SourceUrl { get; set; } // For rendered websites
+    public string? SourceUrl { get; set; }
 }
 
 public enum ContentType

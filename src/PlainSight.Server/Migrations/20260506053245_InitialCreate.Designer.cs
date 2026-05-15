@@ -66,7 +66,7 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("AdminUsers");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.ContentItem", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.ContentItem", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -108,7 +108,7 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("ContentItems");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.Device", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.Device", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -175,7 +175,7 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("Devices");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.DeviceGroup", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.DeviceGroup", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -205,7 +205,7 @@ namespace PlainSight.Server.Migrations
                         });
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.DeviceGroupVersion", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.DeviceGroupVersion", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -229,7 +229,7 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("DeviceGroupVersions");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.DeviceScreenshot", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.DeviceScreenshot", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -254,7 +254,7 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("DeviceScreenshots");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.LogEntry", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.LogEntry", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -305,7 +305,7 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("LogEntries");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.NdiSource", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.NdiSource", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -346,7 +346,7 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("NdiSources");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.PlayerVersion", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.PlayerVersion", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -380,7 +380,7 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("PlayerVersions");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.Playlist", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.Playlist", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -409,7 +409,7 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("Playlists");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.PlaylistItem", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.PlaylistItem", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -438,7 +438,7 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("PlaylistItems");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.Schedule", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.Schedule", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -484,7 +484,7 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("Schedules");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.ScheduleTargetGroup", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.ScheduleTargetGroup", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -506,7 +506,7 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("ScheduleTargetGroups");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.SystemSetting", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.SystemSetting", b =>
                 {
                     b.Property<string>("Key")
                         .HasColumnType("text");
@@ -520,9 +520,9 @@ namespace PlainSight.Server.Migrations
                     b.ToTable("SystemSettings");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.Device", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.Device", b =>
                 {
-                    b.HasOne("PlainSight.Shared.Models.NdiSource", "AssignedNdiSource")
+                    b.HasOne("PlainSight.Server.Models.NdiSource", "AssignedNdiSource")
                         .WithMany("AssignedDevices")
                         .HasForeignKey("AssignedNdiSourceId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -530,9 +530,9 @@ namespace PlainSight.Server.Migrations
                     b.Navigation("AssignedNdiSource");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.DeviceScreenshot", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.DeviceScreenshot", b =>
                 {
-                    b.HasOne("PlainSight.Shared.Models.Device", "Device")
+                    b.HasOne("PlainSight.Server.Models.Device", "Device")
                         .WithMany()
                         .HasForeignKey("DeviceId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -541,15 +541,15 @@ namespace PlainSight.Server.Migrations
                     b.Navigation("Device");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.PlaylistItem", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.PlaylistItem", b =>
                 {
-                    b.HasOne("PlainSight.Shared.Models.ContentItem", "ContentItem")
+                    b.HasOne("PlainSight.Server.Models.ContentItem", "ContentItem")
                         .WithMany()
                         .HasForeignKey("ContentItemId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("PlainSight.Shared.Models.Playlist", "Playlist")
+                    b.HasOne("PlainSight.Server.Models.Playlist", "Playlist")
                         .WithMany("Items")
                         .HasForeignKey("PlaylistId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -560,9 +560,9 @@ namespace PlainSight.Server.Migrations
                     b.Navigation("Playlist");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.Schedule", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.Schedule", b =>
                 {
-                    b.HasOne("PlainSight.Shared.Models.Playlist", "Playlist")
+                    b.HasOne("PlainSight.Server.Models.Playlist", "Playlist")
                         .WithMany()
                         .HasForeignKey("PlaylistId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -571,9 +571,9 @@ namespace PlainSight.Server.Migrations
                     b.Navigation("Playlist");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.ScheduleTargetGroup", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.ScheduleTargetGroup", b =>
                 {
-                    b.HasOne("PlainSight.Shared.Models.Schedule", "Schedule")
+                    b.HasOne("PlainSight.Server.Models.Schedule", "Schedule")
                         .WithMany("TargetGroups")
                         .HasForeignKey("ScheduleId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -582,17 +582,17 @@ namespace PlainSight.Server.Migrations
                     b.Navigation("Schedule");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.NdiSource", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.NdiSource", b =>
                 {
                     b.Navigation("AssignedDevices");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.Playlist", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.Playlist", b =>
                 {
                     b.Navigation("Items");
                 });
 
-            modelBuilder.Entity("PlainSight.Shared.Models.Schedule", b =>
+            modelBuilder.Entity("PlainSight.Server.Models.Schedule", b =>
                 {
                     b.Navigation("TargetGroups");
                 });

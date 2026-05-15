@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace PlainSight.Shared.Models;
+namespace PlainSight.Server.Models;
 
 public class Device
 {
