@@ -7,6 +7,9 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <NoWarn>EXTEXP0001</NoWarn>
+    <!-- Bundle native .so files (SkiaSharp, HarfBuzz) into the single-file binary so the
+         update mechanism only needs to deploy one file to the Pi. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>

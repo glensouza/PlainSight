@@ -91,11 +91,63 @@
             z-index: 50;
         }
 
+        /* PNG overlay: sits above the CSS fallback; hidden via onerror if /splash.png is unavailable */
         #splash-img {
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
             height: 100%;
-            object-fit: fill;
+            object-fit: cover;
+            z-index: 2;
         }
+
+        /* CSS fallback: always rendered beneath the PNG overlay */
+        #splash-fallback {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+        }
+
+        .splash-logo {
+            position: relative;
+            width: 240px;
+            height: 240px;
+            margin-bottom: 50px;
+        }
+
+        .splash-ring {
+            position: absolute;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .splash-ring-outer { width: 240px; height: 240px; border: 3px solid #22d3ee; }
+        .splash-ring-mid   { width: 160px; height: 160px; border: 2px solid rgba(34,211,238,0.5); }
+        .splash-ring-inner { width:  96px; height:  96px; border: 2px solid rgba(59,130,246,0.39); }
+
+        .splash-dot {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: #22d3ee;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .splash-title    { font-size: 56px; font-weight: bold; color: #fff; }
+        .splash-subtitle { font-size: 22px; color: #8c8ca5; margin-top: 16px; }
 
         #idle-screen {
             position: absolute;
@@ -145,7 +197,17 @@
     <div id="status"></div>
     <div id="error-message"></div>
     <div id="loading">
-        <img id="splash-img" src="/splash.png" alt="Loading...">
+        <img id="splash-img" src="/splash.png" alt="" onerror="this.style.display='none'">
+        <div id="splash-fallback">
+            <div class="splash-logo">
+                <div class="splash-ring splash-ring-outer"></div>
+                <div class="splash-ring splash-ring-mid"></div>
+                <div class="splash-ring splash-ring-inner"></div>
+                <div class="splash-dot"></div>
+            </div>
+            <div class="splash-title">PlainSight</div>
+            <div class="splash-subtitle">Digital Signage</div>
+        </div>
     </div>
     
     <div id="idle-screen">
