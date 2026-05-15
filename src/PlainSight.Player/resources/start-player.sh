@@ -14,6 +14,7 @@ set -e
 
 export DISPLAY=:99
 export XAUTHORITY=/home/pi/.Xauthority
+unset WAYLAND_DISPLAY
 
 # Terminate any processes from previous runs to ensure clean startup
 pkill -f Xvfb || true
