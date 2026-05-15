@@ -52,6 +52,7 @@ sudo apt install -y \
   swayidle \
   swaybg \
   wlopm \
+  unclutter \
   curl
 
 # 3. Create directories
@@ -197,6 +198,10 @@ if [ ! -S /tmp/.X11-unix/X0 ]; then
     exit 1
 fi
 
+# Hide the X11 cursor (parked at 0,0 with no mouse on a kiosk display).
+# Runs on DISPLAY=:0 (XWayland) so it hides the compositor-level cursor.
+unclutter -display :0 -idle 0.5 -root &
+
 # DISPLAY=:0 and WAYLAND_DISPLAY=wayland-0 are set by the systemd unit.
 # Chromium renders via X11 → XWayland → labwc → physical HDMI.
 chromium \
@@ -300,6 +305,24 @@ sudo raspi-config nonint do_boot_behaviour B2
 if ! grep -q "exec labwc" ~/.bash_profile 2>/dev/null; then
   echo 'if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then exec labwc; fi' >> ~/.bash_profile
 fi
+
+# Suppress tty1 login text so nothing is visible before labwc takes the screen.
+# /etc/issue and /etc/issue.d/IP.issue are shown by agetty before autologin.
+sudo truncate -s 0 /etc/issue
+sudo truncate -s 0 /etc/issue.net
+[ -f /etc/issue.d/IP.issue ] && sudo truncate -s 0 /etc/issue.d/IP.issue
+
+# Silence getty@tty1 stdout/stderr so the "login: pi (automatic login)" line
+# and any remaining agetty output never reach the HDMI display.
+sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
+sudo tee /etc/systemd/system/getty@tty1.service.d/silent.conf > /dev/null << 'EOF'
+[Service]
+StandardOutput=null
+StandardError=null
+EOF
+
+# Suppress login MOTD and /etc/profile.d banner scripts
+touch ~/.hushlogin
 
 sudo systemctl daemon-reload
 sudo systemctl enable mnt-plainsight.automount

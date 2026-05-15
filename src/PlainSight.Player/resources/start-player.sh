@@ -27,6 +27,10 @@ if [ ! -S /tmp/.X11-unix/X0 ]; then
     exit 1
 fi
 
+# Hide the X11 cursor (parked at 0,0 with no mouse on a kiosk display).
+# Runs on DISPLAY=:0 (XWayland) so it hides the compositor-level cursor.
+unclutter -display :0 -idle 0.5 -root &
+
 # Chromium renders via X11 backend → XWayland → labwc → physical HDMI.
 # DISPLAY=:0 and WAYLAND_DISPLAY=wayland-0 are inherited from the systemd unit.
 chromium \
