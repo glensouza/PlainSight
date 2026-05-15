@@ -74,6 +74,9 @@ public class KioskService(
         string args = string.Join(' ', [
             "--kiosk",
             "--start-maximized",
+            "--ozone-platform=wayland",
+            "--disable-gpu",
+            "--disable-gpu-sandbox",
             "--noerrdialogs",
             "--disable-infobars",
             "--disable-restore-session-state",
@@ -86,7 +89,15 @@ public class KioskService(
         {
             UseShellExecute = false
         };
-        // Minimize cursor size on Wayland/X11 (will be invisible in kiosk mode)
+        // Ensure display and Wayland environment variables are set for Chromium
+        if (!info.Environment.ContainsKey("DISPLAY"))
+        {
+            info.Environment["DISPLAY"] = Environment.GetEnvironmentVariable("DISPLAY") ?? ":0";
+        }
+        if (!info.Environment.ContainsKey("WAYLAND_DISPLAY"))
+        {
+            info.Environment["WAYLAND_DISPLAY"] = Environment.GetEnvironmentVariable("WAYLAND_DISPLAY") ?? "wayland-0";
+        }
         info.Environment["XCURSOR_SIZE"] = "1";
 
         logger.LogInformation("Launching {Browser} {Args}", browser, args);
