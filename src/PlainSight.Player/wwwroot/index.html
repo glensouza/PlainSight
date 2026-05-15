@@ -166,7 +166,7 @@
     <div id="loading">
         <div class="loading-title">PlainSight</div>
         <div class="loading-subtitle">Loading content&hellip;</div>
-        <div class="loading-device-name" id="loading-device-name"></div>
+        <div class="loading-device-name">{{DEVICE_NAME}}</div>
     </div>
     
     <div id="idle-screen">
@@ -484,18 +484,6 @@
         setInterval(loadPlaylistFromServer, 30000);
         updateStatus('Waiting for content...');
 
-        (async () => {
-            try {
-                const res = await fetch('/api/device-name');
-                if (res.ok) {
-                    const data = await res.json();
-                    const el = document.getElementById('loading-device-name');
-                    if (el && data.name) {
-                        el.textContent = data.name;
-                    }
-                }
-            } catch (_) { /* non-critical */ }
-        })();
     </script>
 </body>
 </html>

@@ -109,7 +109,8 @@ app.MapGet("/player", async () =>
         return Results.NotFound();
     }
     using StreamReader reader = new(stream);
-    string html = await reader.ReadToEndAsync();
+    string html = (await reader.ReadToEndAsync())
+        .Replace("{{DEVICE_NAME}}", Environment.MachineName);
     return Results.Content(html, "text/html; charset=utf-8");
 });
 
@@ -148,9 +149,6 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
     string contentType = VideoFormats.ContentTypes.GetValueOrDefault(ext, "application/octet-stream");
     return Results.File(filePath, contentType, enableRangeProcessing: true);
 });
-
-// Return the device name shown in the admin Devices page
-app.MapGet("/api/device-name", () => Results.Ok(new { Name = Environment.MachineName }));
 
 // Return current playlist (switches to idle automatically)
 app.MapGet("/api/playlist", (PlaylistService playlist) =>
