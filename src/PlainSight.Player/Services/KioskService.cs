@@ -71,7 +71,10 @@ public class KioskService(
         string script = "/opt/plainsight/start-player.sh";
         if (!File.Exists(script))
         {
-            logger.LogWarning("Display server script not found at {Script}", script);
+            logger.LogError(
+                "Display server script not found at {Script}. " +
+                "Player requires X11/Openbox display stack. Ensure the startup script is deployed during Pi provisioning.",
+                script);
             return;
         }
 
@@ -91,37 +94,5 @@ public class KioskService(
         {
             logger.LogError(ex, "Failed to launch display server script");
         }
-    }
-
-    private static string FindChromium()
-    {
-        string[] candidates = ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable"];
-        foreach (string candidate in candidates)
-        {
-            try
-            {
-                using Process? which = Process.Start(new ProcessStartInfo("which", candidate)
-                {
-                    RedirectStandardOutput = true,
-                    UseShellExecute = false
-                });
-                if (which == null)
-                {
-                    continue;
-                }
-
-                string output = which.StandardOutput.ReadToEnd().Trim();
-                which.WaitForExit();
-                if (!string.IsNullOrEmpty(output))
-                {
-                    return candidate;
-                }
-            }
-            catch
-            {
-                /* which not available or candidate not found */
-            }
-        }
-        return "chromium";
     }
 }
