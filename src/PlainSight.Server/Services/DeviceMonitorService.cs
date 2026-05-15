@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Mail;
 using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Data;
-using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Services;
 

@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace PlainSight.Shared.Models;
+namespace PlainSight.Server.Models;
 
 [Flags]
 public enum DayOfWeekFlags
@@ -26,16 +26,15 @@ public class Schedule
     public int PlaylistId { get; set; }
     public Playlist Playlist { get; init; } = null!;
 
-    // If empty, this applies to ALL groups
     public ICollection<ScheduleTargetGroup> TargetGroups { get; set; } = [];
 
     public DayOfWeekFlags DaysOfWeek { get; set; } = DayOfWeekFlags.All;
-    public DateOnly? ScheduledDate { get; set; } // If set, this is a one-time event
-    
+    public DateOnly? ScheduledDate { get; set; }
+
     public TimeOnly StartTime { get; set; } = new(0, 0);
     public TimeOnly EndTime { get; set; } = new(23, 59, 59);
 
-    public int Priority { get; set; } = 0; // higher wins on overlap
+    public int Priority { get; set; } = 0;
     public bool IsActive { get; set; } = true;
 
     public bool AutoScreenshotEnabled { get; set; }

@@ -1,7 +1,6 @@
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Data;
-using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Services;
 

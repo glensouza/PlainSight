@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Data;
-using PlainSight.Shared.Models;
 using Zeroconf;
 
 namespace PlainSight.Server.Services;

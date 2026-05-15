@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace PlainSight.Shared.Models;
+namespace PlainSight.Server.Models;
 
 public class BrandingVideo
 {

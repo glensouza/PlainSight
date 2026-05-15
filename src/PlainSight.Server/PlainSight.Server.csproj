@@ -27,6 +27,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Using Include="PlainSight.Server.Models" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\PlainSight.Shared\PlainSight.Shared.csproj" />
     <ProjectReference Include="..\PlainSight.ServiceDefaults\PlainSight.ServiceDefaults.csproj" />
   </ItemGroup>

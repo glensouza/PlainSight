@@ -2,7 +2,6 @@ using System.Threading.Channels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using PlainSight.Server.Data;
-using PlainSight.Shared.Models;
 
 namespace PlainSight.Server.Services;
 
