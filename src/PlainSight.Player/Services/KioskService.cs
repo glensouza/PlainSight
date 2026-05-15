@@ -58,17 +58,39 @@ public class KioskService(
             }
             string playerUrl = $"{baseUrl}/player";
             logger.LogInformation(
-                "Not running on Linux — skipping window manager launch. " +
+                "Not running on Linux — skipping display server launch. " +
                 "Open {Url} in a browser to test the player.", playerUrl);
             return;
         }
 
-        this.EnsureSwayIsRunning();
+        this.LaunchDisplayServer();
     }
 
-    private void EnsureSwayIsRunning()
+    private void LaunchDisplayServer()
     {
-        logger.LogInformation("Sway is managed by systemd user service and should be running alongside this application");
+        string script = "/opt/plainsight/start-player.sh";
+        if (!File.Exists(script))
+        {
+            logger.LogWarning("Display server script not found at {Script}", script);
+            return;
+        }
+
+        ProcessStartInfo info = new("/bin/bash", script)
+        {
+            UseShellExecute = false
+        };
+
+        logger.LogInformation("Launching display server");
+
+        try
+        {
+            this.chromiumProcess = Process.Start(info);
+            logger.LogInformation("Display server started (PID {Pid})", this.chromiumProcess?.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to launch display server script");
+        }
     }
 
     private static string FindChromium()
