@@ -14,7 +14,7 @@
                     <span class="led led-pulse"></span>
                     <div>
                         <div class="sysled__title">SYSTEM NOMINAL</div>
-                        <div class="sysled__sub">All services healthy · @currentTime UTC</div>
+                        <div class="sysled__sub">All services healthy</div>
                     </div>
                 </div>
             </div>
@@ -61,7 +61,6 @@
     private int onlineCount;
     private int warnCount;
     private int offlineCount;
-    private string currentTime = DateTime.UtcNow.ToString("HH:mm:ss");
     private Timer? refreshTimer;
 
     protected override async Task OnInitializedAsync()
@@ -72,7 +71,6 @@
             InvokeAsync(async () =>
             {
                 await RefreshKpisAsync();
-                currentTime = DateTime.UtcNow.ToString("HH:mm:ss");
                 StateHasChanged();
             });
         }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
