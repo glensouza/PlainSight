@@ -136,6 +136,7 @@ Restart=always
 RestartSec=3
 Environment=DISPLAY=:0
 Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
 Environment=ServerUrl=http://${SERVER_IP}:8080
 Environment=PLAINSIGHT_APIKEY_PATH=/var/cache/plainsight/apikey
@@ -153,7 +154,6 @@ cat > ~/.config/labwc/rc.xml << 'EOF'
   <windowRules>
     <windowRule identifier="PlainSight.Player">
       <action name="ToggleFullscreen" />
-      <action name="KeepAbove" />
     </windowRule>
   </windowRules>
 </labwc_config>
@@ -175,6 +175,43 @@ swayidle -w timeout 31536000 'wlopm --off \*' resume 'wlopm --on \*' &
 EOF
 
 chmod +x ~/.config/labwc/autostart
+
+# Create the display startup script that KioskService calls at runtime.
+# It waits for XWayland to be ready, then launches Chromium on the physical screen.
+cat > /opt/plainsight/start-player.sh << 'EOF'
+#!/bin/bash
+set -e
+
+# Kill any stale Chromium from a previous run
+pkill -f chromium || true
+
+# Wait up to 30 s for labwc to expose the XWayland socket
+WAIT=0
+while [ ! -S /tmp/.X11-unix/X0 ] && [ "$WAIT" -lt 30 ]; do
+    sleep 1
+    WAIT=$((WAIT + 1))
+done
+
+if [ ! -S /tmp/.X11-unix/X0 ]; then
+    echo "ERROR: XWayland socket /tmp/.X11-unix/X0 not available after 30 s" >&2
+    exit 1
+fi
+
+# DISPLAY=:0 and WAYLAND_DISPLAY=wayland-0 are set by the systemd unit.
+# Chromium renders via X11 → XWayland → labwc → physical HDMI.
+chromium \
+    --no-first-run \
+    --kiosk \
+    --ozone-platform=x11 \
+    http://localhost:5555/player &
+CHROMIUM_PID=$!
+
+wait $CHROMIUM_PID
+EOF
+chmod +x /opt/plainsight/start-player.sh
+
+# Suppress the login MOTD/banner on tty1 so it doesn't flash before labwc starts
+touch ~/.hushlogin
 
 # 7. Configure silent boot for signage displays
 echo "Configuring silent boot..."

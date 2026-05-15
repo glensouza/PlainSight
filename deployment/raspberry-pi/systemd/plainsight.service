@@ -11,7 +11,8 @@ ExecStart=/opt/plainsight/PlainSight.Player
 Restart=always
 RestartSec=3
 Environment=DISPLAY=:0
-Environment=WAYLAND_DISPLAY=wayland-1
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
 
 [Install]

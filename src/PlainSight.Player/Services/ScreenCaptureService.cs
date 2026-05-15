@@ -42,7 +42,11 @@ public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
         {
             string? displayVar = Environment.GetEnvironmentVariable("DISPLAY");
             string? waylandDisplay = Environment.GetEnvironmentVariable("WAYLAND_DISPLAY");
-            bool isWayland = string.IsNullOrEmpty(displayVar) && !string.IsNullOrEmpty(waylandDisplay);
+
+            // Prefer grim (Wayland screencopy) when a Wayland compositor is available —
+            // this captures what labwc renders to the physical screen, not an X11 framebuffer.
+            bool useGrim = !string.IsNullOrEmpty(waylandDisplay);
+            string tool = useGrim ? "grim" : "scrot";
 
             ProcessStartInfo info = new()
             {
@@ -51,22 +55,23 @@ public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
                 RedirectStandardOutput = true
             };
 
-            if (isWayland)
+            if (useGrim)
             {
                 info.FileName = "grim";
                 info.Arguments = tempFile;
             }
             else
             {
+                string display = string.IsNullOrEmpty(displayVar) ? ":0" : displayVar;
                 info.FileName = "/bin/bash";
-                info.Arguments = $"-c \"DISPLAY=:99 scrot '{tempFile}'\"";
+                info.Arguments = $"-c \"DISPLAY={display} scrot '{tempFile}'\"";
             }
 
             using Process? process = Process.Start(info);
 
             if (process == null)
             {
-                logger.LogError("Failed to start screenshot process ({Tool})", isWayland ? "grim" : "scrot");
+                logger.LogError("Failed to start screenshot process ({Tool})", tool);
                 return [];
             }
 
@@ -76,7 +81,7 @@ public partial class ScreenCaptureService(ILogger<ScreenCaptureService> logger)
             if (process.ExitCode != 0)
             {
                 string detail = string.IsNullOrWhiteSpace(stderr) ? "(no output)" : stderr.Trim();
-                logger.LogError("{Tool} exited with code {ExitCode}: {Detail} — is a display connected and powered on?", isWayland ? "grim" : "scrot", process.ExitCode, detail);
+                logger.LogError("{Tool} exited with code {ExitCode}: {Detail} — is a display connected and powered on?", tool, process.ExitCode, detail);
                 return [];
             }
 
