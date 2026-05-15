@@ -398,3 +398,73 @@
     .ps-tile__actions { grid-template-columns: 1fr 1fr; }
     .ps-tile__actions .ps-action:last-child { grid-column: 1 / -1; }
 }
+
+/* ── Setup Guide ──────────────────────────────────────────────── */
+.ps-setup-guide {
+    color: var(--ps-text-2);
+}
+.ps-setup-guide h6 {
+    color: var(--ps-text);
+    font-weight: 700;
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.ps-setup-guide h6 i { color: var(--ps-cyan); }
+
+.ps-setup-guide p {
+    font-size: 0.95rem;
+    line-height: 1.6;
+}
+
+.ps-setup-guide code {
+    background: rgba(0,0,0,0.3);
+    color: var(--ps-cyan);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-family: var(--ps-mono);
+}
+
+.ps-code-block {
+    position: relative;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid var(--ps-line);
+    border-radius: 6px;
+    margin: 1rem 0;
+}
+
+.ps-code-block pre {
+    padding: 1.25rem;
+    margin: 0;
+    overflow-x: auto;
+    font-family: var(--ps-mono);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ps-text);
+}
+
+.ps-code-block .btn-copy {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    opacity: 0;
+    transition: opacity 0.2s, background-color 0.2s;
+    background: var(--ps-bg-2);
+    border: 1px solid var(--ps-line);
+    color: var(--ps-text-2);
+}
+
+.ps-code-block:hover .btn-copy,
+.ps-code-block:focus-within .btn-copy {
+    opacity: 1;
+}
+
+.ps-code-block .btn-copy:hover,
+.ps-code-block .btn-copy:focus,
+.ps-code-block .btn-copy:focus-visible {
+    background: var(--ps-bg-3);
+    color: var(--ps-text);
+    border-color: var(--ps-cyan);
+}

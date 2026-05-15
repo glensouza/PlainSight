@@ -1,4 +1,4 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.2.4">
+<Project Sdk="Aspire.AppHost.Sdk/13.3.2">
 
   <ItemGroup>
     <ProjectReference Include="..\PlainSight.Server\PlainSight.Server.csproj" />
@@ -6,7 +6,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.3.0" />
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.3.2" />
   </ItemGroup>
 
   <PropertyGroup>

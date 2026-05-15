@@ -4,6 +4,8 @@
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject ILogger<Devices> Logger
 @inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
 @inject ScreenshotNotificationService ScreenshotNotificationService
 @implements IAsyncDisposable
 
@@ -30,6 +32,9 @@ else if (!devices.Any())
 {
     <div class="alert alert-info">
         <i class="bi bi-info-circle"></i> No devices registered yet. Devices will appear here once they send their first heartbeat.
+        <button class="btn btn-sm btn-outline-info ms-3" @onclick="ShowSetupInstructions">
+            <i class="bi bi-plus-lg"></i> How to add a device?
+        </button>
     </div>
 }
 else
@@ -53,6 +58,9 @@ else
             <button class="btn btn-sm btn-outline-secondary" @onclick="ToggleSelectAllVisible" title="Select all visible">
                 <i class="bi bi-check2-square"></i>
                 @(AllVisibleSelected ? "Deselect all" : "Select all")
+            </button>
+            <button class="btn btn-sm btn-success" @onclick="ShowSetupInstructions">
+                <i class="bi bi-plus-lg"></i> Add Device
             </button>
             <button class="btn btn-sm btn-primary" @onclick="LoadDevices">
                 <i class="bi bi-arrow-clockwise"></i> Refresh
@@ -237,6 +245,60 @@ else
 
     <div class="ps-grid-foot">
         <span class="text-muted"><i class="bi bi-arrow-clockwise"></i> Auto-refreshing every 5 seconds</span>
+    </div>
+}
+
+@if (showSetupInstructions)
+{
+    <div class="modal fade show d-block"
+         tabindex="-1"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="setup-modal-title"
+         style="background:rgba(4,8,14,0.7);"
+         @onclick="CloseSetupInstructions">
+        <div class="modal-dialog modal-lg modal-dialog-centered" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 id="setup-modal-title" class="modal-title">
+                        <i class="bi bi-plus-circle-fill me-2 text-success"></i> Add New Raspberry Pi Player
+                    </h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseSetupInstructions"></button>
+                </div>
+                <div class="modal-body ps-setup-guide">
+                    <p class="mb-4">Follow these steps to set up a new Raspberry Pi 5 as a PlainSight digital signage player.</p>
+
+                    <h6><i class="bi bi-1-circle"></i> Flash Raspberry Pi OS</h6>
+                    <p>Use <a href="https://www.raspberrypi.com/software/" target="_blank" rel="noopener noreferrer">Raspberry Pi Imager</a> to flash <strong>Raspberry Pi OS Lite (64-bit)</strong> to a MicroSD card. Ensure you enable SSH in the advanced settings.</p>
+
+                    <h6><i class="bi bi-2-circle"></i> Set up Passwordless SSH (Windows)</h6>
+                    <p>Open PowerShell on your admin machine and run this command to copy your SSH key to the Pi (replace <code>pi@raspberrypi.local</code> with your actual user and hostname):</p>
+                    <div class="ps-code-block">
+                        <pre><code>type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh pi@raspberrypi.local "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && chmod 700 ~/.ssh"</code></pre>
+                        <button class="btn btn-sm btn-copy" @onclick='() => CopyToClipboard("type $env:USERPROFILE\\.ssh\\id_ed25519.pub | ssh pi@raspberrypi.local \"mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && chmod 700 ~/.ssh\"")'>
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+
+                    <h6><i class="bi bi-3-circle"></i> Run Installation Script</h6>
+                    <p>SSH into your Raspberry Pi and run the automated installer. When prompted, enter the PlainSight server host name or IP address, not the full URL. Your server is available at: <code>@GetServerUrl()</code></p>
+                    <div class="ps-code-block">
+                        <pre><code>curl -sSL https://raw.githubusercontent.com/glensouza/PlainSight/main/deployment/raspberry-pi/install.sh -o install.sh && chmod +x install.sh && ./install.sh</code></pre>
+                        <button class="btn btn-sm btn-copy" @onclick='() => CopyToClipboard("curl -sSL https://raw.githubusercontent.com/glensouza/PlainSight/main/deployment/raspberry-pi/install.sh -o install.sh && chmod +x install.sh && ./install.sh")'>
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+
+                    <div class="alert alert-info mt-4">
+                        <i class="bi bi-info-circle-fill me-2"></i>
+                        Once installed, the device will automatically appear in this list after its first heartbeat.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" @onclick="CloseSetupInstructions">Done</button>
+                </div>
+            </div>
+        </div>
     </div>
 }
 
@@ -558,6 +620,12 @@ else
     private string? deleteConfirmMessage;
     private Func<Task>? deleteConfirmAction;
     private bool isDeleting;
+    private bool showSetupInstructions;
+
+    private void ShowSetupInstructions() => showSetupInstructions = true;
+    private void CloseSetupInstructions() => showSetupInstructions = false;
+    private string GetServerUrl() => NavigationManager.BaseUri.TrimEnd('/');
+    private async Task CopyToClipboard(string text) => await JS.InvokeVoidAsync("copyToClipboard", text);
 
     private string GetTargetVersionForGroup(string groupName)
     {
