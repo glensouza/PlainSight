@@ -137,38 +137,28 @@ else
                 <div class="modal-body">
 
                     <h6>Current Items (@selectedPlaylist.Items.Count)</h6>
-                    @if (selectedPlaylist.Items.Any())
+                    @if (selectedPlaylist.Items.Count != 0)
                     {
+                        <p class="text-muted small mb-1"><i class="bi bi-info-circle"></i> Drag items to reorder.</p>
                         <div class="list-group mb-3">
-                            @{
-                                List<PlaylistItem> orderedItems = selectedPlaylist.Items.OrderBy(i => i.Order).ToList();
-                            }
-                            @foreach (PlaylistItem item in orderedItems)
+                            @foreach (PlaylistItem item in selectedPlaylist.Items.OrderBy(i => i.Order))
                             {
-                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div class="list-group-item d-flex justify-content-between align-items-center @(dragOverItemId == item.Id ? "border-primary border-2" : "") @(draggedItem?.Id == item.Id ? "opacity-50" : "")"
+                                     draggable="true"
+                                     style="cursor: grab;"
+                                     @ondragstart="() => OnDragStart(item)"
+                                     @ondragend="OnDragEnd"
+                                     @ondragenter="() => OnDragEnter(item)"
+                                     @ondragover:preventDefault="true"
+                                     @ondrop="() => OnDropAsync(item)">
                                     <div class="d-flex align-items-center">
-                                        <div class="d-flex flex-column me-3">
-                                            <button class="btn btn-sm btn-light mb-1 border" 
-                                                    style="padding: 4px 8px; line-height: 1; min-width: 32px;"
-                                                    @onclick="() => MoveItem(item, -1)" 
-                                                    disabled="@(item.Id == orderedItems.First().Id || isReordering)"
-                                                    title="Move Up">
-                                                <i class="bi bi-caret-up-fill" style="font-size: 1.2rem;"></i>
-                                            </button>
-                                            <button class="btn btn-sm btn-light border" 
-                                                    style="padding: 4px 8px; line-height: 1; min-width: 32px;"
-                                                    @onclick="() => MoveItem(item, 1)" 
-                                                    disabled="@(item.Id == orderedItems.Last().Id || isReordering)"
-                                                    title="Move Down">
-                                                <i class="bi bi-caret-down-fill" style="font-size: 1.2rem;"></i>
-                                            </button>
-                                        </div>
+                                        <i class="bi bi-grip-vertical me-3 text-muted" style="font-size: 1.2rem;"></i>
                                         <div>
                                             <strong>@item.Order.</strong> @item.ContentItem.Name
                                             <span class="badge bg-secondary ms-2">@item.ContentItem.DurationSeconds s</span>
                                         </div>
                                     </div>
-                                    <button class="btn btn-sm btn-outline-danger" 
+                                    <button class="btn btn-sm btn-outline-danger"
                                             @onclick="() => RemoveFromPlaylist(item.Id)"
                                             disabled="@isReordering">
                                         <i class="bi bi-trash"></i>
@@ -189,16 +179,22 @@ else
                     {
                         <p><em>Loading available content...</em></p>
                     }
-                    else if (!availableContent.Any())
+                    else if (availableContent.Count == 0)
                     {
                         <div class="alert alert-warning py-2 small">
                             No content available. Upload content on the <a href="content">Content</a> page first.
                         </div>
                     }
+                    else if (AvailableContentFiltered.Count == 0)
+                    {
+                        <div class="alert alert-info py-2 small">
+                            <i class="bi bi-check-circle"></i> All content has been added to this playlist.
+                        </div>
+                    }
                     else
                     {
                         <div class="list-group">
-                            @foreach (ContentItem content in availableContent)
+                            @foreach (ContentItem content in AvailableContentFiltered)
                             {
                                 <div class="list-group-item d-flex justify-content-between align-items-center">
                                     <div>
@@ -250,6 +246,22 @@ else
     private bool isAddingItem;
     private bool isReordering;
     private bool isPreviewing;
+    private PlaylistItem? draggedItem;
+    private int? dragOverItemId;
+
+    private List<ContentItem> AvailableContentFiltered
+    {
+        get
+        {
+            if (this.availableContent == null || this.selectedPlaylist == null)
+            {
+                return [];
+            }
+
+            HashSet<int> inPlaylist = this.selectedPlaylist.Items.Select(i => i.ContentItemId).ToHashSet();
+            return this.availableContent.Where(c => !inPlaylist.Contains(c.Id)).ToList();
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -280,7 +292,7 @@ else
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             availableContent = await context.ContentItems
-                .OrderByDescending(c => c.UploadedAt)
+                .OrderBy(c => c.Name)
                 .ToListAsync();
         }
         catch (Exception ex)
@@ -467,57 +479,83 @@ else
         }
     }
 
-    private async Task MoveItem(PlaylistItem item, int direction)
+    private void OnDragStart(PlaylistItem item)
     {
-        if (selectedPlaylist == null || !managingPlaylistId.HasValue || isReordering) return;
-        int playlistId = managingPlaylistId.Value;
+        this.draggedItem = item;
+    }
 
-        List<PlaylistItem> items = selectedPlaylist.Items.OrderBy(i => i.Order).ToList();
-        int index = items.FindIndex(i => i.Id == item.Id);
-
-        if (index == -1) return;
-
-        int newIndex = index + direction;
-        if (newIndex >= 0 && newIndex < items.Count)
+    private void OnDragEnter(PlaylistItem item)
+    {
+        if (this.draggedItem != null && this.draggedItem.Id != item.Id)
         {
-            isReordering = true;
-            try
+            this.dragOverItemId = item.Id;
+        }
+    }
+
+    private void OnDragEnd()
+    {
+        this.draggedItem = null;
+        this.dragOverItemId = null;
+    }
+
+    private async Task OnDropAsync(PlaylistItem target)
+    {
+        PlaylistItem? dragged = this.draggedItem;
+        this.draggedItem = null;
+        this.dragOverItemId = null;
+
+        if (dragged == null || dragged.Id == target.Id || selectedPlaylist == null || !managingPlaylistId.HasValue || isReordering)
+        {
+            return;
+        }
+
+        int playlistId = managingPlaylistId.Value;
+        List<PlaylistItem> items = selectedPlaylist.Items.OrderBy(i => i.Order).ToList();
+        int fromIndex = items.FindIndex(i => i.Id == dragged.Id);
+        int toIndex = items.FindIndex(i => i.Id == target.Id);
+
+        if (fromIndex == -1 || toIndex == -1)
+        {
+            return;
+        }
+
+        isReordering = true;
+        try
+        {
+            PlaylistItem itemToMove = items[fromIndex];
+            items.RemoveAt(fromIndex);
+            items.Insert(toIndex, itemToMove);
+
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            List<PlaylistItem> dbItems = await context.PlaylistItems
+                .Where(i => i.PlaylistId == playlistId)
+                .ToListAsync();
+
+            Dictionary<int, PlaylistItem> itemMap = dbItems.ToDictionary(i => i.Id);
+
+            for (int i = 0; i < items.Count; i++)
             {
-                PlaylistItem itemToMove = items[index];
-                items.RemoveAt(index);
-                items.Insert(newIndex, itemToMove);
-
-                await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-                List<PlaylistItem> dbItems = await context.PlaylistItems
-                    .Where(i => i.PlaylistId == playlistId)
-                    .ToListAsync();
-
-                Dictionary<int, PlaylistItem> itemMap = dbItems.ToDictionary(i => i.Id);
-
-                for (int i = 0; i < items.Count; i++)
+                if (itemMap.TryGetValue(items[i].Id, out PlaylistItem? dbItem))
                 {
-                    if (itemMap.TryGetValue(items[i].Id, out PlaylistItem? dbItem))
-                    {
-                        dbItem.Order = i + 1;
-                    }
+                    dbItem.Order = i + 1;
                 }
-
-                Playlist? playlist = await context.Playlists.FindAsync(playlistId);
-                playlist?.UpdatedAt = DateTime.UtcNow;
-
-                await context.SaveChangesAsync();
-
-                await ManagePlaylistItems(playlistId);
-                await LoadPlaylists();
             }
-            catch (Exception ex)
-            {
-                Logger.LogError(ex, "Error reordering items");
-            }
-            finally
-            {
-                isReordering = false;
-            }
+
+            Playlist? playlist = await context.Playlists.FindAsync(playlistId);
+            playlist?.UpdatedAt = DateTime.UtcNow;
+
+            await context.SaveChangesAsync();
+
+            await ManagePlaylistItems(playlistId);
+            await LoadPlaylists();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error reordering items");
+        }
+        finally
+        {
+            isReordering = false;
         }
     }
 
