@@ -10,7 +10,15 @@
       "Bash(dotnet build *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(gh repo *)",
+      "Bash(gh auth *)",
+      "Bash(Select-String \"Logged in\")",
+      "Bash(gh issue create --title 'Media transform primitives \\(ffmpeg\\): image→video, video→frame, thumbnails' --body ' *)",
+      "Bash(gh issue create --title 'Gemini watermark removal \\(delogo, fixed bottom-right region\\)' --body ' *)",
+      "Bash(gh issue create --title 'Content pairing \\(virtual\\): companion clip before/after, per item' --body ' *)",
+      "Bash(gh issue create --title 'Ken Burns image→video with start/end rect, duration, layered parallax' --body ' *)",
+      "Bash(gh issue create --title 'Self-hosted AI video diffusion on M4 Pro \\(SVD\\), animate background only' --body ' *)"
     ]
   }
 }
