@@ -525,7 +525,18 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // Render from the database first so the page paints immediately,
+        // then reconcile with the SMB folder in the background. The
+        // ContentSyncWorkerService also syncs periodically, so a slow or
+        // unmounted share never blocks the initial render here.
+        await LoadContent();
+        _ = this.RunSyncInBackgroundAsync();
+    }
+
+    private async Task RunSyncInBackgroundAsync()
+    {
         await RunSync();
+        await this.InvokeAsync(this.StateHasChanged);
     }
 
     private List<ContentItem> FilteredItems

@@ -410,18 +410,25 @@ else
         availableContent = null;
         try
         {
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-            selectedPlaylist = await context.Playlists
-                .Include(p => p.Items)
-                .ThenInclude(i => i.ContentItem)
-                .FirstOrDefaultAsync(p => p.Id == playlistId);
-            
+            await ReloadSelectedPlaylistAsync(playlistId);
             await LoadAvailableContent();
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error loading playlist items");
         }
+    }
+
+    // Reloads only the open playlist's items. The available-content list does not
+    // change while the modal is open (uploads/deletes happen on the Content page),
+    // so add/remove/reorder reuse this instead of reloading everything.
+    private async Task ReloadSelectedPlaylistAsync(int playlistId)
+    {
+        await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+        selectedPlaylist = await context.Playlists
+            .Include(p => p.Items)
+            .ThenInclude(i => i.ContentItem)
+            .FirstOrDefaultAsync(p => p.Id == playlistId);
     }
 
     private void PreviewPlaylist(int playlistId)
@@ -465,8 +472,8 @@ else
             context.PlaylistItems.Add(playlistItem);
             playlist.UpdatedAt = DateTime.UtcNow;
             await context.SaveChangesAsync();
-            
-            await ManagePlaylistItems(managingPlaylistId.Value);
+
+            await ReloadSelectedPlaylistAsync(managingPlaylistId.Value);
             await LoadPlaylists();
         }
         catch (Exception ex)
@@ -546,7 +553,7 @@ else
 
             await context.SaveChangesAsync();
 
-            await ManagePlaylistItems(playlistId);
+            await ReloadSelectedPlaylistAsync(playlistId);
             await LoadPlaylists();
         }
         catch (Exception ex)
@@ -581,8 +588,8 @@ else
                 context.PlaylistItems.Remove(item);
                 item.Playlist.UpdatedAt = DateTime.UtcNow;
                 await context.SaveChangesAsync();
-                
-                await ManagePlaylistItems(playlistId);
+
+                await ReloadSelectedPlaylistAsync(playlistId);
                 await LoadPlaylists();
             }
         }
