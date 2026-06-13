@@ -212,7 +212,7 @@ else
 @if (previewIdleFileName != null)
 {
     string previewName = previewIdleFileName;
-    string apiPath = $"/api/media/idle/{previewIdleFileName}";
+    string apiPath = $"/api/media/idle/{previewIdleFileName}?v={idleFiles?.FirstOrDefault(f => f.Name == previewIdleFileName)?.Length ?? 0}";
     bool isImage = MediaConstants.IsImage(previewIdleFileName);
     long fileSize = idleFiles?.FirstOrDefault(f => f.Name == previewIdleFileName)?.Length ?? 0;
 

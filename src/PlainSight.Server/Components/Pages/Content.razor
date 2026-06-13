@@ -430,7 +430,7 @@ else
 {
     string previewName = previewItem.Name;
     string previewFileName = previewItem.FileName;
-    string apiPath = $"/api/media/content/{previewFileName}";
+    string apiPath = $"/api/media/content/{previewFileName}?v={previewItem.FileSizeBytes}";
     bool isImage = previewItem.Type == ContentType.Image;
     long fileSize = previewItem.FileSizeBytes;
 
