@@ -9,6 +9,8 @@
 @inject IConfiguration Configuration
 @inject ILogger<Content> Logger
 @inject YouTubeDownloadQueue YouTubeDownloadQueue
+@inject SvdGenerationQueue SvdGenerationQueue
+@inject IOptions<SvdOptions> SvdOptions
 @implements IDisposable
 
 <PageTitle>Content Library — PlainSight</PageTitle>
@@ -224,6 +226,62 @@
     </div>
 }
 
+@if (svdJobs.Count > 0)
+{
+    <div class="card mb-4">
+        <div class="card-header">
+            <h6 class="mb-0"><i class="bi bi-stars"></i> SVD Animation Queue</h6>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <tbody>
+                    @foreach (SvdJobState job in svdJobs)
+                    {
+                        <tr>
+                            <td class="ps-3">
+                                @if (job.Status is "Queued" or "Processing")
+                                {
+                                    <span class="spinner-border spinner-border-sm text-success" role="status"></span>
+                                }
+                                else if (job.Status == "Done")
+                                {
+                                    <i class="bi bi-check-circle-fill text-success"></i>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-x-circle-fill text-danger"></i>
+                                }
+                            </td>
+                            <td><small class="text-truncate d-inline-block" style="max-width:300px">@job.SourceFileName</small></td>
+                            <td>
+                                <span class="badge @(job.Status switch { "Done" => "bg-success", "Failed" => "bg-danger", "Processing" => "bg-success", _ => "bg-secondary" })">
+                                    @job.Status
+                                </span>
+                                @if (job.Status == "Done" && job.OutputFileName != null)
+                                {
+                                    <small class="text-muted ms-1">@job.OutputFileName</small>
+                                }
+                                @if (job.Error != null)
+                                {
+                                    <small class="text-danger ms-1">@job.Error</small>
+                                }
+                            </td>
+                            <td>
+                                @if (job.Status is "Done" or "Failed")
+                                {
+                                    <button class="btn btn-sm btn-link py-0" @onclick="() => svdJobs.Remove(job)">
+                                        <i class="bi bi-x"></i>
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
 @if (contentItems == null)
 {
     <p><em>Loading content library...</em></p>
@@ -295,6 +353,12 @@ else
                                 {
                                     <button class="btn btn-outline-warning" @onclick="() => StartKenBurnsAsync(item)" title="Ken Burns (animate)">
                                         <i class="bi bi-film"></i>
+                                    </button>
+                                }
+                                @if (item.Type == ContentType.Image && SvdOptions.Value.IsConfigured)
+                                {
+                                    <button class="btn btn-outline-success" @onclick="() => StartSvdGeneration(item)" title="Animate background (SVD)">
+                                        <i class="bi bi-stars"></i>
                                     </button>
                                 }
                                 <button class="btn btn-outline-secondary" @onclick="() => StartRename(item)" title="Rename">
@@ -620,6 +684,44 @@ else
     </div>
 }
 
+@if (svdItem != null)
+{
+    SvdOptions svdOpts = SvdOptions.Value;
+    double durationSecs = svdOpts.VideoFrames / (double)svdOpts.Fps;
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-stars"></i> SVD Animate: @svdItem.Name</h5>
+                    <button type="button" class="btn-close" @onclick="() => svdItem = null"></button>
+                </div>
+                <div class="modal-body">
+                    <img src="/api/media/content/@svdItem.FileName" class="img-fluid rounded mb-3" alt="@svdItem.Name" style="max-height:200px;" />
+                    <div class="mb-3">
+                        <label class="form-label">Motion Amount: @svdMotionBucketId</label>
+                        <input type="range" class="form-range" min="1" max="255" step="1" @bind="svdMotionBucketId" />
+                        <small class="text-muted">Low = subtle drift, High = strong parallax movement</small>
+                    </div>
+                    <div class="alert alert-secondary py-2 mb-0">
+                        <small>
+                            Output: <strong>@(svdOpts.OutputWidth)×@(svdOpts.OutputHeight)</strong> &middot;
+                            <strong>@svdOpts.VideoFrames frames</strong> @@ <strong>@svdOpts.Fps fps</strong> &middot;
+                            ~<strong>@(durationSecs.ToString("F1"))s</strong> &middot;
+                            Model: <code>@svdOpts.Model</code>
+                        </small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="() => svdItem = null">Cancel</button>
+                    <button type="button" class="btn btn-success" @onclick="EnqueueSvdGeneration">
+                        <i class="bi bi-stars"></i> Queue Animation
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private sealed class RenderJobState
     {
@@ -637,6 +739,15 @@ else
         public string Status { get; set; } = "Queued";
         public string? Error { get; set; }
         public string? DownloadedTitle { get; set; }
+    }
+
+    private sealed class SvdJobState
+    {
+        public string JobId { get; init; } = "";
+        public string SourceFileName { get; init; } = "";
+        public string Status { get; set; } = "Queued";
+        public string? Error { get; set; }
+        public string? OutputFileName { get; set; }
     }
 
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
@@ -681,6 +792,10 @@ else
     private string youtubeUrl = "";
     private readonly List<YouTubeJobState> youtubeJobs = [];
     private bool isPollingYouTube;
+    private ContentItem? svdItem;
+    private int svdMotionBucketId = 127;
+    private readonly List<SvdJobState> svdJobs = [];
+    private bool isPollingSvd;
     private ContentItem? kenBurnsItem;
     private double kbStartX;
     private double kbStartY;
@@ -1424,6 +1539,87 @@ else
         finally
         {
             this.kbProcessing = false;
+        }
+    }
+
+    private void StartSvdGeneration(ContentItem item)
+    {
+        this.svdItem = item;
+        this.svdMotionBucketId = SvdOptions.Value.MotionBucketId;
+    }
+
+    private Task EnqueueSvdGeneration()
+    {
+        if (this.svdItem == null)
+        {
+            return Task.CompletedTask;
+        }
+
+        SvdGenerationJob job = new()
+        {
+            SourceContentItemId = this.svdItem.Id,
+            SourceFileName = this.svdItem.FileName,
+            MotionBucketId = this.svdMotionBucketId
+        };
+        SvdGenerationQueue.Enqueue(job);
+        this.svdJobs.Add(new SvdJobState { JobId = job.Id, SourceFileName = this.svdItem.FileName });
+        this.svdItem = null;
+
+        if (!this.isPollingSvd)
+        {
+            _ = this.PollSvdJobsAsync();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task PollSvdJobsAsync()
+    {
+        if (this.isPollingSvd)
+        {
+            return;
+        }
+
+        this.isPollingSvd = true;
+        try
+        {
+            while (this.svdJobs.Count(static j => j.Status is "Queued" or "Processing") != 0 && !cts.IsCancellationRequested)
+            {
+                await Task.Delay(5000, cts.Token);
+
+                bool anyFinished = false;
+                foreach (SvdJobState jobState in this.svdJobs.Where(static j => j.Status is "Queued" or "Processing").ToList())
+                {
+                    SvdGenerationJob? job = SvdGenerationQueue.GetJob(jobState.JobId);
+                    if (job == null)
+                    {
+                        continue;
+                    }
+
+                    jobState.Status = job.Status.ToString();
+                    jobState.Error = job.Error;
+                    jobState.OutputFileName = job.OutputFileName;
+                    if (job.Status is SvdJobStatus.Done or SvdJobStatus.Failed)
+                    {
+                        anyFinished = true;
+                    }
+                }
+
+                if (anyFinished)
+                {
+                    await LoadContent();
+                }
+
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            /* expected during shutdown */
+        }
+        finally
+        {
+            this.isPollingSvd = false;
         }
     }
 
