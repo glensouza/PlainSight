@@ -2,8 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using PlainSight.Shared;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using SkiaSharp;
 
 namespace PlainSight.Server.Services;
 
@@ -41,22 +40,30 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
 
         await Task.Run(() =>
         {
-            using Image<Rgba32> image = Image.Load<Rgba32>(inputPath);
-            (int x, int y, int w, int h) = this.CalculateRoi(image.Width, image.Height);
-
-            for (int py = y; py < y + h && py < image.Height; py++)
+            using SKBitmap bitmap = SKBitmap.Decode(inputPath);
+            if (bitmap is null)
             {
-                for (int px = x; px < x + w && px < image.Width; px++)
+                throw new InvalidOperationException($"Failed to decode image: {inputPath}");
+            }
+
+            (int x, int y, int w, int h) = this.CalculateRoi(bitmap.Width, bitmap.Height);
+
+            for (int py = y; py < y + h && py < bitmap.Height; py++)
+            {
+                for (int px = x; px < x + w && px < bitmap.Width; px++)
                 {
-                    Rgba32 pixel = image[px, py];
-                    byte r = ClampToByte((pixel.R - 255.0 * WatermarkAlpha) / (1.0 - WatermarkAlpha));
-                    byte g = ClampToByte((pixel.G - 255.0 * WatermarkAlpha) / (1.0 - WatermarkAlpha));
-                    byte b = ClampToByte((pixel.B - 255.0 * WatermarkAlpha) / (1.0 - WatermarkAlpha));
-                    image[px, py] = new Rgba32(r, g, b, pixel.A);
+                    SKColor pixel = bitmap.GetPixel(px, py);
+                    byte r = ReverseAlpha(pixel.Red);
+                    byte g = ReverseAlpha(pixel.Green);
+                    byte b = ReverseAlpha(pixel.Blue);
+                    bitmap.SetPixel(px, py, new SKColor(r, g, b, pixel.Alpha));
                 }
             }
 
-            image.Save(outputPath);
+            using SKImage image = SKImage.FromBitmap(bitmap);
+            using SKData data = image.Encode(EncodeFormatFor(outputPath), 95);
+            using FileStream stream = File.Create(outputPath);
+            data.SaveTo(stream);
         }, ct);
 
         logger.LogInformation("Image watermark removal complete: {OutputPath}", outputPath);
@@ -99,9 +106,26 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
         return (x, y, w, h);
     }
 
+    private static byte ReverseAlpha(byte channel)
+    {
+        return ClampToByte((channel - 255.0 * WatermarkAlpha) / (1.0 - WatermarkAlpha));
+    }
+
     private static byte ClampToByte(double value)
     {
         return (byte)Math.Clamp(value, 0, 255);
+    }
+
+    private static SKEncodedImageFormat EncodeFormatFor(string path)
+    {
+        return Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => SKEncodedImageFormat.Jpeg,
+            ".webp" => SKEncodedImageFormat.Webp,
+            ".bmp" => SKEncodedImageFormat.Bmp,
+            ".gif" => SKEncodedImageFormat.Gif,
+            _ => SKEncodedImageFormat.Png
+        };
     }
 
     // Fallback for busy backgrounds: when the delogo filter produces visible artefacts on complex
