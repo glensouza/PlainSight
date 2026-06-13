@@ -14,6 +14,17 @@ namespace PlainSight.Server.Api;
 
 public static class TransformApi
 {
+    internal sealed record KenBurnsRequest(
+        double StartX,
+        double StartY,
+        double StartW,
+        double EndX,
+        double EndY,
+        double EndW,
+        int DurationSeconds,
+        int? OverlayContentItemId,
+        double OverlayParallaxRate);
+
     public static void MapTransformApi(this IEndpointRouteBuilder routes)
     {
         RouteGroupBuilder group = routes.MapGroup("/api/content")
@@ -171,5 +182,104 @@ public static class TransformApi
                 return Results.Problem($"Frame extraction failed: {ex.Message}", statusCode: 500);
             }
         });
+
+        group.MapPost("/{id:int}/ken-burns", async (
+            int id,
+            KenBurnsRequest body,
+            IDbContextFactory<PlainSightDbContext> dbFactory,
+            VideoProcessorService videoProcessor,
+            MediaMetadataService mediaMetadata,
+            IConfiguration configuration,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            ILogger logger = loggerFactory.CreateLogger("TransformApi");
+            string contentPath = MediaPathResolver.Resolve(configuration["ContentPath"] ?? "/mnt/plainsight/content");
+
+            if (!IsValidRect(body.StartX, body.StartY, body.StartW) || !IsValidRect(body.EndX, body.EndY, body.EndW))
+            {
+                return Results.BadRequest(new { error = "Rect values must be in range 0.0–1.0 with x+w <= 1 and y within image bounds" });
+            }
+
+            if (body.DurationSeconds is < 1 or > 3600)
+            {
+                return Results.BadRequest(new { error = "Duration must be between 1 and 3600 seconds" });
+            }
+
+            await using PlainSightDbContext dbContext = await dbFactory.CreateDbContextAsync(ct);
+            ContentItem? item = await dbContext.ContentItems.FindAsync([id], ct);
+            if (item == null)
+            {
+                return Results.NotFound();
+            }
+
+            if (item.Type != ContentType.Image)
+            {
+                return Results.BadRequest(new { error = "Source must be an image" });
+            }
+
+            string inputPath = Path.Combine(contentPath, item.FileName);
+            if (!File.Exists(inputPath))
+            {
+                return Results.NotFound();
+            }
+
+            (int imageWidth, int imageHeight) = await mediaMetadata.GetVideoDimensionsAsync(inputPath, ct);
+
+            string? overlayPath = null;
+            if (body.OverlayContentItemId.HasValue)
+            {
+                ContentItem? overlayItem = await dbContext.ContentItems.FindAsync([body.OverlayContentItemId.Value], ct);
+                if (overlayItem?.Type == ContentType.Image)
+                {
+                    string candidatePath = Path.Combine(contentPath, overlayItem.FileName);
+                    if (File.Exists(candidatePath))
+                    {
+                        overlayPath = candidatePath;
+                    }
+                }
+            }
+
+            string baseName = Path.GetFileNameWithoutExtension(item.FileName);
+            string outputFileName = $"{baseName}_kenburns.mp4";
+            string outputPath = Path.Combine(contentPath, outputFileName);
+
+            try
+            {
+                await videoProcessor.KenBurnsAsync(
+                    inputPath, outputPath, imageWidth, imageHeight,
+                    body.StartX, body.StartY, body.StartW,
+                    body.EndX, body.EndY, body.EndW,
+                    body.DurationSeconds, overlayPath, body.OverlayParallaxRate, ct);
+
+                long fileSize = new FileInfo(outputPath).Length;
+
+                ContentItem newItem = new()
+                {
+                    Name = $"{item.Name} (Ken Burns)",
+                    FileName = outputFileName,
+                    Type = ContentType.Video,
+                    FileSizeBytes = fileSize,
+                    DurationSeconds = body.DurationSeconds,
+                    UploadedAt = DateTime.UtcNow,
+                    SourceContentItemId = item.Id,
+                    ThumbnailFileName = await videoProcessor.TryCreateThumbnailAsync(outputPath, contentPath, ct)
+                };
+
+                dbContext.ContentItems.Add(newItem);
+                await dbContext.SaveChangesAsync(ct);
+
+                logger.LogInformation("Ken Burns applied to image {Id}, new item: {NewId}", id, newItem.Id);
+                return Results.Ok(new { id = newItem.Id, fileName = outputFileName });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to apply Ken Burns to image {Id}", id);
+                return Results.Problem($"Ken Burns failed: {ex.Message}", statusCode: 500);
+            }
+        });
     }
+
+    private static bool IsValidRect(double x, double y, double w) =>
+        x >= 0 && x <= 1 && y >= 0 && y <= 1 && w > 0 && w <= 1 && x + w <= 1;
 }

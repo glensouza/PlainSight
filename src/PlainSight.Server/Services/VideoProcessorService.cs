@@ -108,6 +108,90 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
         logger.LogInformation("Video processing complete: {OutputPath}", outputPath);
     }
 
+    public async Task KenBurnsAsync(
+        string inputPath,
+        string outputPath,
+        int imageWidth,
+        int imageHeight,
+        double startX,
+        double startY,
+        double startW,
+        double endX,
+        double endY,
+        double endW,
+        int durationSeconds,
+        string? overlayPath,
+        double overlayParallaxRate,
+        CancellationToken ct = default)
+    {
+        logger.LogInformation(
+            "Applying Ken Burns: {Input} -> {Output} ({Duration}s, start={Sx},{Sy},{Sw} end={Ex},{Ey},{Ew})",
+            inputPath, outputPath, durationSeconds, startX, startY, startW, endX, endY, endW);
+
+        int fps = 25;
+        int totalFrames = durationSeconds * fps;
+        int dMinus1 = Math.Max(1, totalFrames - 1);
+
+        // Convert normalized [0,1] coords to pixels; height auto-derived from width to maintain aspect ratio
+        double sw = startW * imageWidth;
+        double sx = Math.Clamp(startX * imageWidth, 0, imageWidth - sw);
+        double sy = Math.Clamp(startY * imageHeight, 0, imageHeight - sw * imageHeight / imageWidth);
+        double ew = endW * imageWidth;
+        double ex = Math.Clamp(endX * imageWidth, 0, imageWidth - ew);
+        double ey = Math.Clamp(endY * imageHeight, 0, imageHeight - ew * imageHeight / imageWidth);
+
+        double z0 = (double)imageWidth / sw;
+        double z1 = (double)imageWidth / ew;
+        string z0s = z0.ToString("F6", CultureInfo.InvariantCulture);
+        string dzs = (z1 - z0).ToString("F6", CultureInfo.InvariantCulture);
+        string sxs = sx.ToString("F4", CultureInfo.InvariantCulture);
+        string sys = sy.ToString("F4", CultureInfo.InvariantCulture);
+        string dxs = (ex - sx).ToString("F4", CultureInfo.InvariantCulture);
+        string dys = (ey - sy).ToString("F4", CultureInfo.InvariantCulture);
+
+        // Inline the z expression in x/y to avoid the one-frame lag from the `zoom` built-in variable
+        string tFactor = $"(on-1)/{dMinus1}";
+        string zExpr = $"{z0s}+({dzs})*{tFactor}";
+        string xExpr = $"({sxs}+({dxs})*{tFactor})*({z0s}+({dzs})*{tFactor})";
+        string yExpr = $"({sys}+({dys})*{tFactor})*({z0s}+({dzs})*{tFactor})";
+        string zoompanFilter = $"zoompan=z='{zExpr}':x='{xExpr}':y='{yExpr}':d={totalFrames}:fps={fps}:s={imageWidth}x{imageHeight}";
+
+        string args;
+        if (overlayPath == null)
+        {
+            args = $"-y -loop 1 -i \"{inputPath}\" -vf \"{zoompanFilter}\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{outputPath}\"";
+        }
+        else if (overlayParallaxRate <= 0)
+        {
+            // Static overlay: text/logo stays crisp while background pans/zooms
+            string scaleFilter = $"scale={imageWidth}:{imageHeight}";
+            args = $"-y -loop 1 -i \"{inputPath}\" -loop 1 -i \"{overlayPath}\" " +
+                   $"-filter_complex \"[0:v]{zoompanFilter}[bg];[1:v]{scaleFilter}[fg];[bg][fg]overlay=0:0[out]\" " +
+                   $"-map \"[out]\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{outputPath}\"";
+        }
+        else
+        {
+            // Parallax overlay: moves at a fraction of the background movement
+            double op0 = 1.0 + (z0 - 1.0) * overlayParallaxRate;
+            double op1 = 1.0 + (z1 - 1.0) * overlayParallaxRate;
+            double osx = sx * overlayParallaxRate;
+            double osy = sy * overlayParallaxRate;
+            double odx = (ex - sx) * overlayParallaxRate;
+            double ody = (ey - sy) * overlayParallaxRate;
+            string op0s = op0.ToString("F6", CultureInfo.InvariantCulture);
+            string odps = (op1 - op0).ToString("F6", CultureInfo.InvariantCulture);
+            string oxExpr = $"({osx.ToString("F4", CultureInfo.InvariantCulture)}+({odx.ToString("F4", CultureInfo.InvariantCulture)})*{tFactor})*({op0s}+({odps})*{tFactor})";
+            string oyExpr = $"({osy.ToString("F4", CultureInfo.InvariantCulture)}+({ody.ToString("F4", CultureInfo.InvariantCulture)})*{tFactor})*({op0s}+({odps})*{tFactor})";
+            string overlayZpFilter = $"zoompan=z='{op0s}+({odps})*{tFactor}':x='{oxExpr}':y='{oyExpr}':d={totalFrames}:fps={fps}:s={imageWidth}x{imageHeight}";
+            args = $"-y -loop 1 -i \"{inputPath}\" -loop 1 -i \"{overlayPath}\" " +
+                   $"-filter_complex \"[0:v]{zoompanFilter}[bg];[1:v]{overlayZpFilter}[fg];[bg][fg]overlay=0:0[out]\" " +
+                   $"-map \"[out]\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{outputPath}\"";
+        }
+
+        await this.RunFfmpegAsync(args, ct);
+        logger.LogInformation("Ken Burns complete: {Output}", outputPath);
+    }
+
     public async Task ImageToVideoAsync(string inputPath, string outputPath, int durationSeconds, CancellationToken ct = default)
     {
         logger.LogInformation("Converting image to video: {InputPath} -> {OutputPath} ({Duration}s)", inputPath, outputPath, durationSeconds);
