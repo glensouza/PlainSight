@@ -954,6 +954,15 @@ else
                 contentItem.DurationSeconds = duration;
             }
 
+            if (contentType == ContentType.Video)
+            {
+                contentItem.ThumbnailFileName = await VideoProcessorService.TryCreateThumbnailAsync(filePath, contentPath);
+            }
+            else
+            {
+                contentItem.ThumbnailFileName = fileName;
+            }
+
             await context.SaveChangesAsync();
             selectedFile = null;
             await LoadContent();

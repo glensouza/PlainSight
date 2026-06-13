@@ -89,6 +89,8 @@ public class YouTubeDownloadService(
         int duration = await mediaMetadataService.GetVideoDurationAsync(filePath);
 
         await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(ct);
+        string? thumbFileName = await videoProcessor.TryCreateThumbnailAsync(filePath, contentPath, ct);
+
         ContentItem contentItem = new()
         {
             Name = video.Title,
@@ -96,7 +98,8 @@ public class YouTubeDownloadService(
             Type = ContentType.Video,
             FileSizeBytes = finalSize,
             DurationSeconds = duration,
-            UploadedAt = DateTime.UtcNow
+            UploadedAt = DateTime.UtcNow,
+            ThumbnailFileName = thumbFileName
         };
 
         context.ContentItems.Add(contentItem);

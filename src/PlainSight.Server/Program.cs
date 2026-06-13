@@ -65,6 +65,7 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =
 // Add custom services
 builder.Services.AddSingleton<MediaMetadataService>();
 builder.Services.AddSingleton<VideoProcessorService>();
+builder.Services.AddSingleton<WatermarkRemovalService>();
 builder.Services.AddSingleton<WebsiteRecorder>();
 builder.Services.AddSingleton<RenderQueue>();
 builder.Services.AddHostedService<RenderWorkerService>();
@@ -210,6 +211,8 @@ app.MapScalarApiReference().RequireAuthorization(new AuthorizeAttribute { Roles 
 app.MapDeviceApi();
 app.MapContentApi();
 app.MapUpdateApi();
+app.MapTransformApi();
+app.MapWatermarkApi();
 
 // Ensure storage directories exist
 using (IServiceScope scope = app.Services.CreateScope())
