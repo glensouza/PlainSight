@@ -248,20 +248,25 @@ else
     private bool isReordering;
     private bool isPreviewing;
     private PlaylistItem? draggedItem;
+    private int? draggedFromPlaylistId;
     private int? dragOverItemId;
 
-    private List<ContentItem> AvailableContentFiltered
-    {
-        get
-        {
-            if (this.availableContent == null || this.selectedPlaylist == null)
-            {
-                return [];
-            }
+    // Cached list of content not already in the open playlist. Recomputed only when the open
+    // playlist or the available-content list changes, not on every render.
+    private List<ContentItem> availableContentFiltered = [];
 
-            HashSet<int> inPlaylist = this.selectedPlaylist.Items.Select(i => i.ContentItemId).ToHashSet();
-            return this.availableContent.Where(c => !inPlaylist.Contains(c.Id)).ToList();
+    private List<ContentItem> AvailableContentFiltered => this.availableContentFiltered;
+
+    private void RecomputeAvailableContentFiltered()
+    {
+        if (this.availableContent == null || this.selectedPlaylist == null)
+        {
+            this.availableContentFiltered = [];
+            return;
         }
+
+        HashSet<int> inPlaylist = this.selectedPlaylist.Items.Select(i => i.ContentItemId).ToHashSet();
+        this.availableContentFiltered = this.availableContent.Where(c => !inPlaylist.Contains(c.Id)).ToList();
     }
 
     protected override async Task OnInitializedAsync()
@@ -302,6 +307,8 @@ else
             Logger.LogError(ex, "Error loading content items");
             availableContent = [];
         }
+
+        this.RecomputeAvailableContentFiltered();
     }
 
     private void ShowCreatePlaylist()
@@ -432,6 +439,8 @@ else
             .Include(p => p.Items)
             .ThenInclude(i => i.ContentItem)
             .FirstOrDefaultAsync(p => p.Id == playlistId);
+
+        this.RecomputeAvailableContentFiltered();
     }
 
     private async Task PreviewPlaylist(int playlistId)
@@ -505,6 +514,7 @@ else
     private void OnDragStart(PlaylistItem item)
     {
         this.draggedItem = item;
+        this.draggedFromPlaylistId = this.managingPlaylistId;
     }
 
     private void OnDragEnter(PlaylistItem item)
@@ -518,16 +528,20 @@ else
     private void OnDragEnd()
     {
         this.draggedItem = null;
+        this.draggedFromPlaylistId = null;
         this.dragOverItemId = null;
     }
 
     private async Task OnDropAsync(PlaylistItem target)
     {
         PlaylistItem? dragged = this.draggedItem;
+        int? draggedFrom = this.draggedFromPlaylistId;
         this.draggedItem = null;
+        this.draggedFromPlaylistId = null;
         this.dragOverItemId = null;
 
-        if (dragged == null || dragged.Id == target.Id || selectedPlaylist == null || !managingPlaylistId.HasValue || isReordering)
+        // Ignore the drop if the modal was closed or switched to a different playlist mid-drag.
+        if (dragged == null || dragged.Id == target.Id || selectedPlaylist == null || !managingPlaylistId.HasValue || isReordering || draggedFrom != managingPlaylistId)
         {
             return;
         }
@@ -588,6 +602,7 @@ else
         managingPlaylistId = null;
         selectedPlaylist = null;
         availableContent = null;
+        this.availableContentFiltered = [];
     }
 
     private async Task RemoveFromPlaylist(int playlistItemId)

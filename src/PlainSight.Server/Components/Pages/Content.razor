@@ -239,7 +239,7 @@ else
     <div class="d-flex align-items-center justify-content-between mb-2">
         <div class="input-group" style="max-width: 360px;">
             <span class="input-group-text"><i class="bi bi-search"></i></span>
-            <input type="search" class="form-control" placeholder="Search by name or file name..." @bind="searchTerm" @bind:event="oninput" />
+            <input type="search" class="form-control" placeholder="Search by name or file name..." @bind="searchTerm" @bind:event="oninput" @bind:after="RecomputeFilteredItems" />
         </div>
         <small class="text-muted">@FilteredItems.Count of @contentItems.Count items</small>
     </div>
@@ -535,43 +535,55 @@ else
 
     private async Task RunSyncInBackgroundAsync()
     {
-        await RunSync();
-        await this.InvokeAsync(this.StateHasChanged);
+        try
+        {
+            await RunSync();
+            await this.InvokeAsync(this.StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Background content sync failed");
+        }
     }
 
-    private List<ContentItem> FilteredItems
+    // Cached projection of contentItems for the current search/sort. Recomputed only when an
+    // input changes (search text, sort column/direction, or the loaded list) rather than on
+    // every render.
+    private List<ContentItem> filteredItems = [];
+
+    private List<ContentItem> FilteredItems => this.filteredItems;
+
+    private void RecomputeFilteredItems()
     {
-        get
+        if (this.contentItems == null)
         {
-            if (this.contentItems == null)
-            {
-                return [];
-            }
-
-            IEnumerable<ContentItem> query = this.contentItems;
-            if (!string.IsNullOrWhiteSpace(this.searchTerm))
-            {
-                query = query.Where(c => c.Name.Contains(this.searchTerm, StringComparison.OrdinalIgnoreCase) || c.FileName.Contains(this.searchTerm, StringComparison.OrdinalIgnoreCase));
-            }
-
-            query = (this.sortColumn, this.sortAscending) switch
-            {
-                ("Type", true) => query.OrderBy(c => c.Type).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase),
-                ("Type", false) => query.OrderByDescending(c => c.Type).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase),
-                ("FileName", true) => query.OrderBy(c => c.FileName, StringComparer.OrdinalIgnoreCase),
-                ("FileName", false) => query.OrderByDescending(c => c.FileName, StringComparer.OrdinalIgnoreCase),
-                ("Duration", true) => query.OrderBy(c => c.DurationSeconds),
-                ("Duration", false) => query.OrderByDescending(c => c.DurationSeconds),
-                ("Size", true) => query.OrderBy(c => c.FileSizeBytes),
-                ("Size", false) => query.OrderByDescending(c => c.FileSizeBytes),
-                ("Uploaded", true) => query.OrderBy(c => c.UploadedAt),
-                ("Uploaded", false) => query.OrderByDescending(c => c.UploadedAt),
-                (_, false) => query.OrderByDescending(c => c.Name, StringComparer.OrdinalIgnoreCase),
-                _ => query.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
-            };
-
-            return query.ToList();
+            this.filteredItems = [];
+            return;
         }
+
+        IEnumerable<ContentItem> query = this.contentItems;
+        if (!string.IsNullOrWhiteSpace(this.searchTerm))
+        {
+            query = query.Where(c => c.Name.Contains(this.searchTerm, StringComparison.OrdinalIgnoreCase) || c.FileName.Contains(this.searchTerm, StringComparison.OrdinalIgnoreCase));
+        }
+
+        query = (this.sortColumn, this.sortAscending) switch
+        {
+            ("Type", true) => query.OrderBy(c => c.Type).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase),
+            ("Type", false) => query.OrderByDescending(c => c.Type).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase),
+            ("FileName", true) => query.OrderBy(c => c.FileName, StringComparer.OrdinalIgnoreCase),
+            ("FileName", false) => query.OrderByDescending(c => c.FileName, StringComparer.OrdinalIgnoreCase),
+            ("Duration", true) => query.OrderBy(c => c.DurationSeconds),
+            ("Duration", false) => query.OrderByDescending(c => c.DurationSeconds),
+            ("Size", true) => query.OrderBy(c => c.FileSizeBytes),
+            ("Size", false) => query.OrderByDescending(c => c.FileSizeBytes),
+            ("Uploaded", true) => query.OrderBy(c => c.UploadedAt),
+            ("Uploaded", false) => query.OrderByDescending(c => c.UploadedAt),
+            (_, false) => query.OrderByDescending(c => c.Name, StringComparer.OrdinalIgnoreCase),
+            _ => query.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+        };
+
+        this.filteredItems = query.ToList();
     }
 
     private void SortBy(string column)
@@ -585,6 +597,8 @@ else
             this.sortColumn = column;
             this.sortAscending = true;
         }
+
+        this.RecomputeFilteredItems();
     }
 
     private string SortIcon(string column)
@@ -869,6 +883,8 @@ else
             Logger.LogError(ex, "Error loading content");
             contentItems = [];
         }
+
+        this.RecomputeFilteredItems();
     }
 
     private void HandleFileSelected(InputFileChangeEventArgs e)
