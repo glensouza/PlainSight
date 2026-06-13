@@ -156,10 +156,15 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
         string yExpr = $"({sys}+({dys})*{tFactor})*({z0s}+({dzs})*{tFactor})";
         string zoompanFilter = $"zoompan=z='{zExpr}':x='{xExpr}':y='{yExpr}':d={totalFrames}:fps={fps}:s={imageWidth}x{imageHeight}";
 
+        // Write to a .tmp file so the content-sync worker (which runs every 30s) never picks up
+        // a partially-written mp4. Only the .mp4 extension is excluded from sync; .tmp is not a
+        // supported media extension and will be skipped.
+        string tempPath = outputPath + ".tmp";
+
         string args;
         if (overlayPath == null)
         {
-            args = $"-y -loop 1 -i \"{inputPath}\" -vf \"{zoompanFilter}\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{outputPath}\"";
+            args = $"-y -loop 1 -i \"{inputPath}\" -vf \"{zoompanFilter}\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{tempPath}\"";
         }
         else if (overlayParallaxRate <= 0)
         {
@@ -167,7 +172,7 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
             string scaleFilter = $"scale={imageWidth}:{imageHeight}";
             args = $"-y -loop 1 -i \"{inputPath}\" -loop 1 -i \"{overlayPath}\" " +
                    $"-filter_complex \"[0:v]{zoompanFilter}[bg];[1:v]{scaleFilter}[fg];[bg][fg]overlay=0:0[out]\" " +
-                   $"-map \"[out]\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{outputPath}\"";
+                   $"-map \"[out]\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{tempPath}\"";
         }
         else
         {
@@ -185,10 +190,22 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
             string overlayZpFilter = $"zoompan=z='{op0s}+({odps})*{tFactor}':x='{oxExpr}':y='{oyExpr}':d={totalFrames}:fps={fps}:s={imageWidth}x{imageHeight}";
             args = $"-y -loop 1 -i \"{inputPath}\" -loop 1 -i \"{overlayPath}\" " +
                    $"-filter_complex \"[0:v]{zoompanFilter}[bg];[1:v]{overlayZpFilter}[fg];[bg][fg]overlay=0:0[out]\" " +
-                   $"-map \"[out]\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{outputPath}\"";
+                   $"-map \"[out]\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{tempPath}\"";
         }
 
-        await this.RunFfmpegAsync(args, ct);
+        try
+        {
+            await this.RunFfmpegAsync(args, ct);
+            File.Move(tempPath, outputPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { /* stale temp — ignore */ }
+            }
+        }
+
         logger.LogInformation("Ken Burns complete: {Output}", outputPath);
     }
 

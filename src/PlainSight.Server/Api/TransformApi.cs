@@ -241,7 +241,7 @@ public static class TransformApi
             }
 
             string baseName = Path.GetFileNameWithoutExtension(item.FileName);
-            string outputFileName = $"{baseName}_kenburns.mp4";
+            string outputFileName = $"{baseName}_kenburns_{DateTime.UtcNow:yyyyMMddHHmmss}.mp4";
             string outputPath = Path.Combine(contentPath, outputFileName);
 
             try

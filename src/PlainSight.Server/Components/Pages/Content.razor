@@ -500,8 +500,10 @@ else
 
 @if (kenBurnsItem != null)
 {
-    double kbStartH = kbImgW > 0 ? kbStartW * kbImgH / kbImgW : kbStartW;
-    double kbEndH   = kbImgW > 0 ? kbEndW   * kbImgH / kbImgW : kbEndW;
+    // CSS % for height is relative to the container's rendered height (= display_width * IH/IW),
+    // so the IH/IW factors cancel: a rect of width w% always has height w% in CSS space.
+    double kbStartH = kbStartW;
+    double kbEndH   = kbEndW;
 
     <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
         <div class="modal-dialog modal-lg">
@@ -680,8 +682,8 @@ else
     private readonly List<YouTubeJobState> youtubeJobs = [];
     private bool isPollingYouTube;
     private ContentItem? kenBurnsItem;
-    private double kbStartX = 0;
-    private double kbStartY = 0;
+    private double kbStartX;
+    private double kbStartY;
     private double kbStartW = 100;
     private double kbEndX = 10;
     private double kbEndY = 10;
@@ -1396,7 +1398,7 @@ else
 
             long fileSize = new FileInfo(outputPath).Length;
 
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(cts.Token);
             ContentItem newItem = new()
             {
                 Name = $"{this.kenBurnsItem.Name} (Ken Burns)",
@@ -1409,7 +1411,7 @@ else
                 ThumbnailFileName = await VideoProcessorService.TryCreateThumbnailAsync(outputPath, contentPath, cts.Token)
             };
             context.ContentItems.Add(newItem);
-            await context.SaveChangesAsync();
+            await context.SaveChangesAsync(cts.Token);
 
             this.kenBurnsItem = null;
             await LoadContent();
