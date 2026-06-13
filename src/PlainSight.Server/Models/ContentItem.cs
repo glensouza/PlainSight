@@ -15,7 +15,7 @@ public class ContentItem
     public string? ThumbnailFileName { get; set; }
     public int? CompanionContentItemId { get; set; }
     public CompanionPosition? CompanionPosition { get; set; }
-    public ContentItem? CompanionContentItem { get; set; }
+    public ContentItem? CompanionContentItem { get; init; }
 }
 
 public enum ContentType

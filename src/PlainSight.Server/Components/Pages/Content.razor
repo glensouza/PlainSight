@@ -857,7 +857,8 @@ else
             item.Name = newName;
             item.DurationSeconds = newDuration;
 
-            if (int.TryParse(this.companionContentItemId, out int parsedCompanionId))
+            // Guard against self-pairing (the UI hides the item itself, but never trust the posted value).
+            if (int.TryParse(this.companionContentItemId, out int parsedCompanionId) && parsedCompanionId != item.Id)
             {
                 item.CompanionContentItemId = parsedCompanionId;
                 item.CompanionPosition = Enum.TryParse<CompanionPosition>(this.companionPosition, out CompanionPosition pos) ? pos : CompanionPosition.After;
