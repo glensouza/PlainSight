@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Skill(update-config)",
-      "PowerShell(git *)"
+      "PowerShell(git *)",
+      "PowerShell(dotnet build *)",
+      "PowerShell(git push *)",
+      "PowerShell(gh pr *)",
+      "PowerShell(gh api *)"
     ]
   }
 }
