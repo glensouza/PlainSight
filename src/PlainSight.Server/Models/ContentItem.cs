@@ -11,6 +11,8 @@ public class ContentItem
     public DateTime UploadedAt { get; init; }
     public string? Description { get; set; }
     public string? SourceUrl { get; set; }
+    public int? SourceContentItemId { get; set; }
+    public string? ThumbnailFileName { get; set; }
 }
 
 public enum ContentType

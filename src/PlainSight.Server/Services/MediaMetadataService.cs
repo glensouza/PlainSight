@@ -51,4 +51,33 @@ public class MediaMetadataService(ILogger<MediaMetadataService> logger)
             return 10;
         }
     }
+
+    public async Task<(int width, int height)> GetVideoDimensionsAsync(string videoPath, CancellationToken ct = default)
+    {
+        using Process process = new()
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "ffprobe",
+                Arguments = $"-v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 \"{videoPath}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        process.Start();
+        string output = await process.StandardOutput.ReadToEndAsync(ct);
+        await process.WaitForExitAsync(ct);
+
+        string[] parts = output.Trim().Split('x');
+        if (parts.Length == 2 && int.TryParse(parts[0], out int width) && int.TryParse(parts[1], out int height))
+        {
+            return (width, height);
+        }
+
+        logger.LogWarning("Failed to parse video dimensions from ffprobe output: {Output}", output);
+        throw new InvalidOperationException("Failed to determine video dimensions for ffprobe");
+    }
 }

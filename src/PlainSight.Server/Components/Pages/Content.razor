@@ -954,6 +954,18 @@ else
                 contentItem.DurationSeconds = duration;
             }
 
+            if (contentType == ContentType.Video)
+            {
+                string thumbFileName = $"{Path.GetFileNameWithoutExtension(fileName)}_thumb.jpg";
+                string thumbPath = Path.Combine(contentPath, thumbFileName);
+                await VideoProcessorService.ExtractFirstFrameAsync(filePath, thumbPath);
+                contentItem.ThumbnailFileName = thumbFileName;
+            }
+            else
+            {
+                contentItem.ThumbnailFileName = fileName;
+            }
+
             await context.SaveChangesAsync();
             selectedFile = null;
             await LoadContent();

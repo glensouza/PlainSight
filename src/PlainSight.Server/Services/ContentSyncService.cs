@@ -8,6 +8,7 @@ public class ContentSyncService(
     PlainSightDbContext context,
     IConfiguration configuration,
     MediaMetadataService metadataService,
+    VideoProcessorService videoProcessor,
     ScheduleCache scheduleCache,
     ILogger<ContentSyncService> logger)
 {
@@ -105,7 +106,7 @@ public class ContentSyncService(
                 duration = await metadataService.GetVideoDurationAsync(filePath);
             }
 
-            context.ContentItems.Add(new ContentItem
+            ContentItem item = new()
             {
                 Name = Path.GetFileNameWithoutExtension(fileName),
                 FileName = fileName,
@@ -113,7 +114,21 @@ public class ContentSyncService(
                 FileSizeBytes = fileInfo.Length,
                 DurationSeconds = duration,
                 UploadedAt = fileInfo.CreationTimeUtc
-            });
+            };
+
+            if (isVideo)
+            {
+                string thumbFileName = $"{Path.GetFileNameWithoutExtension(fileName)}_thumb.jpg";
+                string thumbPath = Path.Combine(contentPath, thumbFileName);
+                await videoProcessor.ExtractFirstFrameAsync(filePath, thumbPath, cancellationToken);
+                item.ThumbnailFileName = thumbFileName;
+            }
+            else
+            {
+                item.ThumbnailFileName = fileName;
+            }
+
+            context.ContentItems.Add(item);
             added++;
             logger.LogInformation("Sync added new content from disk: {FileName} ({Duration}s)", fileName, duration);
         }

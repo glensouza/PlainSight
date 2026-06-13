@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PlainSight.Server.Data;
+using PlainSight.Shared;
 
 namespace PlainSight.Server.Services;
 
@@ -37,12 +38,19 @@ public class RenderWorkerService(
 
                 using IServiceScope scope = scopeFactory.CreateScope();
                 PlainSightDbContext db = scope.ServiceProvider.GetRequiredService<PlainSightDbContext>();
+                IConfiguration config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+                VideoProcessorService videoProcessor = scope.ServiceProvider.GetRequiredService<VideoProcessorService>();
+
+                string contentPath = MediaPathResolver.Resolve(config["ContentPath"] ?? "/mnt/plainsight/content");
 
                 // Check if it was already added by the sync service
                 ContentItem? item = await db.ContentItems.FirstOrDefaultAsync(i => i.FileName == job.FileName, stoppingToken);
 
                 string host = "Website";
                 try { host = new Uri(job.Url).Host; } catch { /* best effort */ }
+
+                string thumbFileName = $"{Path.GetFileNameWithoutExtension(job.FileName)}_thumb.jpg";
+                string thumbPath = Path.Combine(contentPath, thumbFileName);
 
                 if (item == null)
                 {
@@ -71,6 +79,19 @@ public class RenderWorkerService(
                 }
 
                 await db.SaveChangesAsync(stoppingToken);
+
+                if (!File.Exists(thumbPath))
+                {
+                    string outputPath = Path.Combine(contentPath, job.FileName);
+                    await videoProcessor.ExtractFirstFrameAsync(outputPath, thumbPath, stoppingToken);
+                    item.ThumbnailFileName = thumbFileName;
+                    await db.SaveChangesAsync(stoppingToken);
+                }
+                else
+                {
+                    item.ThumbnailFileName = thumbFileName;
+                    await db.SaveChangesAsync(stoppingToken);
+                }
 
                 job.ContentItemId = item.Id;
                 job.Status = RenderJobStatus.Done;
