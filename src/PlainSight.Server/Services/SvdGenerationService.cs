@@ -38,38 +38,42 @@ public sealed class SvdGenerationService(
             throw new FileNotFoundException($"Source image not found: {sourcePath}");
         }
 
+        // Per-job timeout so a hung ComfyUI doesn't block the worker indefinitely.
+        using CancellationTokenSource timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(60, opts.RequestTimeoutSeconds)));
+        CancellationToken token = timeoutCts.Token;
+
         using HttpClient http = httpClientFactory.CreateClient();
         http.BaseAddress = baseUri;
-        http.Timeout = TimeSpan.FromSeconds(Math.Max(60, opts.RequestTimeoutSeconds));
 
-        string uploadedName = await this.UploadImageAsync(http, sourcePath, ct);
+        string uploadedName = await this.UploadImageAsync(http, sourcePath, token);
         logger.LogInformation("SVD job {Id}: uploaded source image as {UploadedName}", job.Id, uploadedName);
 
         string clientId = Guid.NewGuid().ToString("N");
-        ClientWebSocket? socket = await this.OpenWebSocketAsync(baseUri, clientId, ct);
+        ClientWebSocket? socket = await this.OpenWebSocketAsync(baseUri, clientId, token);
         try
         {
             object workflow = this.BuildSvdWorkflow(uploadedName, opts, job.MotionBucketId);
-            string promptId = await this.QueuePromptAsync(http, workflow, clientId, ct)
+            string promptId = await this.QueuePromptAsync(http, workflow, clientId, token)
                 ?? throw new InvalidOperationException("ComfyUI did not return a prompt ID.");
 
             logger.LogInformation("SVD job {Id}: queued as prompt {PromptId}", job.Id, promptId);
 
-            bool finished = socket is not null && await this.WaitForExecutionAsync(socket, promptId, ct);
+            bool finished = socket is not null && await this.WaitForExecutionAsync(socket, promptId, token);
 
             ComfyVideoRef? videoRef = finished
-                ? await this.GetFirstOutputVideoAsync(http, promptId, ct)
-                : await this.PollHistoryForVideoAsync(http, promptId, ct);
+                ? await this.GetFirstOutputVideoAsync(http, promptId, token)
+                : await this.PollHistoryForVideoAsync(http, promptId, token);
 
             if (videoRef is null)
             {
                 throw new InvalidOperationException("No video output found in ComfyUI history.");
             }
 
-            string outputFileName = await this.DownloadAndSaveAsync(http, videoRef, contentPath, opts.FilenamePrefix, ct);
+            string outputFileName = await this.DownloadAndSaveAsync(http, videoRef, contentPath, opts.FilenamePrefix, token);
             logger.LogInformation("SVD job {Id}: saved as {OutputFileName}", job.Id, outputFileName);
 
-            await this.SaveContentItemAsync(job, outputFileName, contentPath, ct);
+            await this.SaveContentItemAsync(job, outputFileName, contentPath, token);
             job.OutputFileName = outputFileName;
         }
         finally
@@ -82,7 +86,8 @@ public sealed class SvdGenerationService(
     {
         await using FileStream fs = new(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
         using MultipartFormDataContent form = new();
-        using StreamContent imageContent = new(fs);
+        // StreamContent is owned by form — form.Dispose() disposes it; no separate using needed.
+        StreamContent imageContent = new(fs);
         string mimeType = Path.GetExtension(sourcePath).ToLowerInvariant() switch
         {
             ".jpg" or ".jpeg" => "image/jpeg",
@@ -169,13 +174,15 @@ public sealed class SvdGenerationService(
                     denoise = 1.0
                 }
             },
+            // VAEDecodeTiledVideo avoids OOM on large frame counts (25 × 1024×576 latents).
             ["7"] = new
             {
-                class_type = "VAEDecodeVideo",
+                class_type = "VAEDecodeTiledVideo",
                 inputs = new
                 {
                     samples = new object[] { "6", 0 },
-                    vae = new object[] { "1", 2 }
+                    vae = new object[] { "1", 2 },
+                    tile_size = 256
                 }
             },
             ["8"] = new
@@ -381,7 +388,7 @@ public sealed class SvdGenerationService(
         {
             if (File.Exists(tempPath))
             {
-                try { File.Delete(tempPath); } catch (IOException) { /* best effort */ }
+                try { File.Delete(tempPath); } catch (Exception) { /* best effort cleanup */ }
             }
             throw;
         }
@@ -399,9 +406,12 @@ public sealed class SvdGenerationService(
         await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(ct);
         string? thumbFileName = await videoProcessor.TryCreateThumbnailAsync(outputPath, contentPath, ct);
 
+        ContentItem? source = await context.ContentItems.FindAsync([job.SourceContentItemId], ct);
+        string sourceName = source?.Name ?? Path.GetFileNameWithoutExtension(job.SourceFileName);
+
         ContentItem item = new()
         {
-            Name = $"SVD Animation ({job.SourceFileName})",
+            Name = $"SVD Animation ({sourceName})",
             FileName = outputFileName,
             Type = ContentType.Video,
             FileSizeBytes = fileSize,

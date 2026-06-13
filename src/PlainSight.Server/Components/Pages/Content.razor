@@ -795,7 +795,7 @@ else
     private ContentItem? svdItem;
     private int svdMotionBucketId = 127;
     private readonly List<SvdJobState> svdJobs = [];
-    private bool isPollingsvd;
+    private bool isPollingSvd;
     private ContentItem? kenBurnsItem;
     private double kbStartX;
     private double kbStartY;
@@ -1565,7 +1565,7 @@ else
         this.svdJobs.Add(new SvdJobState { JobId = job.Id, SourceFileName = this.svdItem.FileName });
         this.svdItem = null;
 
-        if (!this.isPollingsvd)
+        if (!this.isPollingSvd)
         {
             _ = this.PollSvdJobsAsync();
         }
@@ -1575,12 +1575,12 @@ else
 
     private async Task PollSvdJobsAsync()
     {
-        if (this.isPollingsvd)
+        if (this.isPollingSvd)
         {
             return;
         }
 
-        this.isPollingsvd = true;
+        this.isPollingSvd = true;
         try
         {
             while (this.svdJobs.Count(static j => j.Status is "Queued" or "Processing") != 0 && !cts.IsCancellationRequested)
@@ -1619,7 +1619,7 @@ else
         }
         finally
         {
-            this.isPollingsvd = false;
+            this.isPollingSvd = false;
         }
     }
 

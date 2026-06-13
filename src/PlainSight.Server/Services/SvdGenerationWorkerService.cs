@@ -21,8 +21,14 @@ public sealed class SvdGenerationWorkerService(
                 job.Status = SvdJobStatus.Done;
                 logger.LogInformation("SVD job {Id} complete: {OutputFileName}", job.Id, job.OutputFileName);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
+                throw; // propagate clean app-shutdown signal
+            }
+            catch (Exception ex)
+            {
+                // Catches everything else: HTTP timeouts (TaskCanceledException from per-job CTS),
+                // ComfyUI errors, I/O failures — none of which should kill the worker loop.
                 job.Error = ex.Message;
                 job.Status = SvdJobStatus.Failed;
                 logger.LogError(ex, "SVD job {Id} failed: {SourceFileName}", job.Id, job.SourceFileName);
