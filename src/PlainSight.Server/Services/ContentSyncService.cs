@@ -43,6 +43,7 @@ public class ContentSyncService(
 
         HashSet<string> diskFiles = Directory.GetFiles(contentPath, "*", options)
             .Where(f => MediaConstants.AllSupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+            .Where(f => !f.EndsWith(VideoProcessorService.ThumbnailSuffix, StringComparison.OrdinalIgnoreCase))
             .Select(f => Path.GetFileName(f))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -118,10 +119,7 @@ public class ContentSyncService(
 
             if (isVideo)
             {
-                string thumbFileName = $"{Path.GetFileNameWithoutExtension(fileName)}_thumb.jpg";
-                string thumbPath = Path.Combine(contentPath, thumbFileName);
-                await videoProcessor.ExtractFirstFrameAsync(filePath, thumbPath, cancellationToken);
-                item.ThumbnailFileName = thumbFileName;
+                item.ThumbnailFileName = await videoProcessor.TryCreateThumbnailAsync(filePath, contentPath, cancellationToken);
             }
             else
             {

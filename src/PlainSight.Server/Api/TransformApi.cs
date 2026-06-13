@@ -25,7 +25,6 @@ public static class TransformApi
             int durationSeconds,
             IDbContextFactory<PlainSightDbContext> dbFactory,
             VideoProcessorService videoProcessor,
-            MediaMetadataService mediaMetadataService,
             IConfiguration configuration,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
@@ -98,7 +97,6 @@ public static class TransformApi
             string position,
             IDbContextFactory<PlainSightDbContext> dbFactory,
             VideoProcessorService videoProcessor,
-            MediaMetadataService mediaMetadataService,
             IConfiguration configuration,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
@@ -131,8 +129,7 @@ public static class TransformApi
             }
 
             string baseName = Path.GetFileNameWithoutExtension(item.FileName);
-            string outputExtension = position == "first" ? ".jpg" : ".jpg";
-            string outputFileName = $"{baseName}_frame_{position}{outputExtension}";
+            string outputFileName = $"{baseName}_frame_{position}.jpg";
             string outputPath = Path.Combine(contentPath, outputFileName);
 
             try

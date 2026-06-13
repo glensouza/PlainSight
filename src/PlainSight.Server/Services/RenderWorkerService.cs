@@ -49,7 +49,7 @@ public class RenderWorkerService(
                 string host = "Website";
                 try { host = new Uri(job.Url).Host; } catch { /* best effort */ }
 
-                string thumbFileName = $"{Path.GetFileNameWithoutExtension(job.FileName)}_thumb.jpg";
+                string thumbFileName = $"{Path.GetFileNameWithoutExtension(job.FileName)}{VideoProcessorService.ThumbnailSuffix}";
                 string thumbPath = Path.Combine(contentPath, thumbFileName);
 
                 if (item == null)
@@ -80,18 +80,17 @@ public class RenderWorkerService(
 
                 await db.SaveChangesAsync(stoppingToken);
 
-                if (!File.Exists(thumbPath))
+                if (File.Exists(thumbPath))
                 {
-                    string outputPath = Path.Combine(contentPath, job.FileName);
-                    await videoProcessor.ExtractFirstFrameAsync(outputPath, thumbPath, stoppingToken);
                     item.ThumbnailFileName = thumbFileName;
-                    await db.SaveChangesAsync(stoppingToken);
                 }
                 else
                 {
-                    item.ThumbnailFileName = thumbFileName;
-                    await db.SaveChangesAsync(stoppingToken);
+                    string outputPath = Path.Combine(contentPath, job.FileName);
+                    item.ThumbnailFileName = await videoProcessor.TryCreateThumbnailAsync(outputPath, contentPath, stoppingToken);
                 }
+
+                await db.SaveChangesAsync(stoppingToken);
 
                 job.ContentItemId = item.Id;
                 job.Status = RenderJobStatus.Done;

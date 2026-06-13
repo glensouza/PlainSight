@@ -956,10 +956,7 @@ else
 
             if (contentType == ContentType.Video)
             {
-                string thumbFileName = $"{Path.GetFileNameWithoutExtension(fileName)}_thumb.jpg";
-                string thumbPath = Path.Combine(contentPath, thumbFileName);
-                await VideoProcessorService.ExtractFirstFrameAsync(filePath, thumbPath);
-                contentItem.ThumbnailFileName = thumbFileName;
+                contentItem.ThumbnailFileName = await VideoProcessorService.TryCreateThumbnailAsync(filePath, contentPath);
             }
             else
             {

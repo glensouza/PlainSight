@@ -68,8 +68,13 @@ public class MediaMetadataService(ILogger<MediaMetadataService> logger)
         };
 
         process.Start();
-        string output = await process.StandardOutput.ReadToEndAsync(ct);
+        // Drain both pipes concurrently before waiting; leaving the redirected stderr buffer
+        // unread can deadlock if ffprobe writes enough to fill it.
+        Task<string> outputTask = process.StandardOutput.ReadToEndAsync(ct);
+        Task<string> errorTask = process.StandardError.ReadToEndAsync(ct);
+        await Task.WhenAll(outputTask, errorTask);
         await process.WaitForExitAsync(ct);
+        string output = await outputTask;
 
         string[] parts = output.Trim().Split('x');
         if (parts.Length == 2 && int.TryParse(parts[0], out int width) && int.TryParse(parts[1], out int height))
