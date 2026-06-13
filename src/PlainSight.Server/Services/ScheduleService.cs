@@ -3,9 +3,14 @@ using PlainSight.Server.Data;
 
 namespace PlainSight.Server.Services;
 
-public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory)
+public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, ScheduleCache cache)
 {
-    public async Task<Schedule?> GetActiveScheduleAsync(string deviceGroup, CancellationToken ct = default)
+    public Task<Schedule?> GetActiveScheduleAsync(string deviceGroup, CancellationToken ct = default)
+    {
+        return cache.GetActiveScheduleAsync(deviceGroup, () => this.LoadActiveScheduleAsync(deviceGroup, ct));
+    }
+
+    private async Task<Schedule?> LoadActiveScheduleAsync(string deviceGroup, CancellationToken ct)
     {
         await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(ct);
 

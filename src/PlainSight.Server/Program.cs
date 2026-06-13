@@ -82,6 +82,8 @@ builder.Services.AddSingleton<SignatureVerifier>(sp =>
 });
 builder.Services.AddScoped<IPlayerVersionReconciler, ManifestReconciler>();
 builder.Services.AddHostedService<ReconciliationBackgroundService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<ScheduleCache>();
 builder.Services.AddScoped<ScheduleService>();
 builder.Services.AddScoped<BrandingService>();
 builder.Services.AddScoped<BrandingSyncService>();

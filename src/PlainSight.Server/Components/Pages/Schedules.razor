@@ -5,6 +5,7 @@
 @inject ILogger<Schedules> Logger
 @inject IJSRuntime Js
 @inject IConfiguration Configuration
+@inject ScheduleCache ScheduleCache
 
 <PageTitle>Schedules — PlainSight</PageTitle>
 
@@ -483,6 +484,7 @@ else
             }
 
             await context.SaveChangesAsync();
+            ScheduleCache.Invalidate();
             showForm = false;
             await LoadAll();
         }
@@ -523,6 +525,7 @@ else
             {
                 context.Schedules.Remove(existing);
                 await context.SaveChangesAsync();
+                ScheduleCache.Invalidate();
                 showDeleteConfirm = false;
                 await LoadAll();
             }
@@ -544,6 +547,7 @@ else
                 existing.IsActive = !existing.IsActive;
                 existing.UpdatedAt = DateTime.UtcNow;
                 await context.SaveChangesAsync();
+                ScheduleCache.Invalidate();
                 await LoadAll();
             }
         }

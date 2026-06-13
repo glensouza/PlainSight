@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
 @inject ILogger<Playlists> Logger
+@inject ScheduleCache ScheduleCache
 
 <PageTitle>Playlists — PlainSight</PageTitle>
 
@@ -273,9 +274,10 @@ else
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            // Cards only need each playlist's item count, so skip the ContentItem join here.
+            // The Preview dialog loads the full graph on demand (see PreviewPlaylist).
             playlists = await context.Playlists
                 .Include(p => p.Items)
-                .ThenInclude(i => i.ContentItem)
                 .OrderByDescending(p => p.UpdatedAt)
                 .ToListAsync();
         }
@@ -395,6 +397,7 @@ else
             {
                 context.Playlists.Remove(playlist);
                 await context.SaveChangesAsync();
+                ScheduleCache.Invalidate();
                 await LoadPlaylists();
             }
         }
@@ -431,12 +434,24 @@ else
             .FirstOrDefaultAsync(p => p.Id == playlistId);
     }
 
-    private void PreviewPlaylist(int playlistId)
+    private async Task PreviewPlaylist(int playlistId)
     {
-        selectedPlaylist = playlists?.FirstOrDefault(p => p.Id == playlistId);
-        if (selectedPlaylist != null)
+        try
         {
-            isPreviewing = true;
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            selectedPlaylist = await context.Playlists
+                .Include(p => p.Items)
+                .ThenInclude(i => i.ContentItem)
+                .FirstOrDefaultAsync(p => p.Id == playlistId);
+
+            if (selectedPlaylist != null)
+            {
+                isPreviewing = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading playlist for preview");
         }
     }
 
@@ -472,6 +487,7 @@ else
             context.PlaylistItems.Add(playlistItem);
             playlist.UpdatedAt = DateTime.UtcNow;
             await context.SaveChangesAsync();
+            ScheduleCache.Invalidate();
 
             await ReloadSelectedPlaylistAsync(managingPlaylistId.Value);
             await LoadPlaylists();
@@ -552,6 +568,7 @@ else
             playlist?.UpdatedAt = DateTime.UtcNow;
 
             await context.SaveChangesAsync();
+            ScheduleCache.Invalidate();
 
             await ReloadSelectedPlaylistAsync(playlistId);
             await LoadPlaylists();
@@ -588,6 +605,7 @@ else
                 context.PlaylistItems.Remove(item);
                 item.Playlist.UpdatedAt = DateTime.UtcNow;
                 await context.SaveChangesAsync();
+                ScheduleCache.Invalidate();
 
                 await ReloadSelectedPlaylistAsync(playlistId);
                 await LoadPlaylists();
