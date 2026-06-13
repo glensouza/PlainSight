@@ -23,10 +23,10 @@ public sealed class BrandingSyncWorkerService(IServiceScopeFactory scopeFactory,
         {
             using IServiceScope scope = scopeFactory.CreateScope();
             BrandingSyncService syncService = scope.ServiceProvider.GetRequiredService<BrandingSyncService>();
-            (int added, int removed) = await syncService.SyncAsync(cancellationToken);
-            if (added > 0 || removed > 0)
+            (int added, int removed, int updated) = await syncService.SyncAsync(cancellationToken);
+            if (added > 0 || removed > 0 || updated > 0)
             {
-                logger.LogInformation("Background branding sync: +{Added} added, -{Removed} removed", added, removed);
+                logger.LogInformation("Background branding sync: +{Added} added, -{Removed} removed, ~{Updated} updated", added, removed, updated);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

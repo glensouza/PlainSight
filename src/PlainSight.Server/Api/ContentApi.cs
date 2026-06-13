@@ -13,7 +13,12 @@ public static class ContentApi
     {
         RouteGroupBuilder group = routes.MapGroup("/api/media")
             .WithGroupName("Internal Media")
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .AddEndpointFilter(async (context, next) =>
+            {
+                context.HttpContext.Response.Headers.CacheControl = "no-cache";
+                return await next(context);
+            });
 
         group.MapGet("/content/{fileName}", (string fileName, IConfiguration configuration) =>
         {

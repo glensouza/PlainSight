@@ -15,12 +15,12 @@ public class ContentSyncService(
     // and UI-triggered refreshes cannot race into the unique FileName index.
     private static readonly SemaphoreSlim SyncLock = new(1, 1);
 
-    public async Task<(int Added, int Removed)> SyncAsync(CancellationToken cancellationToken = default)
+    public async Task<(int Added, int Removed, int Updated)> SyncAsync(CancellationToken cancellationToken = default)
     {
         string contentPath = MediaPathResolver.Resolve(configuration["ContentPath"] ?? "/mnt/plainsight/content");
         if (!Directory.Exists(contentPath))
         {
-            return (0, 0);
+            return (0, 0, 0);
         }
 
         await SyncLock.WaitAsync(cancellationToken);
@@ -34,7 +34,7 @@ public class ContentSyncService(
         }
     }
 
-    private async Task<(int Added, int Removed)> SyncCoreAsync(string contentPath, CancellationToken cancellationToken)
+    private async Task<(int Added, int Removed, int Updated)> SyncCoreAsync(string contentPath, CancellationToken cancellationToken)
     {
         EnumerationOptions options = new() { IgnoreInaccessible = true };
 
@@ -57,13 +57,14 @@ public class ContentSyncService(
             logger.LogWarning(
                 "Skipping content sync: '{Path}' is empty but {Count} DB record(s) exist (possible unmounted storage)",
                 contentPath, dbItems.Count);
-            return (0, 0);
+            return (0, 0, 0);
         }
 
         HashSet<string> dbFiles = dbItems.Select(i => i.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         int added = 0;
         int removed = 0;
+        int updated = 0;
 
         // Remove DB entries whose file no longer exists
         List<ContentItem> itemsToRemove = dbItems.Where(i => !diskFiles.Contains(i.FileName)).ToList();
@@ -117,7 +118,32 @@ public class ContentSyncService(
             logger.LogInformation("Sync added new content from disk: {FileName} ({Duration}s)", fileName, duration);
         }
 
-        if (added > 0 || removed > 0)
+        // Reconcile metadata for existing tracked files whose content changed on disk
+        foreach (ContentItem item in dbItems.Where(i => diskFiles.Contains(i.FileName)))
+        {
+            string filePath = Path.Combine(contentPath, item.FileName);
+            FileInfo fileInfo = new(filePath);
+
+            if (fileInfo.Length == item.FileSizeBytes)
+            {
+                continue;
+            }
+
+            long oldSize = item.FileSizeBytes;
+            item.FileSizeBytes = fileInfo.Length;
+
+            if (MediaConstants.IsVideo(item.FileName))
+            {
+                item.DurationSeconds = await metadataService.GetVideoDurationAsync(filePath);
+            }
+
+            updated++;
+            logger.LogInformation(
+                "Sync updated metadata for: {FileName} (size {OldSize} → {NewSize}, duration {Duration}s)",
+                item.FileName, oldSize, fileInfo.Length, item.DurationSeconds);
+        }
+
+        if (added > 0 || removed > 0 || updated > 0)
         {
             await context.SaveChangesAsync(cancellationToken);
         }
@@ -129,6 +155,6 @@ public class ContentSyncService(
             scheduleCache.Invalidate();
         }
 
-        return (added, removed);
+        return (added, removed, updated);
     }
 }

@@ -14,10 +14,10 @@ public class ContentSyncWorkerService(IServiceScopeFactory scopeFactory, ILogger
             {
                 using IServiceScope scope = scopeFactory.CreateScope();
                 ContentSyncService syncService = scope.ServiceProvider.GetRequiredService<ContentSyncService>();
-                (int added, int removed) = await syncService.SyncAsync(stoppingToken);
-                if (added > 0 || removed > 0)
+                (int added, int removed, int updated) = await syncService.SyncAsync(stoppingToken);
+                if (added > 0 || removed > 0 || updated > 0)
                 {
-                    logger.LogInformation("Background sync: +{Added} added, -{Removed} removed", added, removed);
+                    logger.LogInformation("Background sync: +{Added} added, -{Removed} removed, ~{Updated} updated", added, removed, updated);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

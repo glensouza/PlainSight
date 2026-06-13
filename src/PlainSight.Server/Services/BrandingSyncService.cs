@@ -16,11 +16,11 @@ public class BrandingSyncService(
 
     private string BrandingPath => configuration["BrandingPath"] ?? "/mnt/plainsight/branding";
 
-    public async Task<(int Added, int Removed)> SyncAsync(CancellationToken cancellationToken = default)
+    public async Task<(int Added, int Removed, int Updated)> SyncAsync(CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(this.BrandingPath))
         {
-            return (0, 0);
+            return (0, 0, 0);
         }
 
         await SyncLock.WaitAsync(cancellationToken);
@@ -34,7 +34,7 @@ public class BrandingSyncService(
         }
     }
 
-    private async Task<(int Added, int Removed)> SyncCoreAsync(CancellationToken cancellationToken)
+    private async Task<(int Added, int Removed, int Updated)> SyncCoreAsync(CancellationToken cancellationToken)
     {
         await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
@@ -56,13 +56,14 @@ public class BrandingSyncService(
             logger.LogWarning(
                 "Skipping branding sync: '{Path}' contains no files but {Count} DB record(s) exist (possible unmounted storage)",
                 this.BrandingPath, dbItems.Count);
-            return (0, 0);
+            return (0, 0, 0);
         }
 
         HashSet<string> dbFiles = dbItems.Select(i => i.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         int added = 0;
         int removed = 0;
+        int updated = 0;
 
         // Remove DB entries whose file no longer exists
         List<BrandingVideo> itemsToRemove = dbItems.Where(i => !diskFiles.Contains(i.FileName)).ToList();
@@ -105,11 +106,32 @@ public class BrandingSyncService(
             logger.LogInformation("Sync added new branding clip from disk: {FileName} ({Duration}s)", fileName, duration);
         }
 
-        if (added > 0 || removed > 0)
+        // Reconcile metadata for existing tracked files whose content changed on disk
+        foreach (BrandingVideo item in dbItems.Where(i => diskFiles.Contains(i.FileName)))
+        {
+            string filePath = Path.Combine(this.BrandingPath, item.FileName);
+            FileInfo fileInfo = new(filePath);
+
+            if (fileInfo.Length == item.FileSizeBytes)
+            {
+                continue;
+            }
+
+            long oldSize = item.FileSizeBytes;
+            item.FileSizeBytes = fileInfo.Length;
+            item.DurationSeconds = await metadataService.GetVideoDurationAsync(filePath);
+
+            updated++;
+            logger.LogInformation(
+                "Sync updated metadata for branding clip: {FileName} (size {OldSize} → {NewSize}, duration {Duration}s)",
+                item.FileName, oldSize, fileInfo.Length, item.DurationSeconds);
+        }
+
+        if (added > 0 || removed > 0 || updated > 0)
         {
             await context.SaveChangesAsync(cancellationToken);
         }
 
-        return (added, removed);
+        return (added, removed, updated);
     }
 }

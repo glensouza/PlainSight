@@ -6,6 +6,7 @@
 @inject ILogger<Branding> Logger
 @inject MediaMetadataService MediaMetadataService
 @inject BrandingSyncService SyncService
+@inject VideoProcessorService VideoProcessorService
 
 @implements IDisposable
 
@@ -26,6 +27,14 @@
     <div class="alert alert-danger mt-3">
         <i class="bi bi-exclamation-octagon"></i> @globalError
         <button type="button" class="btn-close float-end" @onclick="() => globalError = null"></button>
+    </div>
+}
+
+@if (syncMessage != null)
+{
+    <div class="alert alert-info alert-dismissible py-2 mt-2 mb-0" role="alert">
+        <i class="bi bi-info-circle"></i> @syncMessage
+        <button type="button" class="btn-close" @onclick="() => syncMessage = null"></button>
     </div>
 }
 
@@ -55,6 +64,7 @@
                             <thead>
                                 <tr>
                                     <th>Name</th>
+                                    <th>Size</th>
                                     <th>Default</th>
                                     <th class="text-end">Actions</th>
                                 </tr>
@@ -67,6 +77,7 @@
                                             <strong>@v.Name</strong><br/>
                                             <code class="text-muted">@v.FileName</code>
                                         </td>
+                                        <td>@FormatFileSize(v.FileSizeBytes)</td>
                                         <td>
                                             @if (v.IsDefault)
                                             {
@@ -77,6 +88,9 @@
                                             <div class="btn-group btn-group-sm">
                                                 <button class="btn btn-outline-primary" @onclick="() => PreviewVideo(v.FileName)" title="Preview">
                                                     <i class="bi bi-eye"></i>
+                                                </button>
+                                                <button class="btn btn-outline-info" @onclick="() => StartProcessing(v)" title="Process Video">
+                                                    <i class="bi bi-gear"></i>
                                                 </button>
                                                 @if (!v.IsDefault)
                                                 {
@@ -279,6 +293,46 @@
     </div>
 }
 
+@if (processingVideo != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Process Video: @processingVideo.Name</h5>
+                    <button type="button" class="btn-close" @onclick="() => processingVideo = null"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Choose options to modify this video file. This will replace the existing file.</p>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="procStripAudio" @bind="stripAudio" />
+                            <label class="form-check-label" for="procStripAudio">Strip Audio</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="procCompressVideo" @bind="compressVideo" />
+                            <label class="form-check-label" for="procCompressVideo">Smaller File Size (Compression)</label>
+                        </div>
+                    </div>
+                    @if (isProcessingExisting)
+                    {
+                        <div class="alert alert-info py-2">
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                            Processing video... please wait.
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="() => processingVideo = null" disabled="@isProcessingExisting">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="PerformProcessing" disabled="@(isProcessingExisting || (!stripAudio && !compressVideo))">
+                        Process and Replace
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @if (previewFileName != null)
 {
     string previewPath = $"/api/media/branding/{previewFileName}";
@@ -310,6 +364,7 @@
     private IBrowserFile? selectedUploadFile;
     private bool uploading;
     private string? globalError;
+    private string? syncMessage;
     private string? previewFileName;
 
     private bool showScheduleForm;
@@ -319,6 +374,12 @@
     private TimeOnly newScheduleEndTime = new(23, 59, 59);
     private DayOfWeekFlags newScheduleDays = DayOfWeekFlags.All;
 
+    private BrandingVideo? processingVideo;
+    private bool stripAudio;
+    private bool compressVideo;
+    private bool isProcessingExisting;
+
+    private readonly CancellationTokenSource cts = new();
     private FileSystemWatcher? fileWatcher;
     private Timer? debounceTimer;
 
@@ -380,7 +441,11 @@
     {
         try
         {
-            await SyncService.SyncAsync();
+            (int added, int removed, int updated) = await SyncService.SyncAsync();
+            if (added > 0 || removed > 0 || updated > 0)
+            {
+                syncMessage = $"Sync: +{added} added, -{removed} removed, ~{updated} updated";
+            }
             await LoadData();
             await LoadIdleFiles();
             StateHasChanged();
@@ -514,6 +579,80 @@
         }
     }
 
+    private void StartProcessing(BrandingVideo video)
+    {
+        this.processingVideo = video;
+        this.stripAudio = false;
+        this.compressVideo = false;
+    }
+
+    private async Task PerformProcessing()
+    {
+        if (this.processingVideo == null || (!this.stripAudio && !this.compressVideo))
+        {
+            return;
+        }
+
+        this.isProcessingExisting = true;
+        try
+        {
+            string brandingPath = Configuration["BrandingPath"] ?? "/mnt/plainsight/branding";
+            string oldFileName = this.processingVideo.FileName;
+            string filePath = Path.Combine(brandingPath, oldFileName);
+
+            string tempFileName = $"{Guid.CreateVersion7():N}.tmp.mp4";
+            string tempPath = Path.Combine(brandingPath, tempFileName);
+
+            if (!File.Exists(filePath))
+            {
+                globalError = "Video file not found on disk.";
+                return;
+            }
+
+            await VideoProcessorService.ProcessVideoAsync(filePath, tempPath, this.stripAudio, this.compressVideo, cancellationToken: this.cts.Token);
+
+            string targetFileName = Path.ChangeExtension(oldFileName, ".mp4");
+            string targetPath = Path.Combine(brandingPath, targetFileName);
+
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
+
+            if (File.Exists(targetPath) && targetPath != filePath)
+            {
+                File.Delete(targetPath);
+            }
+
+            File.Move(tempPath, targetPath);
+
+            int newDuration = await MediaMetadataService.GetVideoDurationAsync(targetPath);
+            long newSize = new FileInfo(targetPath).Length;
+
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            BrandingVideo? dbItem = await context.BrandingVideos.FindAsync(this.processingVideo.Id);
+            if (dbItem != null)
+            {
+                dbItem.FileName = targetFileName;
+                dbItem.DurationSeconds = newDuration;
+                dbItem.FileSizeBytes = newSize;
+                await context.SaveChangesAsync();
+            }
+
+            this.processingVideo = null;
+            await RefreshAll();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error processing branding video");
+            globalError = "Processing failed: " + ex.Message;
+        }
+        finally
+        {
+            this.isProcessingExisting = false;
+        }
+    }
+
     private void PreviewVideo(string fileName)
     {
         previewFileName = fileName;
@@ -610,8 +749,23 @@
         return string.Join(", ", selected);
     }
 
+    private static string FormatFileSize(long bytes)
+    {
+        string[] sizes = ["B", "KB", "MB", "GB"];
+        double len = bytes;
+        int order = 0;
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len /= 1024;
+        }
+        return $"{len:0.##} {sizes[order]}";
+    }
+
     public void Dispose()
     {
+        this.cts.Cancel();
+        this.cts.Dispose();
         this.debounceTimer?.Dispose();
         this.fileWatcher?.Dispose();
     }

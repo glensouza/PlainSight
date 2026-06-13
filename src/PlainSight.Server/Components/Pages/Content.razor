@@ -853,9 +853,9 @@ else
         syncing = true;
         try
         {
-            (int added, int removed) = await ContentSyncService.SyncAsync(cts.Token);
-            if (added > 0 || removed > 0)
-                syncMessage = $"Folder sync: +{added} added, -{removed} removed from library";
+            (int added, int removed, int updated) = await ContentSyncService.SyncAsync(cts.Token);
+            if (added > 0 || removed > 0 || updated > 0)
+                syncMessage = $"Folder sync: +{added} added, -{removed} removed, ~{updated} updated";
         }
         catch (Exception ex)
         {
