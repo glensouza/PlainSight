@@ -24,7 +24,10 @@
       "Bash(python3 -c \"import json,sys; v=json.load\\(sys.stdin\\)['versions']; print\\([x for x in v if x.startswith\\('3.1.'\\)][-8:]\\)\")",
       "Bash(git commit -m '@ *)",
       "Bash(git commit *)",
-      "Bash(echo \"exit:$?\")"
+      "Bash(echo \"exit:$?\")",
+      "Bash(gh issue *)",
+      "Bash(git checkout *)",
+      "Bash(dotnet ef *)"
     ]
   }
 }
