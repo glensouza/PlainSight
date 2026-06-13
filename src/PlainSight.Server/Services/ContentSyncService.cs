@@ -8,6 +8,7 @@ public class ContentSyncService(
     PlainSightDbContext context,
     IConfiguration configuration,
     MediaMetadataService metadataService,
+    ScheduleCache scheduleCache,
     ILogger<ContentSyncService> logger)
 {
     // Serializes all sync executions in this process so the background worker
@@ -119,6 +120,13 @@ public class ContentSyncService(
         if (added > 0 || removed > 0)
         {
             await context.SaveChangesAsync(cancellationToken);
+        }
+
+        // Removals can strip items from a playlist that an active schedule is serving,
+        // so drop the cached schedule graph to avoid handing players stale content.
+        if (removed > 0)
+        {
+            scheduleCache.Invalidate();
         }
 
         return (added, removed);
