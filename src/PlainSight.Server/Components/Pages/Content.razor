@@ -291,6 +291,12 @@ else
                                         <i class="bi bi-gear"></i>
                                     </button>
                                 }
+                                @if (item.Type == ContentType.Image)
+                                {
+                                    <button class="btn btn-outline-warning" @onclick="() => StartKenBurnsAsync(item)" title="Ken Burns (animate)">
+                                        <i class="bi bi-film"></i>
+                                    </button>
+                                }
                                 <button class="btn btn-outline-secondary" @onclick="() => StartRename(item)" title="Rename">
                                     <i class="bi bi-pencil"></i>
                                 </button>
@@ -492,6 +498,128 @@ else
     </div>
 }
 
+@if (kenBurnsItem != null)
+{
+    // CSS % for height is relative to the container's rendered height (= display_width * IH/IW),
+    // so the IH/IW factors cancel: a rect of width w% always has height w% in CSS space.
+    double kbStartH = kbStartW;
+    double kbEndH   = kbEndW;
+
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-film"></i> Ken Burns: @kenBurnsItem.Name</h5>
+                    <button type="button" class="btn-close" @onclick="() => kenBurnsItem = null" disabled="@kbProcessing"></button>
+                </div>
+                <div class="modal-body">
+                    @* Image preview with rect overlays *@
+                    <div style="position:relative; display:inline-block; width:100%; max-width:600px; margin-bottom:1rem;">
+                        <img src="/api/media/content/@kenBurnsItem.FileName" style="width:100%; display:block;" alt="@kenBurnsItem.Name" />
+                        @* Start rect — blue *@
+                        <div style="position:absolute; left:@(kbStartX)%; top:@(kbStartY)%; width:@(kbStartW)%; height:@(kbStartH)%; border:2px solid #0d6efd; box-sizing:border-box; pointer-events:none;"></div>
+                        @* End rect — orange *@
+                        <div style="position:absolute; left:@(kbEndX)%; top:@(kbEndY)%; width:@(kbEndW)%; height:@(kbEndH)%; border:2px solid #fd7e14; box-sizing:border-box; pointer-events:none;"></div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <fieldset class="border rounded p-2">
+                                <legend class="float-none w-auto px-1 fs-6 fw-semibold" style="color:#0d6efd;">Start (blue)</legend>
+                                <div class="row g-2">
+                                    <div class="col-4">
+                                        <label class="form-label mb-0">Left %</label>
+                                        <input type="number" class="form-control form-control-sm" min="0" max="99" @bind="kbStartX" @bind:after="ClampKenBurnsRects" />
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label mb-0">Top %</label>
+                                        <input type="number" class="form-control form-control-sm" min="0" max="99" @bind="kbStartY" @bind:after="ClampKenBurnsRects" />
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label mb-0">Width %</label>
+                                        <input type="number" class="form-control form-control-sm" min="1" max="100" @bind="kbStartW" @bind:after="ClampKenBurnsRects" />
+                                    </div>
+                                </div>
+                            </fieldset>
+                        </div>
+                        <div class="col-md-6">
+                            <fieldset class="border rounded p-2">
+                                <legend class="float-none w-auto px-1 fs-6 fw-semibold" style="color:#fd7e14;">End (orange)</legend>
+                                <div class="row g-2">
+                                    <div class="col-4">
+                                        <label class="form-label mb-0">Left %</label>
+                                        <input type="number" class="form-control form-control-sm" min="0" max="99" @bind="kbEndX" @bind:after="ClampKenBurnsRects" />
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label mb-0">Top %</label>
+                                        <input type="number" class="form-control form-control-sm" min="0" max="99" @bind="kbEndY" @bind:after="ClampKenBurnsRects" />
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label mb-0">Width %</label>
+                                        <input type="number" class="form-control form-control-sm" min="1" max="100" @bind="kbEndW" @bind:after="ClampKenBurnsRects" />
+                                    </div>
+                                </div>
+                            </fieldset>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Duration (seconds)</label>
+                            <input type="number" class="form-control" min="1" max="3600" @bind="kbDuration" />
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Overlay image (optional — stays sharp on top)</label>
+                            <select class="form-select" @bind="kbOverlayId">
+                                <option value="">— None —</option>
+                                @foreach (ContentItem ci in contentItems?.Where(static c => c.Type == ContentType.Image) ?? [])
+                                {
+                                    if (ci.Id != kenBurnsItem.Id)
+                                    {
+                                        <option value="@ci.Id">@ci.Name (@ci.FileName)</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        @if (!string.IsNullOrEmpty(kbOverlayId))
+                        {
+                            <div class="col-12">
+                                <label class="form-label">Overlay parallax rate: @kbParallaxRate.ToString("P0")</label>
+                                <input type="range" class="form-range" min="0" max="1" step="0.05" @bind="kbParallaxRate" />
+                                <small class="text-muted">0% = static overlay (text stays sharp); 100% = moves same as background</small>
+                            </div>
+                        }
+                    </div>
+                    @if (kbError != null)
+                    {
+                        <div class="alert alert-danger py-2 mt-3 mb-0">
+                            <i class="bi bi-exclamation-triangle"></i> @kbError
+                        </div>
+                    }
+                    @if (kbProcessing)
+                    {
+                        <div class="alert alert-info py-2 mt-3 mb-0">
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                            Applying Ken Burns effect... this may take a minute.
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <small class="text-muted me-auto">Height is auto-derived from width to match image aspect ratio.</small>
+                    <button type="button" class="btn btn-secondary" @onclick="() => kenBurnsItem = null" disabled="@kbProcessing">Cancel</button>
+                    <button type="button" class="btn btn-warning" @onclick="ApplyKenBurnsAsync" disabled="@kbProcessing">
+                        @if (kbProcessing)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-film"></i>
+                        }
+                        <span> Apply Ken Burns</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private sealed class RenderJobState
     {
@@ -553,6 +681,20 @@ else
     private string youtubeUrl = "";
     private readonly List<YouTubeJobState> youtubeJobs = [];
     private bool isPollingYouTube;
+    private ContentItem? kenBurnsItem;
+    private double kbStartX;
+    private double kbStartY;
+    private double kbStartW = 100;
+    private double kbEndX = 10;
+    private double kbEndY = 10;
+    private double kbEndW = 80;
+    private int kbDuration = 10;
+    private string kbOverlayId = "";
+    private double kbParallaxRate;
+    private bool kbProcessing;
+    private string? kbError;
+    private int kbImgW;
+    private int kbImgH;
     private readonly CancellationTokenSource cts = new();
 
     protected override async Task OnInitializedAsync()
@@ -1175,6 +1317,114 @@ else
             len /= 1024;
         }
         return $"{len:0.##} {sizes[order]}";
+    }
+
+    private async Task StartKenBurnsAsync(ContentItem item)
+    {
+        this.kenBurnsItem = item;
+        this.kbStartX = 0;
+        this.kbStartY = 0;
+        this.kbStartW = 100;
+        this.kbEndX = 10;
+        this.kbEndY = 10;
+        this.kbEndW = 80;
+        this.kbDuration = 10;
+        this.kbOverlayId = "";
+        this.kbParallaxRate = 0;
+        this.kbProcessing = false;
+        this.kbError = null;
+
+        string contentPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
+        string inputPath = Path.Combine(contentPath, item.FileName);
+        try
+        {
+            (this.kbImgW, this.kbImgH) = await MediaMetadataService.GetVideoDimensionsAsync(inputPath, cts.Token);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not determine image dimensions for Ken Burns preview; defaulting to 1920x1080");
+            this.kbImgW = 1920;
+            this.kbImgH = 1080;
+        }
+    }
+
+    private void ClampKenBurnsRects()
+    {
+        this.kbStartX = Math.Clamp(this.kbStartX, 0, 99);
+        this.kbStartY = Math.Clamp(this.kbStartY, 0, 99);
+        this.kbStartW = Math.Clamp(this.kbStartW, 1, 100 - this.kbStartX);
+        this.kbEndX = Math.Clamp(this.kbEndX, 0, 99);
+        this.kbEndY = Math.Clamp(this.kbEndY, 0, 99);
+        this.kbEndW = Math.Clamp(this.kbEndW, 1, 100 - this.kbEndX);
+    }
+
+    private async Task ApplyKenBurnsAsync()
+    {
+        if (this.kenBurnsItem == null)
+        {
+            return;
+        }
+
+        this.kbProcessing = true;
+        this.kbError = null;
+        try
+        {
+            string contentPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
+            string inputPath = Path.Combine(contentPath, this.kenBurnsItem.FileName);
+
+            string baseName = Path.GetFileNameWithoutExtension(this.kenBurnsItem.FileName);
+            string outputFileName = $"{baseName}_kenburns_{DateTime.UtcNow:yyyyMMddHHmmss}.mp4";
+            string outputPath = Path.Combine(contentPath, outputFileName);
+
+            string? overlayPath = null;
+            if (int.TryParse(this.kbOverlayId, out int overlayId))
+            {
+                ContentItem? overlayItem = this.contentItems?.FirstOrDefault(c => c.Id == overlayId && c.Type == ContentType.Image);
+                if (overlayItem != null)
+                {
+                    string candidatePath = Path.Combine(contentPath, overlayItem.FileName);
+                    if (File.Exists(candidatePath))
+                    {
+                        overlayPath = candidatePath;
+                    }
+                }
+            }
+
+            await VideoProcessorService.KenBurnsAsync(
+                inputPath, outputPath, this.kbImgW, this.kbImgH,
+                this.kbStartX / 100.0, this.kbStartY / 100.0, this.kbStartW / 100.0,
+                this.kbEndX / 100.0, this.kbEndY / 100.0, this.kbEndW / 100.0,
+                this.kbDuration, overlayPath, this.kbParallaxRate, cts.Token);
+
+            long fileSize = new FileInfo(outputPath).Length;
+
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(cts.Token);
+            ContentItem newItem = new()
+            {
+                Name = $"{this.kenBurnsItem.Name} (Ken Burns)",
+                FileName = outputFileName,
+                Type = ContentType.Video,
+                FileSizeBytes = fileSize,
+                DurationSeconds = this.kbDuration,
+                UploadedAt = DateTime.UtcNow,
+                SourceContentItemId = this.kenBurnsItem.Id,
+                ThumbnailFileName = await VideoProcessorService.TryCreateThumbnailAsync(outputPath, contentPath, cts.Token)
+            };
+            context.ContentItems.Add(newItem);
+            await context.SaveChangesAsync(cts.Token);
+
+            this.kenBurnsItem = null;
+            await LoadContent();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error applying Ken Burns");
+            this.kbError = ex.Message;
+        }
+        finally
+        {
+            this.kbProcessing = false;
+        }
     }
 
     public void Dispose()
