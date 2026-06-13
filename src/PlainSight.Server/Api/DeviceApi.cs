@@ -179,10 +179,18 @@ public static class DeviceApi
                     AssignedApiKey = assignedApiKey,
                     PlaylistItems = activePlaylist?.Items
                         .OrderBy(i => i.Order)
-                        .Select(i => new PlaylistItemDto
+                        .SelectMany(i =>
                         {
-                            FileName = i.ContentItem.FileName,
-                            DurationSeconds = i.OverrideDurationSeconds ?? i.ContentItem.DurationSeconds
+                            PlaylistItemDto main = new() { FileName = i.ContentItem.FileName, DurationSeconds = i.OverrideDurationSeconds ?? i.ContentItem.DurationSeconds };
+                            if (i.ContentItem.CompanionContentItem == null)
+                            {
+                                return [main];
+                            }
+
+                            PlaylistItemDto companion = new() { FileName = i.ContentItem.CompanionContentItem.FileName, DurationSeconds = i.ContentItem.CompanionContentItem.DurationSeconds };
+                            return i.ContentItem.CompanionPosition == Models.CompanionPosition.Before
+                                ? (IEnumerable<PlaylistItemDto>)[companion, main]
+                                : [main, companion];
                         })
                         .ToList(),
                     BrandingItem = branding != null ? new PlaylistItemDto { FileName = branding.FileName, DurationSeconds = branding.DurationSeconds } : null,

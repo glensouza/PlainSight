@@ -350,6 +350,36 @@ else
                             <small class="text-muted">How long this item displays (especially for images).</small>
                         }
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label">Companion Clip</label>
+                        <select class="form-select" @bind="companionContentItemId">
+                            <option value="">— None —</option>
+                            @foreach (ContentItem ci in contentItems ?? [])
+                            {
+                                if (ci.Id != renamingItem.Id)
+                                {
+                                    <option value="@ci.Id">@ci.Name (@ci.FileName)</option>
+                                }
+                            }
+                        </select>
+                        <small class="text-muted">An extra clip inserted adjacent to this item in the playlist.</small>
+                    </div>
+                    @if (!string.IsNullOrEmpty(companionContentItemId))
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Companion Position</label>
+                            <div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" id="compBefore" name="companionPos" value="Before" checked="@(companionPosition == "Before")" @onchange="@(() => this.companionPosition = "Before")" />
+                                    <label class="form-check-label" for="compBefore">Before</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" id="compAfter" name="companionPos" value="After" checked="@(companionPosition == "After")" @onchange="@(() => this.companionPosition = "After")" />
+                                    <label class="form-check-label" for="compAfter">After</label>
+                                </div>
+                            </div>
+                        </div>
+                    }
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" @onclick="CancelRename">Cancel</button>
@@ -517,6 +547,8 @@ else
     private string newName = "";
     private string newFileName = "";
     private int newDuration = 10;
+    private string companionContentItemId = "";
+    private string companionPosition = "After";
     private ContentItem? itemToDelete;
     private string youtubeUrl = "";
     private readonly List<YouTubeJobState> youtubeJobs = [];
@@ -766,10 +798,12 @@ else
 
     private void StartRename(ContentItem item)
     {
-        renamingItem = item;
-        newName = item.Name;
-        newFileName = Path.GetFileNameWithoutExtension(item.FileName);
-        newDuration = item.DurationSeconds;
+        this.renamingItem = item;
+        this.newName = item.Name;
+        this.newFileName = Path.GetFileNameWithoutExtension(item.FileName);
+        this.newDuration = item.DurationSeconds;
+        this.companionContentItemId = item.CompanionContentItemId?.ToString() ?? "";
+        this.companionPosition = item.CompanionPosition?.ToString() ?? "After";
     }
 
     private void CancelRename()
@@ -822,6 +856,18 @@ else
 
             item.Name = newName;
             item.DurationSeconds = newDuration;
+
+            if (int.TryParse(this.companionContentItemId, out int parsedCompanionId))
+            {
+                item.CompanionContentItemId = parsedCompanionId;
+                item.CompanionPosition = Enum.TryParse<CompanionPosition>(this.companionPosition, out CompanionPosition pos) ? pos : CompanionPosition.After;
+            }
+            else
+            {
+                item.CompanionContentItemId = null;
+                item.CompanionPosition = null;
+            }
+
             await context.SaveChangesAsync();
 
             renamingItem = null;

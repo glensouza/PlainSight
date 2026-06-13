@@ -13,6 +13,9 @@ public class ContentItem
     public string? SourceUrl { get; set; }
     public int? SourceContentItemId { get; set; }
     public string? ThumbnailFileName { get; set; }
+    public int? CompanionContentItemId { get; set; }
+    public CompanionPosition? CompanionPosition { get; set; }
+    public ContentItem? CompanionContentItem { get; set; }
 }
 
 public enum ContentType
@@ -20,4 +23,10 @@ public enum ContentType
     Video,
     Image,
     RenderedWebsite
+}
+
+public enum CompanionPosition
+{
+    Before,
+    After
 }
