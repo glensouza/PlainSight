@@ -65,6 +65,10 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.FileName).IsUnique();
+            entity.HasOne(e => e.CompanionContentItem)
+                .WithMany()
+                .HasForeignKey(e => e.CompanionContentItemId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<Playlist>(entity =>
