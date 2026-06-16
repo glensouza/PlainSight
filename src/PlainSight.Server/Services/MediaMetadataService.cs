@@ -5,7 +5,7 @@ namespace PlainSight.Server.Services;
 
 public class MediaMetadataService(ILogger<MediaMetadataService> logger)
 {
-    public async Task<int> GetVideoDurationAsync(string filePath)
+    public async Task<int> GetVideoDurationAsync(string filePath, CancellationToken ct = default)
     {
         if (!File.Exists(filePath))
         {
@@ -27,9 +27,9 @@ public class MediaMetadataService(ILogger<MediaMetadataService> logger)
             };
 
             process.Start();
-            string output = await process.StandardOutput.ReadToEndAsync();
-            string error = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            string output = await process.StandardOutput.ReadToEndAsync(ct);
+            string error = await process.StandardError.ReadToEndAsync(ct);
+            await process.WaitForExitAsync(ct);
 
             if (process.ExitCode != 0)
             {

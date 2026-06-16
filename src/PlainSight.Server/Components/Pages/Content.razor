@@ -1672,7 +1672,7 @@ else
         try
         {
             (this.evVidW, this.evVidH) = await MediaMetadataService.GetVideoDimensionsAsync(inputPath, cts.Token);
-            this.evDuration = await MediaMetadataService.GetVideoDurationAsync(inputPath);
+            this.evDuration = await MediaMetadataService.GetVideoDurationAsync(inputPath, cts.Token);
         }
         catch (Exception ex)
         {
@@ -1712,7 +1712,7 @@ else
             string inputPath = Path.Combine(contentPath, this.editItem.FileName);
 
             string baseName = Path.GetFileNameWithoutExtension(this.editItem.FileName);
-            string outputFileName = $"{baseName}_edit_{DateTime.UtcNow:yyyyMMddHHmmss}.mp4";
+            string outputFileName = $"{baseName}_edit_{DateTime.UtcNow:yyyyMMddHHmmssfff}.mp4";
             string outputPath = Path.Combine(contentPath, outputFileName);
 
             double? endSeconds = this.evEnd < this.evDuration ? this.evEnd : null;
@@ -1720,6 +1720,11 @@ else
             await VideoProcessorService.TrimAndCropAsync(
                 inputPath, outputPath, this.evStart, endSeconds, this.evVidW, this.evVidH,
                 this.evCropLeft, this.evCropRight, this.evCropTop, this.evCropBottom, cts.Token);
+
+            if (!File.Exists(outputPath))
+            {
+                throw new InvalidOperationException("Edited video was not produced.");
+            }
 
             long fileSize = new FileInfo(outputPath).Length;
             int newDuration = (int)Math.Round(this.evEnd - this.evStart);
@@ -1745,7 +1750,7 @@ else
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error editing video");
-            this.evError = ex.Message;
+            this.evError = "Failed to edit video. Check the server logs for details.";
         }
         finally
         {
