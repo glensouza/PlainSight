@@ -348,6 +348,9 @@ else
                                     <button class="btn btn-outline-info" @onclick="() => StartProcessing(item)" title="Process Video">
                                         <i class="bi bi-gear"></i>
                                     </button>
+                                    <button class="btn btn-outline-primary" @onclick="() => StartEditAsync(item)" title="Edit (trim/crop)">
+                                        <i class="bi bi-scissors"></i>
+                                    </button>
                                 }
                                 @if (item.Type == ContentType.Image)
                                 {
@@ -684,6 +687,105 @@ else
     </div>
 }
 
+@if (editItem != null)
+{
+    // Crop region as % of source dimensions, used to draw the kept-area overlay on the preview.
+    double evLeftPct   = evVidW > 0 ? evCropLeft   * 100.0 / evVidW : 0;
+    double evRightPct  = evVidW > 0 ? evCropRight  * 100.0 / evVidW : 0;
+    double evTopPct    = evVidH > 0 ? evCropTop    * 100.0 / evVidH : 0;
+    double evBottomPct = evVidH > 0 ? evCropBottom * 100.0 / evVidH : 0;
+    double evKeptW = Math.Max(0, 100 - evLeftPct - evRightPct);
+    double evKeptH = Math.Max(0, 100 - evTopPct - evBottomPct);
+
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-scissors"></i> Edit: @editItem.Name</h5>
+                    <button type="button" class="btn-close" @onclick="() => editItem = null" disabled="@evProcessing"></button>
+                </div>
+                <div class="modal-body">
+                    @* Video preview (scrub to find trim points) with kept-region overlay *@
+                    <div style="position:relative; display:inline-block; width:100%; max-width:600px; margin-bottom:1rem;">
+                        <video src="/api/media/content/@editItem.FileName" controls style="width:100%; display:block;"></video>
+                        <div style="position:absolute; left:@(evLeftPct)%; top:@(evTopPct)%; width:@(evKeptW)%; height:@(evKeptH)%; border:2px solid #198754; box-sizing:border-box; pointer-events:none;"></div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <fieldset class="border rounded p-2">
+                                <legend class="float-none w-auto px-1 fs-6 fw-semibold">Trim (seconds)</legend>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label mb-0">Start</label>
+                                        <input type="number" class="form-control form-control-sm" min="0" max="@evDuration" step="0.1" @bind="evStart" />
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label mb-0">End</label>
+                                        <input type="number" class="form-control form-control-sm" min="0" max="@evDuration" step="0.1" @bind="evEnd" />
+                                    </div>
+                                </div>
+                                <small class="text-muted">Source length: @evDuration s</small>
+                            </fieldset>
+                        </div>
+                        <div class="col-md-6">
+                            <fieldset class="border rounded p-2">
+                                <legend class="float-none w-auto px-1 fs-6 fw-semibold" style="color:#198754;">Crop (pixels)</legend>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label mb-0">Left</label>
+                                        <input type="number" class="form-control form-control-sm" min="0" @bind="evCropLeft" />
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label mb-0">Right</label>
+                                        <input type="number" class="form-control form-control-sm" min="0" @bind="evCropRight" />
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label mb-0">Top</label>
+                                        <input type="number" class="form-control form-control-sm" min="0" @bind="evCropTop" />
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label mb-0">Bottom</label>
+                                        <input type="number" class="form-control form-control-sm" min="0" @bind="evCropBottom" />
+                                    </div>
+                                </div>
+                                <small class="text-muted">Source size: @evVidW × @evVidH px</small>
+                            </fieldset>
+                        </div>
+                    </div>
+                    @if (evError != null)
+                    {
+                        <div class="alert alert-danger py-2 mt-3 mb-0">
+                            <i class="bi bi-exclamation-triangle"></i> @evError
+                        </div>
+                    }
+                    @if (evProcessing)
+                    {
+                        <div class="alert alert-info py-2 mt-3 mb-0">
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                            Editing video... this may take a minute.
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <small class="text-muted me-auto">Green box shows the kept area after cropping.</small>
+                    <button type="button" class="btn btn-secondary" @onclick="() => editItem = null" disabled="@evProcessing">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="ApplyEditAsync" disabled="@evProcessing">
+                        @if (evProcessing)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-scissors"></i>
+                        }
+                        <span> Apply Edit</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @if (svdItem != null)
 {
     SvdOptions svdOpts = SvdOptions.Value;
@@ -810,6 +912,18 @@ else
     private string? kbError;
     private int kbImgW;
     private int kbImgH;
+    private ContentItem? editItem;
+    private double evStart;
+    private double evEnd;
+    private int evCropLeft;
+    private int evCropRight;
+    private int evCropTop;
+    private int evCropBottom;
+    private int evVidW;
+    private int evVidH;
+    private int evDuration;
+    private bool evProcessing;
+    private string? evError;
     private readonly CancellationTokenSource cts = new();
 
     protected override async Task OnInitializedAsync()
@@ -1539,6 +1653,108 @@ else
         finally
         {
             this.kbProcessing = false;
+        }
+    }
+
+    private async Task StartEditAsync(ContentItem item)
+    {
+        this.editItem = item;
+        this.evStart = 0;
+        this.evCropLeft = 0;
+        this.evCropRight = 0;
+        this.evCropTop = 0;
+        this.evCropBottom = 0;
+        this.evProcessing = false;
+        this.evError = null;
+
+        string contentPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
+        string inputPath = Path.Combine(contentPath, item.FileName);
+        try
+        {
+            (this.evVidW, this.evVidH) = await MediaMetadataService.GetVideoDimensionsAsync(inputPath, cts.Token);
+            this.evDuration = await MediaMetadataService.GetVideoDurationAsync(inputPath, cts.Token);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not read video metadata for edit; using fallbacks");
+            this.evVidW = 1920;
+            this.evVidH = 1080;
+            this.evDuration = item.DurationSeconds;
+        }
+
+        this.evEnd = this.evDuration;
+    }
+
+    private async Task ApplyEditAsync()
+    {
+        if (this.editItem == null)
+        {
+            return;
+        }
+
+        if (this.evEnd <= this.evStart)
+        {
+            this.evError = "End must be greater than start.";
+            return;
+        }
+
+        if (this.evCropLeft + this.evCropRight >= this.evVidW || this.evCropTop + this.evCropBottom >= this.evVidH)
+        {
+            this.evError = "Crop amounts leave no visible area.";
+            return;
+        }
+
+        this.evProcessing = true;
+        this.evError = null;
+        try
+        {
+            string contentPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
+            string inputPath = Path.Combine(contentPath, this.editItem.FileName);
+
+            string baseName = Path.GetFileNameWithoutExtension(this.editItem.FileName);
+            string outputFileName = $"{baseName}_edit_{DateTime.UtcNow:yyyyMMddHHmmssfff}.mp4";
+            string outputPath = Path.Combine(contentPath, outputFileName);
+
+            double? endSeconds = this.evEnd < this.evDuration ? this.evEnd : null;
+
+            await VideoProcessorService.TrimAndCropAsync(
+                inputPath, outputPath, this.evStart, endSeconds, this.evVidW, this.evVidH,
+                this.evCropLeft, this.evCropRight, this.evCropTop, this.evCropBottom, cts.Token);
+
+            if (!File.Exists(outputPath))
+            {
+                throw new InvalidOperationException("Edited video was not produced.");
+            }
+
+            long fileSize = new FileInfo(outputPath).Length;
+            int newDuration = (int)Math.Round(this.evEnd - this.evStart);
+
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(cts.Token);
+            ContentItem newItem = new()
+            {
+                Name = $"{this.editItem.Name} (Edited)",
+                FileName = outputFileName,
+                Type = ContentType.Video,
+                FileSizeBytes = fileSize,
+                DurationSeconds = newDuration,
+                UploadedAt = DateTime.UtcNow,
+                SourceContentItemId = this.editItem.Id,
+                ThumbnailFileName = await VideoProcessorService.TryCreateThumbnailAsync(outputPath, contentPath, cts.Token)
+            };
+            context.ContentItems.Add(newItem);
+            await context.SaveChangesAsync(cts.Token);
+
+            this.editItem = null;
+            await LoadContent();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error editing video");
+            this.evError = "Failed to edit video. Check the server logs for details.";
+        }
+        finally
+        {
+            this.evProcessing = false;
         }
     }
 
