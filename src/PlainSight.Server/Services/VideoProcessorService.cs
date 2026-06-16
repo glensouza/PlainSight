@@ -220,11 +220,13 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
         int cropRight,
         int cropTop,
         int cropBottom,
+        bool stripAudio = false,
+        bool compress = false,
         CancellationToken ct = default)
     {
         logger.LogInformation(
-            "Trim/crop: {Input} -> {Output} (start={Start}s end={End}s crop L{Left} R{Right} T{Top} B{Bottom})",
-            inputPath, outputPath, startSeconds, endSeconds, cropLeft, cropRight, cropTop, cropBottom);
+            "Trim/crop: {Input} -> {Output} (start={Start}s end={End}s crop L{Left} R{Right} T{Top} B{Bottom} stripAudio={StripAudio} compress={Compress})",
+            inputPath, outputPath, startSeconds, endSeconds, cropLeft, cropRight, cropTop, cropBottom, stripAudio, compress);
 
         int cropWidth = sourceWidth - cropLeft - cropRight;
         int cropHeight = sourceHeight - cropTop - cropBottom;
@@ -256,7 +258,11 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
             arguments.Append($"-vf \"crop={cropWidth}:{cropHeight}:{cropLeft}:{cropTop}\" ");
         }
 
-        arguments.Append("-c:v libx264 -preset medium -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -f mp4 ");
+        // Trim/crop always re-encodes the video, so "compress" raises the CRF for a smaller file rather than toggling a copy.
+        int crf = compress ? 28 : 23;
+        arguments.Append($"-c:v libx264 -preset medium -crf {crf.ToString(CultureInfo.InvariantCulture)} -pix_fmt yuv420p ");
+        arguments.Append(stripAudio ? "-an " : "-c:a aac -b:a 128k ");
+        arguments.Append("-movflags +faststart -f mp4 ");
 
         // Write to a .tmp file so the content-sync worker never picks up a partially-written mp4.
         string tempPath = outputPath + ".tmp";

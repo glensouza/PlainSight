@@ -693,3 +693,64 @@ select option {
     opacity: 0.3;
     animation: pulse-led 1.6s ease-out infinite;
 }
+
+/* ── Video edit modal: interactive crop box + trim slider ── */
+.ve-stage { position: relative; width: 100%; max-width: 600px; margin: 0 auto 1rem; user-select: none; touch-action: none; overflow: hidden; }
+.ve-stage video { width: 100%; display: block; }
+
+.ve-crop-box {
+    position: absolute;
+    border: 2px solid #198754;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+    box-sizing: border-box;
+    cursor: default;
+}
+.ve-crop-move { position: absolute; inset: 0; cursor: move; }
+.ve-crop-handle {
+    position: absolute;
+    width: 12px; height: 12px;
+    background: #198754;
+    border: 1px solid #fff;
+    border-radius: 2px;
+    z-index: 1;
+}
+.ve-crop-nw { top: -6px; left: -6px; cursor: nwse-resize; }
+.ve-crop-ne { top: -6px; right: -6px; cursor: nesw-resize; }
+.ve-crop-se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+.ve-crop-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+.ve-crop-n { top: -6px; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+.ve-crop-s { bottom: -6px; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+.ve-crop-w { left: -6px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.ve-crop-e { right: -6px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+/* Edge handles are meaningless under a locked ratio. */
+.ve-crop-box.ve-aspect-locked .ve-crop-n,
+.ve-crop-box.ve-aspect-locked .ve-crop-s,
+.ve-crop-box.ve-aspect-locked .ve-crop-w,
+.ve-crop-box.ve-aspect-locked .ve-crop-e { display: none; }
+
+.ve-trim-track {
+    position: relative;
+    height: 26px;
+    margin: 0.35rem 0;
+    background: var(--ps-bg-3, #14213A);
+    border: 1px solid var(--ps-bg-4, #1A2A47);
+    border-radius: 6px;
+    cursor: pointer;
+    touch-action: none;
+}
+.ve-trim-fill {
+    position: absolute;
+    top: 0; bottom: 0;
+    background: rgba(25, 135, 84, 0.35);
+    pointer-events: none;
+}
+.ve-trim-handle {
+    position: absolute;
+    top: -3px;
+    width: 12px; height: 32px;
+    margin-left: -6px;
+    background: #198754;
+    border: 1px solid #fff;
+    border-radius: 3px;
+    cursor: ew-resize;
+}

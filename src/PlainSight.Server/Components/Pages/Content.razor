@@ -11,6 +11,7 @@
 @inject YouTubeDownloadQueue YouTubeDownloadQueue
 @inject SvdGenerationQueue SvdGenerationQueue
 @inject IOptions<SvdOptions> SvdOptions
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>Content Library — PlainSight</PageTitle>
@@ -689,67 +690,77 @@ else
 
 @if (editItem != null)
 {
-    // Crop region as % of source dimensions, used to draw the kept-area overlay on the preview.
-    double evLeftPct   = evVidW > 0 ? evCropLeft   * 100.0 / evVidW : 0;
-    double evRightPct  = evVidW > 0 ? evCropRight  * 100.0 / evVidW : 0;
-    double evTopPct    = evVidH > 0 ? evCropTop    * 100.0 / evVidH : 0;
-    double evBottomPct = evVidH > 0 ? evCropBottom * 100.0 / evVidH : 0;
-    double evKeptW = Math.Max(0, 100 - evLeftPct - evRightPct);
-    double evKeptH = Math.Max(0, 100 - evTopPct - evBottomPct);
-
     <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-scissors"></i> Edit: @editItem.Name</h5>
-                    <button type="button" class="btn-close" @onclick="() => editItem = null" disabled="@evProcessing"></button>
+                    <button type="button" class="btn-close" @onclick="CloseEditAsync" disabled="@evProcessing"></button>
                 </div>
                 <div class="modal-body">
-                    @* Video preview (scrub to find trim points) with kept-region overlay *@
-                    <div style="position:relative; display:inline-block; width:100%; max-width:600px; margin-bottom:1rem;">
-                        <video src="/api/media/content/@editItem.FileName" controls style="width:100%; display:block;"></video>
-                        <div style="position:absolute; left:@(evLeftPct)%; top:@(evTopPct)%; width:@(evKeptW)%; height:@(evKeptH)%; border:2px solid #198754; box-sizing:border-box; pointer-events:none;"></div>
+                    @* Scrub the preview to find frames; drag the green box to crop. JS injects the crop box + trim handles. *@
+                    <div id="evStage" class="ve-stage">
+                        <video id="evVideo" src="/api/media/content/@editItem.FileName" controls playsinline></video>
                     </div>
                     <div class="row g-3">
-                        <div class="col-md-6">
+                        <div class="col-md-7">
                             <fieldset class="border rounded p-2">
-                                <legend class="float-none w-auto px-1 fs-6 fw-semibold">Trim (seconds)</legend>
-                                <div class="row g-2">
-                                    <div class="col-6">
-                                        <label class="form-label mb-0">Start</label>
-                                        <input type="number" class="form-control form-control-sm" min="0" max="@evDuration" step="0.1" @bind="evStart" />
-                                    </div>
-                                    <div class="col-6">
-                                        <label class="form-label mb-0">End</label>
-                                        <input type="number" class="form-control form-control-sm" min="0" max="@evDuration" step="0.1" @bind="evEnd" />
-                                    </div>
+                                <legend class="float-none w-auto px-1 fs-6 fw-semibold">Trim</legend>
+                                <div id="evTrimTrack" class="ve-trim-track"></div>
+                                <div class="d-flex justify-content-between small">
+                                    <span>Start: <strong id="evStartLabel">@FormatTime(evStart)</strong></span>
+                                    <span>End: <strong id="evEndLabel">@FormatTime(evEnd)</strong></span>
                                 </div>
-                                <small class="text-muted">Source length: @evDuration s</small>
+                                <div class="btn-group btn-group-sm mt-2" role="group">
+                                    <button type="button" class="btn btn-outline-secondary" @onclick='() => StampTrimAsync("start")' disabled="@evProcessing">
+                                        <i class="bi bi-box-arrow-in-left"></i> Set Start
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary" @onclick='() => StampTrimAsync("end")' disabled="@evProcessing">
+                                        Set End <i class="bi bi-box-arrow-in-right"></i>
+                                    </button>
+                                </div>
+                                <small class="text-muted d-block mt-1">Scrub the video, then Set Start/End — or drag the handles.</small>
                             </fieldset>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-5">
                             <fieldset class="border rounded p-2">
-                                <legend class="float-none w-auto px-1 fs-6 fw-semibold" style="color:#198754;">Crop (pixels)</legend>
-                                <div class="row g-2">
-                                    <div class="col-6">
-                                        <label class="form-label mb-0">Left</label>
-                                        <input type="number" class="form-control form-control-sm" min="0" @bind="evCropLeft" />
-                                    </div>
-                                    <div class="col-6">
-                                        <label class="form-label mb-0">Right</label>
-                                        <input type="number" class="form-control form-control-sm" min="0" @bind="evCropRight" />
-                                    </div>
-                                    <div class="col-6">
-                                        <label class="form-label mb-0">Top</label>
-                                        <input type="number" class="form-control form-control-sm" min="0" @bind="evCropTop" />
-                                    </div>
-                                    <div class="col-6">
-                                        <label class="form-label mb-0">Bottom</label>
-                                        <input type="number" class="form-control form-control-sm" min="0" @bind="evCropBottom" />
-                                    </div>
-                                </div>
-                                <small class="text-muted">Source size: @evVidW × @evVidH px</small>
+                                <legend class="float-none w-auto px-1 fs-6 fw-semibold" style="color:#198754;">Crop</legend>
+                                <label class="form-label mb-0">Aspect ratio</label>
+                                <select class="form-select form-select-sm" @bind="evAspect" @bind:after="ApplyAspectAsync" disabled="@evProcessing">
+                                    <option value="free">Free</option>
+                                    <option value="orig">Original (@evVidW:@evVidH)</option>
+                                    <option value="16:9">16:9</option>
+                                    <option value="4:3">4:3</option>
+                                    <option value="1:1">1:1</option>
+                                </select>
+                                <small class="text-muted d-block mt-2">Kept: @(evVidW - evCropLeft - evCropRight) × @(evVidH - evCropTop - evCropBottom) px</small>
+                                <button type="button" class="btn btn-sm btn-outline-secondary mt-2" @onclick="ResetCropAsync" disabled="@evProcessing">Reset crop</button>
                             </fieldset>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="evStripAudio" @bind="evStripAudio" />
+                            <label class="form-check-label" for="evStripAudio">
+                                Strip Audio
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="evCompress" @bind="evCompress" />
+                            <label class="form-check-label" for="evCompress">
+                                Smaller File Size (Compression)
+                            </label>
+                        </div>
+                    </div>
+                    <div class="row g-3 mt-0">
+                        <div class="col-md-6">
+                            <label class="form-label mb-0">Name</label>
+                            <input type="text" class="form-control form-control-sm" @bind="evName" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label mb-0">File Name (on disk)</label>
+                            <input type="text" class="form-control form-control-sm" @bind="evFileName" />
+                            <small class="text-muted">Saved as .mp4 automatically.</small>
                         </div>
                     </div>
                     @if (evError != null)
@@ -767,8 +778,8 @@ else
                     }
                 </div>
                 <div class="modal-footer">
-                    <small class="text-muted me-auto">Green box shows the kept area after cropping.</small>
-                    <button type="button" class="btn btn-secondary" @onclick="() => editItem = null" disabled="@evProcessing">Cancel</button>
+                    <small class="text-muted me-auto">Drag the green box to crop; drag the timeline handles to trim.</small>
+                    <button type="button" class="btn btn-secondary" @onclick="CloseEditAsync" disabled="@evProcessing">Cancel</button>
                     <button type="button" class="btn btn-primary" @onclick="ApplyEditAsync" disabled="@evProcessing">
                         @if (evProcessing)
                         {
@@ -922,8 +933,15 @@ else
     private int evVidW;
     private int evVidH;
     private int evDuration;
+    private bool evStripAudio;
+    private bool evCompress;
+    private string evName = "";
+    private string evFileName = "";
+    private string evAspect = "free";
     private bool evProcessing;
     private string? evError;
+    private DotNetObjectReference<Content>? evDotNetRef;
+    private bool evInitialized;
     private readonly CancellationTokenSource cts = new();
 
     protected override async Task OnInitializedAsync()
@@ -1664,6 +1682,12 @@ else
         this.evCropRight = 0;
         this.evCropTop = 0;
         this.evCropBottom = 0;
+        this.evStripAudio = false;
+        this.evCompress = false;
+        this.evName = $"{item.Name} (Edited)";
+        this.evFileName = $"{Path.GetFileNameWithoutExtension(item.FileName)}_edit";
+        this.evAspect = "free";
+        this.evInitialized = false;
         this.evProcessing = false;
         this.evError = null;
 
@@ -1685,6 +1709,91 @@ else
         this.evEnd = this.evDuration;
     }
 
+    // The edit modal renders only once editItem is set, so we initialise the JS
+    // crop/trim controller here on the first render after it opens, once the
+    // source dimensions/duration are known.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (this.editItem == null || this.evInitialized || this.evVidW <= 0 || this.evDuration <= 0)
+        {
+            return;
+        }
+
+        this.evInitialized = true;
+        this.evDotNetRef ??= DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("videoEditor.init", this.evDotNetRef, new
+        {
+            videoId = "evVideo",
+            stageId = "evStage",
+            trackId = "evTrimTrack",
+            startLabelId = "evStartLabel",
+            endLabelId = "evEndLabel",
+            srcW = this.evVidW,
+            srcH = this.evVidH,
+            duration = (double)this.evDuration,
+            start = this.evStart,
+            end = this.evEnd
+        });
+    }
+
+    [JSInvokable]
+    public Task OnCropChanged(int left, int right, int top, int bottom)
+    {
+        this.evCropLeft = left;
+        this.evCropRight = right;
+        this.evCropTop = top;
+        this.evCropBottom = bottom;
+        return this.InvokeAsync(this.StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnTrimChanged(double start, double end)
+    {
+        this.evStart = start;
+        this.evEnd = end;
+        return this.InvokeAsync(this.StateHasChanged);
+    }
+
+    private async Task StampTrimAsync(string which)
+    {
+        await JS.InvokeVoidAsync("videoEditor.stamp", which);
+    }
+
+    private async Task ApplyAspectAsync()
+    {
+        await JS.InvokeVoidAsync("videoEditor.setAspect", this.evAspect);
+    }
+
+    private async Task ResetCropAsync()
+    {
+        await JS.InvokeVoidAsync("videoEditor.resetCrop");
+    }
+
+    private async Task CloseEditAsync()
+    {
+        if (this.evInitialized)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("videoEditor.dispose");
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit already torn down; the browser-side editor is gone with it.
+            }
+        }
+
+        this.evInitialized = false;
+        this.editItem = null;
+    }
+
+    private static string FormatTime(double seconds)
+    {
+        TimeSpan ts = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        string baseText = ts.Hours > 0 ? $"{ts.Hours}:{ts.Minutes:D2}:{ts.Seconds:D2}" : $"{ts.Minutes}:{ts.Seconds:D2}";
+        return $"{baseText}.{(int)((seconds % 1) * 10)}";
+    }
+
     private async Task ApplyEditAsync()
     {
         if (this.editItem == null)
@@ -1704,6 +1813,18 @@ else
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(this.evName))
+        {
+            this.evError = "Name is required.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(this.evFileName))
+        {
+            this.evError = "File name is required.";
+            return;
+        }
+
         this.evProcessing = true;
         this.evError = null;
         try
@@ -1711,15 +1832,22 @@ else
             string contentPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
             string inputPath = Path.Combine(contentPath, this.editItem.FileName);
 
-            string baseName = Path.GetFileNameWithoutExtension(this.editItem.FileName);
-            string outputFileName = $"{baseName}_edit_{DateTime.UtcNow:yyyyMMddHHmmssfff}.mp4";
+            string sanitizedInput = Path.GetFileName(this.evFileName.Trim());
+            string outputFileName = sanitizedInput.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ? sanitizedInput : sanitizedInput + ".mp4";
             string outputPath = Path.Combine(contentPath, outputFileName);
+
+            if (File.Exists(outputPath))
+            {
+                this.evError = "A file with that name already exists on disk. Choose a different file name.";
+                return;
+            }
 
             double? endSeconds = this.evEnd < this.evDuration ? this.evEnd : null;
 
             await VideoProcessorService.TrimAndCropAsync(
                 inputPath, outputPath, this.evStart, endSeconds, this.evVidW, this.evVidH,
-                this.evCropLeft, this.evCropRight, this.evCropTop, this.evCropBottom, cts.Token);
+                this.evCropLeft, this.evCropRight, this.evCropTop, this.evCropBottom,
+                this.evStripAudio, this.evCompress, cts.Token);
 
             if (!File.Exists(outputPath))
             {
@@ -1732,7 +1860,7 @@ else
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(cts.Token);
             ContentItem newItem = new()
             {
-                Name = $"{this.editItem.Name} (Edited)",
+                Name = this.evName.Trim(),
                 FileName = outputFileName,
                 Type = ContentType.Video,
                 FileSizeBytes = fileSize,
@@ -1744,7 +1872,7 @@ else
             context.ContentItems.Add(newItem);
             await context.SaveChangesAsync(cts.Token);
 
-            this.editItem = null;
+            await this.CloseEditAsync();
             await LoadContent();
         }
         catch (Exception ex)
@@ -1843,5 +1971,6 @@ else
     {
         cts.Cancel();
         cts.Dispose();
+        this.evDotNetRef?.Dispose();
     }
 }

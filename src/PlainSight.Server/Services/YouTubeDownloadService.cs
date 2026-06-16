@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using PlainSight.Server.Data;
 using PlainSight.Shared;
 using YoutubeExplode;
@@ -91,19 +92,56 @@ public class YouTubeDownloadService(
         await using PlainSightDbContext context = await dbFactory.CreateDbContextAsync(ct);
         string? thumbFileName = await videoProcessor.TryCreateThumbnailAsync(filePath, contentPath, ct);
 
-        ContentItem contentItem = new()
+        void ApplyMetadata(ContentItem item)
         {
-            Name = video.Title,
-            FileName = fileName,
-            Type = ContentType.Video,
-            FileSizeBytes = finalSize,
-            DurationSeconds = duration,
-            UploadedAt = DateTime.UtcNow,
-            ThumbnailFileName = thumbFileName
-        };
+            item.Name = video.Title;
+            item.Type = ContentType.Video;
+            item.FileSizeBytes = finalSize;
+            item.DurationSeconds = duration;
+            item.ThumbnailFileName = thumbFileName;
+        }
 
-        context.ContentItems.Add(contentItem);
-        await context.SaveChangesAsync(ct);
+        // The downloaded file is on disk and visible to the 30s background
+        // ContentSyncService for the entire (potentially minutes-long) shrink
+        // transcode, so the sync may have already inserted a record for it.
+        // Reconcile with any existing row instead of racing into the unique
+        // FileName index. RenderWorkerService follows the same pattern.
+        ContentItem? existing = await context.ContentItems.FirstOrDefaultAsync(c => c.FileName == fileName, ct);
+        ContentItem? added = null;
+        if (existing == null)
+        {
+            added = new ContentItem
+            {
+                FileName = fileName,
+                UploadedAt = DateTime.UtcNow
+            };
+            ApplyMetadata(added);
+            context.ContentItems.Add(added);
+        }
+        else
+        {
+            ApplyMetadata(existing);
+        }
+
+        try
+        {
+            await context.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            // The background sync inserted the row in the narrow gap between our
+            // lookup and save. Detach our losing insert, reload the row the sync
+            // committed, and enrich it with the real title/metadata.
+            logger.LogInformation("Content sync won the race for {FileName}; updating its record instead", fileName);
+            if (added != null)
+            {
+                context.Entry(added).State = EntityState.Detached;
+            }
+
+            ContentItem winner = await context.ContentItems.FirstAsync(c => c.FileName == fileName, ct);
+            ApplyMetadata(winner);
+            await context.SaveChangesAsync(ct);
+        }
 
         return video.Title;
     }
