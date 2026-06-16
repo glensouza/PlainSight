@@ -209,6 +209,75 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
         logger.LogInformation("Ken Burns complete: {Output}", outputPath);
     }
 
+    public async Task TrimAndCropAsync(
+        string inputPath,
+        string outputPath,
+        double startSeconds,
+        double? endSeconds,
+        int sourceWidth,
+        int sourceHeight,
+        int cropLeft,
+        int cropRight,
+        int cropTop,
+        int cropBottom,
+        CancellationToken ct = default)
+    {
+        logger.LogInformation(
+            "Trim/crop: {Input} -> {Output} (start={Start}s end={End}s crop L{Left} R{Right} T{Top} B{Bottom})",
+            inputPath, outputPath, startSeconds, endSeconds, cropLeft, cropRight, cropTop, cropBottom);
+
+        int cropWidth = sourceWidth - cropLeft - cropRight;
+        int cropHeight = sourceHeight - cropTop - cropBottom;
+        if (cropWidth <= 0 || cropHeight <= 0)
+        {
+            throw new ArgumentException($"Crop leaves no visible area ({cropWidth}x{cropHeight}); reduce the crop amounts.");
+        }
+
+        StringBuilder arguments = new("-y ");
+
+        // Input seeking (-ss before -i) is fast and frame-accurate here because the output is re-encoded.
+        if (startSeconds > 0)
+        {
+            arguments.Append($"-ss {startSeconds.ToString("F3", CultureInfo.InvariantCulture)} ");
+        }
+
+        arguments.Append($"-i \"{inputPath}\" ");
+
+        if (endSeconds is double end && end > startSeconds)
+        {
+            double duration = end - startSeconds;
+            arguments.Append($"-t {duration.ToString("F3", CultureInfo.InvariantCulture)} ");
+        }
+
+        // Only filter when an actual crop is requested; trim-only re-encodes the full frame.
+        bool hasCrop = cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0;
+        if (hasCrop)
+        {
+            arguments.Append($"-vf \"crop={cropWidth}:{cropHeight}:{cropLeft}:{cropTop}\" ");
+        }
+
+        arguments.Append("-c:v libx264 -preset medium -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -f mp4 ");
+
+        // Write to a .tmp file so the content-sync worker never picks up a partially-written mp4.
+        string tempPath = outputPath + ".tmp";
+        arguments.Append($"\"{tempPath}\"");
+
+        try
+        {
+            await this.RunFfmpegAsync(arguments.ToString(), ct);
+            File.Move(tempPath, outputPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { /* stale temp — ignore */ }
+            }
+        }
+
+        logger.LogInformation("Trim/crop complete: {Output}", outputPath);
+    }
+
     public async Task ImageToVideoAsync(string inputPath, string outputPath, int durationSeconds, CancellationToken ct = default)
     {
         logger.LogInformation("Converting image to video: {InputPath} -> {OutputPath} ({Duration}s)", inputPath, outputPath, durationSeconds);
