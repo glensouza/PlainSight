@@ -285,6 +285,7 @@ public static class DeviceApi
             IConfiguration configuration,
             ILoggerFactory loggerFactory,
             ScreenshotNotificationService notificationService,
+            ImageProcessorService imageProcessor,
             CancellationToken ct) =>
         {
             ILogger logger = loggerFactory.CreateLogger("DeviceApi");
@@ -351,6 +352,8 @@ public static class DeviceApi
             device.LatestScreenshotAt = DateTime.UtcNow;
             await context.SaveChangesAsync(ct);
 
+            await imageProcessor.TryCreateThumbnailAsync(filePath, deviceDir, ct);
+
             await RecordScreenshotHistoryAsync(device, filePath, context, configuration, logger, ct);
 
             notificationService.Notify(deviceId);
@@ -408,6 +411,12 @@ public static class DeviceApi
                 {
                     File.Delete(old.FilePath);
                 }
+
+                string thumbPath = GetThumbnailPath(old.FilePath);
+                if (File.Exists(thumbPath))
+                {
+                    File.Delete(thumbPath);
+                }
             }
             catch (Exception ex)
             {
@@ -419,5 +428,14 @@ public static class DeviceApi
         await context.DeviceScreenshots
             .Where(s => deleteIds.Contains(s.Id))
             .ExecuteDeleteAsync(cancellationToken);
+    }
+
+    // Derives the `<name>_thumb.jpg` sidecar path that ImageProcessorService writes next to a screenshot,
+    // so screenshot cleanup removes the thumbnail too rather than orphaning it on the share.
+    private static string GetThumbnailPath(string filePath)
+    {
+        string directory = Path.GetDirectoryName(filePath) ?? string.Empty;
+        string thumbName = $"{Path.GetFileNameWithoutExtension(filePath)}{VideoProcessorService.ThumbnailSuffix}";
+        return Path.Combine(directory, thumbName);
     }
 }
