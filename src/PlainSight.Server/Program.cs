@@ -65,6 +65,7 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =
 // Add custom services
 builder.Services.AddSingleton<MediaMetadataService>();
 builder.Services.AddSingleton<VideoProcessorService>();
+builder.Services.AddSingleton<ImageProcessorService>();
 builder.Services.AddSingleton<WatermarkRemovalService>();
 builder.Services.AddSingleton<WebsiteRecorder>();
 builder.Services.AddSingleton<RenderQueue>();
@@ -113,7 +114,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
-    options.KnownNetworks.Clear();
+    options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
 });
 

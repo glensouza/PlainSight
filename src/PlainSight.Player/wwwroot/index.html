@@ -448,7 +448,10 @@
 
         vPlayers.forEach((p) => {
             p.addEventListener('ended', () => {
-                if (p !== activePlayer) return;
+                // isSwapping guard: the 150ms timeupdate pre-trigger may already have started the
+                // next item. Without this, the outgoing video's natural 'ended' fires a second
+                // playNext() mid-swap, skipping the item being loaded (and cutting it short).
+                if (p !== activePlayer || isSwapping) return;
                 playNext();
             });
 

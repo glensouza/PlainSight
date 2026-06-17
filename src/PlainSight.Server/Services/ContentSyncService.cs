@@ -9,6 +9,7 @@ public class ContentSyncService(
     IConfiguration configuration,
     MediaMetadataService metadataService,
     VideoProcessorService videoProcessor,
+    ImageProcessorService imageProcessor,
     ScheduleCache scheduleCache,
     ILogger<ContentSyncService> logger)
 {
@@ -123,7 +124,8 @@ public class ContentSyncService(
             }
             else
             {
-                item.ThumbnailFileName = fileName;
+                string? imageThumb = await imageProcessor.TryCreateThumbnailAsync(filePath, contentPath, cancellationToken);
+                item.ThumbnailFileName = imageThumb ?? fileName;
             }
 
             context.ContentItems.Add(item);
@@ -136,6 +138,22 @@ public class ContentSyncService(
         {
             string filePath = Path.Combine(contentPath, item.FileName);
             FileInfo fileInfo = new(filePath);
+
+            // Backfill a missing thumbnail for content imported before thumbnailing existed, or for
+            // images that previously reused the full-resolution file as their thumbnail.
+            if (ThumbnailMissing(item, contentPath))
+            {
+                string? thumb = MediaConstants.IsVideo(item.FileName)
+                    ? await videoProcessor.TryCreateThumbnailAsync(filePath, contentPath, cancellationToken)
+                    : await imageProcessor.TryCreateThumbnailAsync(filePath, contentPath, cancellationToken);
+
+                if (thumb is not null && !string.Equals(thumb, item.ThumbnailFileName, StringComparison.Ordinal))
+                {
+                    item.ThumbnailFileName = thumb;
+                    updated++;
+                    logger.LogInformation("Sync backfilled thumbnail for: {FileName} -> {Thumb}", item.FileName, thumb);
+                }
+            }
 
             if (fileInfo.Length == item.FileSizeBytes)
             {
@@ -169,5 +187,23 @@ public class ContentSyncService(
         }
 
         return (added, removed, updated);
+    }
+
+    // A thumbnail counts as present only when ThumbnailFileName points at a real `_thumb.jpg` sidecar
+    // that exists on disk. A null/empty value, or a legacy image pointing at its own full-resolution
+    // file, is treated as missing so the backfill regenerates a proper downsized thumbnail.
+    private static bool ThumbnailMissing(ContentItem item, string contentPath)
+    {
+        if (string.IsNullOrEmpty(item.ThumbnailFileName))
+        {
+            return true;
+        }
+
+        if (!item.ThumbnailFileName.EndsWith(VideoProcessorService.ThumbnailSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return !File.Exists(Path.Combine(contentPath, item.ThumbnailFileName));
     }
 }

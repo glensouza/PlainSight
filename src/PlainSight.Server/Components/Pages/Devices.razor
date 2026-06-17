@@ -324,7 +324,7 @@ else
                     @if (selectedScreenshot != null)
                     {
                         <div class="text-center mb-3 position-relative">
-                            <img src="@selectedScreenshot.Url?t=@previewCacheBust"
+                            <img src="@selectedScreenshot.Url"
                                  alt="Screenshot @selectedScreenshot.CapturedAt.ToLocalString()"
                                  class="img-fluid rounded"
                                  style="max-height:60vh;" />
@@ -365,7 +365,8 @@ else
                                 <button class="btn p-1 @(isSelectedShot ? "border border-info border-2" : "border")"
                                         @onclick="() => SelectScreenshot(shot)"
                                         title="@shot.CapturedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC">
-                                    <img src="@shot.Url?t=@previewCacheBust"
+                                    <img src="@shot.ThumbUrl"
+                                         onerror="this.onerror=null;this.src='@shot.Url'"
                                          alt="@shot.CapturedAt.ToString("HH:mm:ss")"
                                          style="width:120px;height:68px;object-fit:cover;" />
                                     <div class="text-center" style="font-size:0.7rem;">
@@ -754,7 +755,8 @@ else
                 {
                     Id = s.Id,
                     CapturedAt = s.CapturedAt,
-                    Url = $"/api/media/screenshot/{snapshot.DeviceId}/{Path.GetFileName(s.FilePath)}"
+                    Url = $"/api/media/screenshot/{snapshot.DeviceId}/{Path.GetFileName(s.FilePath)}",
+                    ThumbUrl = $"/api/media/screenshot/{snapshot.DeviceId}/{Path.GetFileNameWithoutExtension(s.FilePath)}_thumb.jpg"
                 })
                 .ToListAsync();
 
@@ -1261,7 +1263,8 @@ else
                 {
                     Id = s.Id,
                     CapturedAt = s.CapturedAt,
-                    Url = $"/api/media/screenshot/{device.DeviceId}/{Path.GetFileName(s.FilePath)}"
+                    Url = $"/api/media/screenshot/{device.DeviceId}/{Path.GetFileName(s.FilePath)}",
+                    ThumbUrl = $"/api/media/screenshot/{device.DeviceId}/{Path.GetFileNameWithoutExtension(s.FilePath)}_thumb.jpg"
                 })
                 .ToListAsync();
             if (screenshotHistory.Count > 0) selectedScreenshot = screenshotHistory[0];
@@ -1277,8 +1280,9 @@ else
 
     private void SelectScreenshot(DeviceScreenshotDto shot)
     {
+        // Each screenshot URL is an immutable, uniquely-named file, so no cache-bust is needed here.
+        // Selecting a thumbnail must not change the other images' URLs, or the browser refetches them all.
         selectedScreenshot = shot;
-        previewCacheBust = DateTime.UtcNow.Ticks.ToString();
     }
 
     private void CloseHistory()
@@ -1304,6 +1308,14 @@ else
                     if (File.Exists(entity.FilePath))
                     {
                         File.Delete(entity.FilePath);
+                    }
+
+                    string thumbPath = Path.Combine(
+                        Path.GetDirectoryName(entity.FilePath) ?? string.Empty,
+                        $"{Path.GetFileNameWithoutExtension(entity.FilePath)}{VideoProcessorService.ThumbnailSuffix}");
+                    if (File.Exists(thumbPath))
+                    {
+                        File.Delete(thumbPath);
                     }
                 }
                 catch (Exception ex)
