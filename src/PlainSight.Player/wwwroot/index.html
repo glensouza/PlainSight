@@ -34,6 +34,7 @@
             background-color: #000;
             opacity: 0;
             z-index: 10;
+            transition: opacity 0.6s ease-in-out;
         }
 
         .player.active {
@@ -41,9 +42,9 @@
             z-index: 20;
         }
 
-        /* The 'entering' class ensures the new content is on top during cross-fade */
+        /* The 'entering' class keeps the incoming content on top during the cross-fade.
+           Opacity is driven by 'active' so it fades in rather than snapping on. */
         .player.entering {
-            opacity: 1;
             z-index: 30;
         }
 
@@ -219,6 +220,7 @@
 
         const bootStartedAt = performance.now();
         const ColdStartSplashMs = 10_000;
+        const FadeMs = 600; // must match the .player opacity transition in CSS
 
         let currentPlaylist = [];
         let brandingItem = null;
@@ -267,6 +269,17 @@
 
         function hideIdle() {
             idleEl.style.display = 'none';
+        }
+
+        // Resolves once the video has painted a frame, so we never fade into a black element.
+        function waitForVideoFrame(video) {
+            return new Promise(resolve => {
+                if (video.requestVideoFrameCallback) {
+                    video.requestVideoFrameCallback(() => resolve());
+                } else {
+                    resolve();
+                }
+            });
         }
 
         function isVideo(filename) {
@@ -380,35 +393,31 @@
             }
             
             try {
-                nextPlayer.classList.add('entering');
-                
+                // Get the media fully ready while it is still invisible (opacity 0), so the
+                // cross-fade reveals real content instead of a black/blank element.
                 if (nextPlayer.tagName === 'VIDEO') {
                     nextPlayer.loop = false;
-                    // For videos, we rely on the 'ended' event and natural duration.
                     await nextPlayer.play();
+                    await waitForVideoFrame(nextPlayer);
                 } else {
-                    // For images, we wait for load
-                    await new Promise((resolve, reject) => {
-                        if (nextPlayer.complete) resolve();
-                        else {
-                            nextPlayer.onload = resolve;
-                            nextPlayer.onerror = reject;
-                        }
-                    });
-                    
+                    // Decode the image before showing it; rejects if the file fails to load.
+                    await nextPlayer.decode();
+
                     // Start timer for next transition based on server-provided duration
                     imageTimer = setTimeout(() => {
                         playNext();
                     }, duration * 1000);
                 }
-                
-                // Perform the swap
-                nextPlayer.classList.add('active');
-                nextPlayer.classList.remove('entering');
-                if (activePlayer && activePlayer !== nextPlayer) {
-                    activePlayer.classList.remove('active');
+
+                // Cross-fade: the ready media fades in on top while the outgoing content fades out.
+                // The outgoing element keeps rendering during the fade, so its tail is no longer cut off.
+                const outgoing = (activePlayer && activePlayer !== nextPlayer) ? activePlayer : null;
+                nextPlayer.classList.add('entering', 'active');
+                if (outgoing) {
+                    outgoing.classList.remove('active');
                 }
-                
+                setTimeout(() => nextPlayer.classList.remove('entering'), FadeMs);
+
                 activePlayer = nextPlayer;
                 hideError();
                 loadingEl.style.display = 'none';
