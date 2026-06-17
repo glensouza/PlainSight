@@ -505,15 +505,26 @@ else
                 EnumerationOptions options = new() { IgnoreInaccessible = true };
                 string[] filePaths = Directory.GetFiles(idlePath, "*", options);
                 
-                idleFiles = filePaths
-                    .Where(f => MediaConstants.IsSupported(f))
-                    .Select(f =>
+                List<FileEntry> entries = [];
+                foreach (string f in filePaths)
+                {
+                    if (!MediaConstants.IsSupported(f))
+                    {
+                        continue;
+                    }
+
+                    try
                     {
                         FileInfo fi = new(f);
-                        return new FileEntry(fi.Name, fi.Length, fi.LastWriteTimeUtc, fi.Extension);
-                    })
-                    .OrderBy(f => f.Name)
-                    .ToList();
+                        entries.Add(new FileEntry(fi.Name, fi.Length, fi.LastWriteTimeUtc, fi.Extension));
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        Logger.LogWarning(ex, "Skipping inaccessible idle file {File}", f);
+                    }
+                }
+
+                idleFiles = entries.OrderBy(f => f.Name).ToList();
             }
             catch (Exception ex)
             {
