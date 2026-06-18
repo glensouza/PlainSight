@@ -36,8 +36,20 @@ public static class MediaPathResolver
                 continue;
             }
 
-            string? match = Directory.GetDirectories(current)
-                .FirstOrDefault(d => string.Equals(Path.GetFileName(d), segment, StringComparison.OrdinalIgnoreCase));
+            string? match;
+            try
+            {
+                match = Directory.GetDirectories(current)
+                    .FirstOrDefault(d => string.Equals(Path.GetFileName(d), segment, StringComparison.OrdinalIgnoreCase));
+            }
+            catch (IOException)
+            {
+                return configuredPath;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return configuredPath;
+            }
 
             if (match == null)
             {

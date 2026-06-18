@@ -27,7 +27,16 @@
       "Bash(echo \"exit:$?\")",
       "Bash(gh issue *)",
       "Bash(git checkout *)",
-      "Bash(dotnet ef *)"
+      "Bash(dotnet ef *)",
+      "Bash(git pull *)",
+      "Bash(git stash *)",
+      "Bash(gh api *)",
+      "Bash(Remove-Item .tmp_pr_comment.md)",
+      "Bash(git *)",
+      "Bash(Select-String -Pattern \"\")",
+      "Bash(Out-Null)",
+      "Bash(Select-Object -Last 30)",
+      "Bash(Select-Object -Last 5)"
     ]
   }
 }
