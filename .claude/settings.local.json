@@ -39,7 +39,27 @@
       "Bash(Select-Object -Last 5)",
       "Bash(grep -v \"^\\\\s*//\")",
       "Bash(grep -v \"//\\\\|MapGroup\")",
-      "Bash(grep -v \"//\")"
+      "Bash(grep -v \"//\")",
+      "WebFetch(domain:github.com)",
+      "PowerShell(Add-Type -AssemblyName System.Drawing; foreach \\($f in @\\(\"$env:TEMP\\\\kts\\\\assets\\\\mask_48.png\",\"$env:TEMP\\\\kts\\\\assets\\\\mask_96.png\"\\)\\) { $img = [System.Drawing.Image]::FromFile\\($f\\); \"$f => $\\($img.Width\\)x$\\($img.Height\\) $\\($img.PixelFormat\\)\"; $img.Dispose\\(\\) })",
+      "PowerShell(New-Item *)",
+      "Bash(ffprobe -v error -select_streams v:0 -show_entries stream=width,height,duration -of default=nw=1 veo-20260615.mp4)",
+      "Bash(ffmpeg -y -ss 4 -i veo-20260615.mp4 -frames:v 1 /tmp/veo_frame.png)",
+      "Bash(ffmpeg -y -i veo_frame.png -vf \"crop=200:200:520:1080,scale=400:400:flags=neighbor\" veo_corner.png)",
+      "Bash(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames,r_frame_rate -of default=nw=1 veo-20260615.mp4)",
+      "Bash(ffmpeg -y -i veo-20260615.mp4 -vf \"crop=220:160:500:1110,tmix=frames=128:weights=1,scale=440:320:flags=neighbor\" -frames:v 1 /tmp/veo_wm_avg.png)",
+      "Bash(ffmpeg -y -i veo_frame.png -vf \"crop=90:60:640:1225,scale=540:360:flags=neighbor\" veo_tight.png)",
+      "Bash(ffmpeg -y -ss 5 -i please_create_a_second_anim.mp4 -frames:v 1 /tmp/userveo_frame.png)",
+      "Bash(ffmpeg -y -i /tmp/userveo_frame.png -vf \"crop=260:160:1010:550,scale=520:320:flags=neighbor\" /tmp/userveo_corner.png)",
+      "Bash(ffmpeg -y -i please_create_a_second_anim.mp4 -vf \"fps=12,crop=220:200:1060:520,tmix=frames=120:weights=1,scale=440:400:flags=neighbor\" -frames:v 1 /tmp/userveo_avg.png)",
+      "Bash(ffmpeg -y -i please_create_a_second_anim.mp4 -vf \"fps=12,crop=240:220:1050:500,tmix=frames=120:weights=1,scale=480:440:flags=neighbor\" -frames:v 1 /tmp/userveo_avg.png)",
+      "Bash(where ffmpeg *)",
+      "Bash(dotnet run *)",
+      "Bash(ffmpeg -y -ss 5 -i \"C:/github/glensouza/PlainSight/screenshots/please_create_a_second_anim.mp4\" -frames:v 1 -vf \"crop=200:200:1080:520\" before_crop.png)",
+      "Bash(ffmpeg -y -ss 5 -i \"C:/tmp/WmVerify/out_dewatermarked.mp4\" -frames:v 1 -vf \"crop=200:200:1080:520\" after_crop.png)",
+      "Bash(cygpath -w \"C:/tmp/WmVerify/before_crop.png\")",
+      "Bash(ffmpeg -y -ss 5 -i \"C:/github/glensouza/PlainSight/screenshots/please_create_a_second_anim.mp4\" -frames:v 1 -vf \"crop=200:200:1080:520\" \"C:/tmp/WmVerify/before_crop.png\")",
+      "Bash(ffmpeg -y -ss 5 -i \"C:/tmp/WmVerify/out_dewatermarked.mp4\" -frames:v 1 -vf \"crop=200:200:1080:520\" \"C:/tmp/WmVerify/after_crop.png\")"
     ]
   }
 }

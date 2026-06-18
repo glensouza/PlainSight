@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using System.Threading;
 using PlainSight.Shared;
 using SkiaSharp;
 
@@ -8,14 +9,26 @@ namespace PlainSight.Server.Services;
 
 public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, MediaMetadataService mediaMetadataService)
 {
-    // Calibrated ROI from issue #83 research, corrected comment 3
-    private const double RoiX = 0.82;
-    private const double RoiY = 0.75;
-    private const double RoiW = 0.15;
-    private const double RoiH = 0.15;
+    // Gemini watermark geometry, ported from kevintsai1202/GeminiWatermarkRemove (MIT).
+    // The watermark is a fixed white star logo composited at a known size, bottom-right margin,
+    // and per-pixel opacity. Removal is exact inverse alpha compositing, no inpainting.
+    private const int LargeThreshold = 1024;
+    private const int MarginLarge = 64;
+    private const int MarginSmall = 32;
+    private const int MarginLargeNew = 192;
+    private const int MarginSmallNew = 96;
+    private const double LogoValue = 255.0;
+    private const double AlphaThreshold = 0.002;
+    private const double MaxAlpha = 0.99;
+    private const double PositionScoreTolerance = 0.05;
+    private const double PositionScoreThreshold = 0.2;
 
-    // Estimated watermark alpha from open-source tool research
-    private const double WatermarkAlpha = 0.18;
+    private const string Mask48Resource = "PlainSight.Server.Assets.Watermark.mask_48.png";
+    private const string Mask96Resource = "PlainSight.Server.Assets.Watermark.mask_96.png";
+
+    private static readonly Lock MaskLock = new();
+    private static WatermarkMask? smallMask;
+    private static WatermarkMask? largeMask;
 
     public async Task<string> RemoveWatermarkAsync(string inputPath, string outputPath, CancellationToken ct = default)
     {
@@ -36,28 +49,22 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
 
     private async Task<string> RemoveImageWatermarkAsync(string inputPath, string outputPath, CancellationToken ct)
     {
-        logger.LogInformation("Removing watermark from image via reverse alpha blending: {InputPath}", inputPath);
+        logger.LogInformation("Removing Gemini watermark from image via reverse alpha blending: {InputPath}", inputPath);
 
         await Task.Run(() =>
         {
-            using SKBitmap bitmap = SKBitmap.Decode(inputPath);
-            if (bitmap is null)
+            using SKBitmap bitmap = SKBitmap.Decode(inputPath) ?? throw new InvalidOperationException($"Failed to decode image: {inputPath}");
+
+            WatermarkDetection? detection = this.DetectWatermark(bitmap);
+            if (detection is { } located)
             {
-                throw new InvalidOperationException($"Failed to decode image: {inputPath}");
+                WatermarkMask mask = GetMask(located.Large);
+                logger.LogInformation("Watermark located at ({X},{Y}) with gain {Gain}", located.X, located.Y, located.Gain);
+                ApplyRemoval(bitmap, mask, located.X, located.Y, located.Gain);
             }
-
-            (int x, int y, int w, int h) = this.CalculateRoi(bitmap.Width, bitmap.Height);
-
-            for (int py = y; py < y + h && py < bitmap.Height; py++)
+            else
             {
-                for (int px = x; px < x + w && px < bitmap.Width; px++)
-                {
-                    SKColor pixel = bitmap.GetPixel(px, py);
-                    byte r = ReverseAlpha(pixel.Red);
-                    byte g = ReverseAlpha(pixel.Green);
-                    byte b = ReverseAlpha(pixel.Blue);
-                    bitmap.SetPixel(px, py, new SKColor(r, g, b, pixel.Alpha));
-                }
+                logger.LogWarning("Image too small or no watermark detected; saving an unaltered copy");
             }
 
             using SKImage image = SKImage.FromBitmap(bitmap);
@@ -70,45 +77,394 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
         return outputPath;
     }
 
+    // Veo video reuses the same static Gemini star at constant opacity, so detection runs on a single
+    // sample frame and the result drives one ffmpeg blend pass that applies the reverse-alpha formula to
+    // every frame. B is the full-frame mask brightness (0 outside the logo => pixel unchanged).
     private async Task<string> RemoveVideoWatermarkAsync(string inputPath, string outputPath, CancellationToken ct)
     {
-        logger.LogInformation("Removing watermark from video via ffmpeg delogo: {InputPath}", inputPath);
+        logger.LogInformation("Removing watermark from video via ffmpeg reverse-alpha blend: {InputPath}", inputPath);
 
         (int width, int height) = await mediaMetadataService.GetVideoDimensionsAsync(inputPath, ct);
-        (int x, int y, int w, int h) = this.CalculateRoi(width, height);
+        int duration = await mediaMetadataService.GetVideoDurationAsync(inputPath, ct);
 
-        StringBuilder args = new();
-        args.Append(CultureInfo.InvariantCulture, $"-y -i \"{inputPath}\" -vf \"delogo=x={x}:y={y}:w={w}:h={h}:show=0\" -c:a copy -movflags +faststart \"{outputPath}\"");
+        string framePath = Path.Combine(Path.GetTempPath(), $"ps_wm_frame_{Guid.NewGuid():N}.png");
+        string maskPath = Path.Combine(Path.GetTempPath(), $"ps_wm_mask_{Guid.NewGuid():N}.png");
+        try
+        {
+            await this.ExtractFrameAsync(inputPath, framePath, Math.Max(0, duration / 2), ct);
 
-        await this.RunFfmpegAsync(args.ToString(), ct);
+            WatermarkDetection? detection;
+            using (SKBitmap frame = SKBitmap.Decode(framePath) ?? throw new InvalidOperationException($"Failed to decode sample frame: {framePath}"))
+            {
+                detection = this.DetectWatermark(frame);
+            }
 
-        logger.LogInformation("Video watermark removal complete: {OutputPath}", outputPath);
-        return outputPath;
+            if (detection is not { } located)
+            {
+                logger.LogWarning("No watermark detected in video sample frame; copying unaltered: {InputPath}", inputPath);
+                await this.RunFfmpegAsync($"-y -i \"{inputPath}\" -c copy -movflags +faststart \"{outputPath}\"", ct);
+                return outputPath;
+            }
+
+            logger.LogInformation("Video watermark located at ({X},{Y}) with gain {Gain}", located.X, located.Y, located.Gain);
+            BuildFullFrameMask(located, width, height, maskPath);
+
+            string gain = located.Gain.ToString("0.###", CultureInfo.InvariantCulture);
+            // alpha = min(gain * B/255, MaxAlpha); restored = (A - alpha*255) / (1 - alpha).
+            string alpha = $"min({gain}*B/255,{MaxAlpha.ToString("0.##", CultureInfo.InvariantCulture)})";
+            string expr = $"clip((A-{alpha}*255)/(1-{alpha}),0,255)";
+
+            StringBuilder args = new();
+            args.Append(CultureInfo.InvariantCulture, $"-y -i \"{inputPath}\" -loop 1 -i \"{maskPath}\" -filter_complex \"[0:v]format=gbrp[v];[1:v]format=gbrp[m];[v][m]blend=c0_expr='{expr}':c1_expr='{expr}':c2_expr='{expr}':shortest=1,format=yuv420p[out]\" -map \"[out]\" -map 0:a? -c:a copy -movflags +faststart \"{outputPath}\"");
+
+            await this.RunFfmpegAsync(args.ToString(), ct);
+
+            logger.LogInformation("Video watermark removal complete: {OutputPath}", outputPath);
+            return outputPath;
+        }
+        finally
+        {
+            TryDelete(framePath);
+            TryDelete(maskPath);
+        }
     }
 
-    private (int x, int y, int w, int h) CalculateRoi(int width, int height)
+    private async Task ExtractFrameAsync(string inputPath, string framePath, int seekSeconds, CancellationToken ct)
     {
-        int x = (int)(RoiX * width);
-        int y = (int)(RoiY * height);
-        int w = (int)(RoiW * width);
-        int h = (int)(RoiH * height);
-
-        if (x + w > width)
-        {
-            w = width - x;
-        }
-
-        if (y + h > height)
-        {
-            h = height - y;
-        }
-
-        return (x, y, w, h);
+        await this.RunFfmpegAsync($"-y -ss {seekSeconds.ToString(CultureInfo.InvariantCulture)} -i \"{inputPath}\" -frames:v 1 \"{framePath}\"", ct);
     }
 
-    private static byte ReverseAlpha(byte channel)
+    // Black canvas at the video resolution with the chosen white-on-black mask composited at the detected
+    // position. ffmpeg reads its pixel brightness directly as B in the blend expression.
+    private static void BuildFullFrameMask(WatermarkDetection detection, int width, int height, string maskPath)
     {
-        return ClampToByte((channel - 255.0 * WatermarkAlpha) / (1.0 - WatermarkAlpha));
+        string resource = detection.Large ? Mask96Resource : Mask48Resource;
+        using Stream stream = typeof(WatermarkRemovalService).Assembly.GetManifestResourceStream(resource) ?? throw new InvalidOperationException($"Embedded watermark mask not found: {resource}");
+        using SKBitmap maskBitmap = SKBitmap.Decode(stream) ?? throw new InvalidOperationException($"Failed to decode watermark mask: {resource}");
+        using SKBitmap canvas = new(width, height);
+        using (SKCanvas drawCanvas = new(canvas))
+        {
+            drawCanvas.Clear(SKColors.Black);
+            drawCanvas.DrawBitmap(maskBitmap, detection.X, detection.Y);
+        }
+
+        using SKImage image = SKImage.FromBitmap(canvas);
+        using SKData data = image.Encode(SKEncodedImageFormat.Png, 100);
+        using FileStream fs = File.Create(maskPath);
+        data.SaveTo(fs);
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+            /* best-effort temp cleanup */
+        }
+    }
+
+    // Detect the watermark on a single bitmap (image or sampled video frame): selects mask size by
+    // resolution, locates the bottom-right region by correlation, and auto-tunes the removal gain.
+    public WatermarkDetection? DetectWatermark(SKBitmap bitmap)
+    {
+        bool large = bitmap.Width > LargeThreshold && bitmap.Height > LargeThreshold;
+        WatermarkMask mask = GetMask(large);
+
+        (int X, int Y)? region = SelectRegion(bitmap, mask, large);
+        if (region is not { } located)
+        {
+            return null;
+        }
+
+        double gain = EstimateOptimalGain(bitmap, mask, located.X, located.Y);
+        return new WatermarkDetection { X = located.X, Y = located.Y, Width = mask.Width, Height = mask.Height, Gain = gain, Large = large };
+    }
+
+    private static WatermarkMask GetMask(bool large)
+    {
+        lock (MaskLock)
+        {
+            if (large)
+            {
+                largeMask ??= LoadMask(Mask96Resource);
+                return largeMask;
+            }
+
+            smallMask ??= LoadMask(Mask48Resource);
+            return smallMask;
+        }
+    }
+
+    private static WatermarkMask LoadMask(string resourceName)
+    {
+        using Stream stream = typeof(WatermarkRemovalService).Assembly.GetManifestResourceStream(resourceName) ?? throw new InvalidOperationException($"Embedded watermark mask not found: {resourceName}");
+        using SKBitmap bitmap = SKBitmap.Decode(stream) ?? throw new InvalidOperationException($"Failed to decode watermark mask: {resourceName}");
+
+        float[] alphas = new float[bitmap.Width * bitmap.Height];
+        for (int y = 0; y < bitmap.Height; y++)
+        {
+            for (int x = 0; x < bitmap.Width; x++)
+            {
+                SKColor pixel = bitmap.GetPixel(x, y);
+                byte maxChannel = Math.Max(pixel.Red, Math.Max(pixel.Green, pixel.Blue));
+                alphas[(y * bitmap.Width) + x] = maxChannel / 255f;
+            }
+        }
+
+        return new WatermarkMask { Width = bitmap.Width, Height = bitmap.Height, Alphas = alphas };
+    }
+
+    // Anchor the mask at each known bottom-right margin and pick the candidate whose brightness
+    // best correlates with the logo shape. Prefers the newer 192/96px margin when scores are close.
+    private static (int X, int Y)? SelectRegion(SKBitmap bitmap, WatermarkMask mask, bool large)
+    {
+        int width = bitmap.Width;
+        int height = bitmap.Height;
+        int[] margins = large ? [MarginLarge, MarginLargeNew] : [MarginSmall, MarginSmallNew];
+
+        double bestScore = double.NegativeInfinity;
+        (int X, int Y)? best = null;
+        (int X, int Y)? newer = null;
+        double newerScore = double.NegativeInfinity;
+
+        foreach (int margin in margins)
+        {
+            int x = width - margin - mask.Width;
+            int y = height - margin - mask.Height;
+            if (x < 0 || y < 0)
+            {
+                continue;
+            }
+
+            double score = ScoreCandidate(bitmap, mask, x, y);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = (x, y);
+            }
+
+            if (margin is MarginLargeNew or MarginSmallNew)
+            {
+                newer = (x, y);
+                newerScore = score;
+            }
+        }
+
+        if (newer is { } newerRegion && newerScore >= PositionScoreThreshold && newerScore >= bestScore - PositionScoreTolerance)
+        {
+            return newerRegion;
+        }
+
+        return best;
+    }
+
+    // Pearson correlation between the mask opacity and the image brightness over a candidate region.
+    private static double ScoreCandidate(SKBitmap bitmap, WatermarkMask mask, int posX, int posY)
+    {
+        int count = mask.Width * mask.Height;
+        double sumMask = 0;
+        double sumGray = 0;
+
+        for (int my = 0; my < mask.Height; my++)
+        {
+            for (int mx = 0; mx < mask.Width; mx++)
+            {
+                sumMask += mask.Alphas[(my * mask.Width) + mx];
+                sumGray += Gray(bitmap.GetPixel(posX + mx, posY + my));
+            }
+        }
+
+        double meanMask = sumMask / count;
+        double meanGray = sumGray / count;
+        double covariance = 0;
+        double maskVariance = 0;
+        double grayVariance = 0;
+
+        for (int my = 0; my < mask.Height; my++)
+        {
+            for (int mx = 0; mx < mask.Width; mx++)
+            {
+                double maskDiff = mask.Alphas[(my * mask.Width) + mx] - meanMask;
+                double grayDiff = Gray(bitmap.GetPixel(posX + mx, posY + my)) - meanGray;
+                covariance += maskDiff * grayDiff;
+                maskVariance += maskDiff * maskDiff;
+                grayVariance += grayDiff * grayDiff;
+            }
+        }
+
+        if (maskVariance <= 0 || grayVariance <= 0)
+        {
+            return 0;
+        }
+
+        return covariance / Math.Sqrt(maskVariance * grayVariance);
+    }
+
+    // Sweep the strength gain and pick the value that drives the residual's correlation with the
+    // mask closest to zero: too weak leaves a bright logo (positive correlation), too strong leaves
+    // a dark hole (negative correlation), so |correlation| is minimised when the logo is neutralised.
+    private static double EstimateOptimalGain(SKBitmap bitmap, WatermarkMask mask, int posX, int posY)
+    {
+        int width = bitmap.Width;
+        int height = bitmap.Height;
+        int count = mask.Width * mask.Height;
+
+        double[] regionR = new double[count];
+        double[] regionG = new double[count];
+        double[] regionB = new double[count];
+        for (int my = 0; my < mask.Height; my++)
+        {
+            for (int mx = 0; mx < mask.Width; mx++)
+            {
+                int index = (my * mask.Width) + mx;
+                int ix = posX + mx;
+                int iy = posY + my;
+                if (ix >= width || iy >= height)
+                {
+                    continue;
+                }
+
+                SKColor pixel = bitmap.GetPixel(ix, iy);
+                regionR[index] = pixel.Red;
+                regionG[index] = pixel.Green;
+                regionB[index] = pixel.Blue;
+            }
+        }
+
+        double sumMask = 0;
+        int validCount = 0;
+        for (int i = 0; i < count; i++)
+        {
+            if (mask.Alphas[i] > 0.05)
+            {
+                sumMask += mask.Alphas[i];
+                validCount++;
+            }
+        }
+
+        if (validCount == 0)
+        {
+            return 0.5;
+        }
+
+        double meanMask = sumMask / validCount;
+        double maskVariance = 0;
+        for (int i = 0; i < count; i++)
+        {
+            if (mask.Alphas[i] > 0.05)
+            {
+                double diff = mask.Alphas[i] - meanMask;
+                maskVariance += diff * diff;
+            }
+        }
+
+        double bestGain = 0.5;
+        double minAbsCorrelation = double.MaxValue;
+        double[] reconGray = new double[count];
+
+        for (double gain = 0.1; gain <= 1.2 + 1e-9; gain += 0.02)
+        {
+            double sumGray = 0;
+            for (int i = 0; i < count; i++)
+            {
+                double alpha = mask.Alphas[i] * gain;
+                if (alpha > MaxAlpha)
+                {
+                    alpha = MaxAlpha;
+                }
+
+                double oneMinusAlpha = 1.0 - alpha;
+                double r = Restore(regionR[i], alpha, oneMinusAlpha);
+                double g = Restore(regionG[i], alpha, oneMinusAlpha);
+                double b = Restore(regionB[i], alpha, oneMinusAlpha);
+                double gray = (r * 0.299) + (g * 0.587) + (b * 0.114);
+                reconGray[i] = gray;
+
+                if (mask.Alphas[i] > 0.05)
+                {
+                    sumGray += gray;
+                }
+            }
+
+            double meanGray = sumGray / validCount;
+            double covariance = 0;
+            double grayVariance = 0;
+            for (int i = 0; i < count; i++)
+            {
+                if (mask.Alphas[i] > 0.05)
+                {
+                    double maskDiff = mask.Alphas[i] - meanMask;
+                    double grayDiff = reconGray[i] - meanGray;
+                    covariance += maskDiff * grayDiff;
+                    grayVariance += grayDiff * grayDiff;
+                }
+            }
+
+            if (grayVariance > 0 && maskVariance > 0)
+            {
+                double absCorrelation = Math.Abs(covariance / Math.Sqrt(maskVariance * grayVariance));
+                if (absCorrelation < minAbsCorrelation)
+                {
+                    minAbsCorrelation = absCorrelation;
+                    bestGain = gain;
+                }
+            }
+        }
+
+        return Math.Round(bestGain, 2);
+    }
+
+    private static void ApplyRemoval(SKBitmap bitmap, WatermarkMask mask, int posX, int posY, double gain)
+    {
+        int width = bitmap.Width;
+        int height = bitmap.Height;
+
+        for (int my = 0; my < mask.Height; my++)
+        {
+            for (int mx = 0; mx < mask.Width; mx++)
+            {
+                int ix = posX + mx;
+                int iy = posY + my;
+                if (ix >= width || iy >= height)
+                {
+                    continue;
+                }
+
+                double alpha = mask.Alphas[(my * mask.Width) + mx] * gain;
+                if (alpha < AlphaThreshold)
+                {
+                    continue;
+                }
+
+                if (alpha > MaxAlpha)
+                {
+                    alpha = MaxAlpha;
+                }
+
+                double oneMinusAlpha = 1.0 - alpha;
+                SKColor pixel = bitmap.GetPixel(ix, iy);
+                byte r = ClampToByte(Restore(pixel.Red, alpha, oneMinusAlpha));
+                byte g = ClampToByte(Restore(pixel.Green, alpha, oneMinusAlpha));
+                byte b = ClampToByte(Restore(pixel.Blue, alpha, oneMinusAlpha));
+                bitmap.SetPixel(ix, iy, new SKColor(r, g, b, pixel.Alpha));
+            }
+        }
+    }
+
+    private static double Restore(double channel, double alpha, double oneMinusAlpha)
+    {
+        return (channel - (alpha * LogoValue)) / oneMinusAlpha;
+    }
+
+    private static double Gray(SKColor pixel)
+    {
+        return (pixel.Red * 0.299) + (pixel.Green * 0.587) + (pixel.Blue * 0.114);
     }
 
     private static byte ClampToByte(double value)
@@ -127,13 +483,6 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
             _ => SKEncodedImageFormat.Png
         };
     }
-
-    // Fallback for busy backgrounds: when the delogo filter produces visible artefacts on complex
-    // imagery (gradients, textures, high-frequency patterns), shell out to IOPaint with its LaMa
-    // inpainting model: iopaint run --model=lama --device=cpu --image=input.png --mask=mask.png
-    // --output=output.png. IOPaint is an open-source CLI (Python) available via pip. The mask can
-    // be generated with the same ROI calculation above. This is NOT implemented in C# — run
-    // manually on a Mac or Linux machine with a GPU when ffmpeg delogo quality is insufficient.
 
     private async Task RunFfmpegAsync(string args, CancellationToken ct)
     {
@@ -193,5 +542,12 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
             logger.LogError("FFmpeg failed with exit code {ExitCode}. Output: {Output}", process.ExitCode, errorDetails);
             throw new InvalidOperationException($"FFmpeg exited with code {process.ExitCode}. Details: {errorDetails}");
         }
+    }
+
+    private sealed class WatermarkMask
+    {
+        public required int Width { get; init; }
+        public required int Height { get; init; }
+        public required float[] Alphas { get; init; }
     }
 }

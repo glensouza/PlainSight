@@ -67,6 +67,8 @@ builder.Services.AddSingleton<MediaMetadataService>();
 builder.Services.AddSingleton<VideoProcessorService>();
 builder.Services.AddSingleton<ImageProcessorService>();
 builder.Services.AddSingleton<WatermarkRemovalService>();
+builder.Services.AddSingleton<WatermarkVideoQueue>();
+builder.Services.AddHostedService<WatermarkVideoWorkerService>();
 builder.Services.AddSingleton<WebsiteRecorder>();
 builder.Services.AddSingleton<RenderQueue>();
 builder.Services.AddHostedService<RenderWorkerService>();
