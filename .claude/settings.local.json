@@ -36,7 +36,10 @@
       "Bash(Select-String -Pattern \"\")",
       "Bash(Out-Null)",
       "Bash(Select-Object -Last 30)",
-      "Bash(Select-Object -Last 5)"
+      "Bash(Select-Object -Last 5)",
+      "Bash(grep -v \"^\\\\s*//\")",
+      "Bash(grep -v \"//\\\\|MapGroup\")",
+      "Bash(grep -v \"//\")"
     ]
   }
 }
