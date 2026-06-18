@@ -13,9 +13,10 @@ public class ContentSyncService(
     ScheduleCache scheduleCache,
     ILogger<ContentSyncService> logger)
 {
-    // Serializes all sync executions in this process so the background worker
-    // and UI-triggered refreshes cannot race into the unique FileName index.
-    private static readonly SemaphoreSlim SyncLock = new(1, 1);
+    // Serializes all sync executions in this process so the background worker, UI-triggered
+    // refreshes, and media-producing workers (e.g. WatermarkVideoWorkerService) cannot race
+    // into the unique FileName index when writing a new file then inserting its DB record.
+    internal static readonly SemaphoreSlim SyncLock = new(1, 1);
 
     public async Task<(int Added, int Removed, int Updated)> SyncAsync(CancellationToken cancellationToken = default)
     {

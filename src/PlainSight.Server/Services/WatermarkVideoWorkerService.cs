@@ -27,26 +27,38 @@ public sealed class WatermarkVideoWorkerService(
                 string extension = Path.GetExtension(job.SourceFileName);
 
                 await using PlainSightDbContext dbContext = await dbFactory.CreateDbContextAsync(stoppingToken);
-                string outputFileName = await GetUniqueFileNameAsync(dbContext, contentPath, baseName, extension, stoppingToken);
-                string outputPath = Path.Combine(contentPath, outputFileName);
+                string outputFileName;
 
-                await watermarkRemovalService.RemoveWatermarkAsync(inputPath, outputPath, stoppingToken);
-                int duration = await mediaMetadataService.GetVideoDurationAsync(outputPath, stoppingToken);
-
-                ContentItem newItem = new()
+                // Hold the content-sync lock across the file write + insert so the sync worker cannot
+                // scan the freshly written file and insert its own row first, colliding on FileName.
+                await ContentSyncService.SyncLock.WaitAsync(stoppingToken);
+                try
                 {
-                    Name = $"{job.SourceName} (de-watermarked)",
-                    FileName = outputFileName,
-                    Type = ContentType.Video,
-                    FileSizeBytes = new FileInfo(outputPath).Length,
-                    DurationSeconds = duration,
-                    UploadedAt = DateTime.UtcNow,
-                    SourceContentItemId = job.SourceContentItemId,
-                    Description = job.Description,
-                    SourceUrl = job.SourceUrl
-                };
-                dbContext.ContentItems.Add(newItem);
-                await dbContext.SaveChangesAsync(stoppingToken);
+                    outputFileName = await GetUniqueFileNameAsync(dbContext, contentPath, baseName, extension, stoppingToken);
+                    string outputPath = Path.Combine(contentPath, outputFileName);
+
+                    await watermarkRemovalService.RemoveWatermarkAsync(inputPath, outputPath, stoppingToken);
+                    int duration = await mediaMetadataService.GetVideoDurationAsync(outputPath, stoppingToken);
+
+                    ContentItem newItem = new()
+                    {
+                        Name = $"{job.SourceName} (de-watermarked)",
+                        FileName = outputFileName,
+                        Type = ContentType.Video,
+                        FileSizeBytes = new FileInfo(outputPath).Length,
+                        DurationSeconds = duration,
+                        UploadedAt = DateTime.UtcNow,
+                        SourceContentItemId = job.SourceContentItemId,
+                        Description = job.Description,
+                        SourceUrl = job.SourceUrl
+                    };
+                    dbContext.ContentItems.Add(newItem);
+                    await dbContext.SaveChangesAsync(stoppingToken);
+                }
+                finally
+                {
+                    ContentSyncService.SyncLock.Release();
+                }
 
                 job.OutputFileName = outputFileName;
                 job.Status = WatermarkVideoJobStatus.Done;
