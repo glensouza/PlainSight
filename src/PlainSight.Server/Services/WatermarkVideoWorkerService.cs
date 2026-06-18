@@ -25,13 +25,14 @@ public sealed class WatermarkVideoWorkerService(
                 string inputPath = Path.Combine(contentPath, job.SourceFileName);
                 string baseName = Path.GetFileNameWithoutExtension(job.SourceFileName);
                 string extension = Path.GetExtension(job.SourceFileName);
-                string outputFileName = $"{baseName}_dewatermarked{extension}";
+
+                await using PlainSightDbContext dbContext = await dbFactory.CreateDbContextAsync(stoppingToken);
+                string outputFileName = await GetUniqueFileNameAsync(dbContext, contentPath, baseName, extension, stoppingToken);
                 string outputPath = Path.Combine(contentPath, outputFileName);
 
                 await watermarkRemovalService.RemoveWatermarkAsync(inputPath, outputPath, stoppingToken);
                 int duration = await mediaMetadataService.GetVideoDurationAsync(outputPath, stoppingToken);
 
-                await using PlainSightDbContext dbContext = await dbFactory.CreateDbContextAsync(stoppingToken);
                 ContentItem newItem = new()
                 {
                     Name = $"{job.SourceName} (de-watermarked)",
@@ -63,5 +64,20 @@ public sealed class WatermarkVideoWorkerService(
                 logger.LogError(ex, "Video watermark removal job {Id} failed: {SourceFileName}", job.Id, job.SourceFileName);
             }
         }
+    }
+
+    // The de-watermarked name is deterministic, so re-running on an already-processed file would collide
+    // on the unique FileName index. Append a counter until both the DB and disk are free.
+    private static async Task<string> GetUniqueFileNameAsync(PlainSightDbContext dbContext, string contentPath, string baseName, string extension, CancellationToken ct)
+    {
+        string candidate = $"{baseName}_dewatermarked{extension}";
+        int suffix = 2;
+        while (await dbContext.ContentItems.AnyAsync(c => c.FileName == candidate, ct) || File.Exists(Path.Combine(contentPath, candidate)))
+        {
+            candidate = $"{baseName}_dewatermarked_{suffix}{extension}";
+            suffix++;
+        }
+
+        return candidate;
     }
 }
