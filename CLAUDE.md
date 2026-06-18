@@ -68,22 +68,28 @@ Player → `POST /api/device/heartbeat` → server upserts Device record → res
 
 **Self-update:** `updateUrl` in heartbeat response points to `/api/updates/{version}/binary`. Player downloads, swaps binary on disk (keeping `.bak`), then calls `Environment.Exit(0)` so systemd restarts it with the new binary. No signature verification is currently implemented.
 
-**Content delivery:** Files live on a Samba share mounted at `/mnt/signage`. The server writes rendered MP4s there via `ContentController`. Players stream directly from the SMB mount (`/mnt/signage/content`).
+**Content delivery:** Files live on a Samba share mounted at `/mnt/plainsight`. The server writes rendered MP4s there. Players stream directly from the SMB mount (`/mnt/plainsight/content`).
 
 **Player display:** `PlainSight.Player` runs an embedded Kestrel web server serving an HTML5 video player page at `/player`. `KioskService` launches the system Chromium browser in kiosk mode pointed at that local page. `PlaylistService` reads `playlist.json` (with path-traversal validation) or falls back to a directory scan of the content path.
 
 ### REST API summary
 
+Content management (upload, delete, rename, playlists, schedules) is performed directly through Blazor server-side logic, not REST. The REST surface is player-facing and transform-only.
+
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/device/heartbeat` | Player telemetry; returns update/screenshot commands |
-| GET | `/api/device` | List all devices |
-| POST | `/api/device/{deviceId}/screenshot` | Set `ScreenshotRequested` flag |
-| GET | `/api/content` | List content items |
-| POST | `/api/content/render` | Render URL to video via PuppeteerSharp |
-| POST | `/api/content/upload` | Upload video/image to SMB share |
-| DELETE | `/api/content/{id}` | Remove content |
-| GET/POST | `/api/playlists` | Playlist CRUD |
+| POST | `/api/device/heartbeat` | Player telemetry; returns `{ requestScreenshot, updateUrl, scheduleChanged }` |
+| POST | `/api/device/{deviceId}/logs` | Player log upload |
+| POST | `/api/device/{deviceId}/screenshot/notify` | Player notifies server a screenshot was written to SMB |
+| GET | `/api/media/content/{fileName}` | Serve content file from SMB share |
+| GET | `/api/media/idle/{fileName}` | Serve idle/fallback file |
+| GET | `/api/media/branding/{fileName}` | Serve branding asset |
+| GET | `/api/media/screenshot/{deviceId}/{fileName}` | Serve screenshot |
+| POST | `/api/content/{id}/image-to-video` | Convert image to looping video via ffmpeg |
+| POST | `/api/content/{id}/extract-frame` | Extract first/last frame from video |
+| POST | `/api/content/{id}/ken-burns` | Generate Ken Burns zoom-pan video from image |
+| GET | `/api/updates/latest/binary` | Download latest player binary |
+| GET | `/api/updates/{version}/binary` | Download specific player version binary |
 
 ### Blazor pages
 
@@ -93,12 +99,14 @@ All pages in `src/PlainSight.Server/Components/Pages/` use `@rendermode Interact
 
 `PlainSightDbContext` manages four tables. `Device.DeviceId` (string, unique) is the natural key used in all player/API interactions. `ContentItem.FileName` is unique. `Playlist` → `PlaylistItem` → `ContentItem` with cascade delete on `PlaylistItem` and restrict on `ContentItem`.
 
+`ContentItem` notable fields: `SourceContentItemId` (int?, FK to self — tracks the original item a transform was derived from), `ThumbnailFileName` (string?, sidecar `_thumb.jpg` generated at upload/sync), `CompanionContentItemId` + `CompanionPosition` (`Before`/`After` — virtual pairing; server expands into playlist at serve time, no baked MP4).
+
 ### Player environment variables
 
 | Variable | Default | Used by |
 |---|---|---|
 | `ServerUrl` | `http://plainsight-server` | PlainSight.Player |
-| `ContentPath` | `/mnt/signage/content` | PlainSight.Player |
+| `ContentPath` | `/mnt/plainsight/content` | PlainSight.Player |
 
 ### Versioning
 

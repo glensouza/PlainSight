@@ -1,6 +1,6 @@
 # PlainSight API Documentation
 
-REST API reference for the PlainSight server.
+REST API reference for the PlainSight server. All routes requiring authentication use cookie-based auth (admin UI login). Content management (upload, delete, rename, playlists, schedules) is performed server-side via Blazor — these routes are not part of the REST surface.
 
 ## Base URL
 
@@ -8,207 +8,204 @@ REST API reference for the PlainSight server.
 http://localhost:8080/api
 ```
 
-## Endpoints
+---
 
-### Device Management
+## Device API
 
-#### Send Heartbeat
+### POST /api/device/heartbeat
 
-Report device telemetry and receive commands.
+Player telemetry. Creates or upserts the device record and returns pending commands.
 
-**Endpoint**: `POST /device/heartbeat`
-
-**Request Body**:
+**Request body**:
 ```json
 {
-  "deviceId": "string",
-  "appVersion": "string",
-  "currentFileName": "string (optional)",
-  "timestamp": "datetime"
+  "deviceId": "plainsight-sanctuary",
+  "appVersion": "1.18.0",
+  "currentFileName": "worship.mp4",
+  "timestamp": "2026-06-17T03:00:00Z"
 }
 ```
 
 **Response**:
 ```json
 {
-  "requestScreenshot": boolean,
-  "updateUrl": "string (optional)"
+  "requestScreenshot": false,
+  "updateUrl": "/api/updates/1.19.0/binary",
+  "scheduleChanged": false
 }
 ```
 
-**Example**:
-```bash
-curl -X POST http://localhost:8080/api/device/heartbeat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "deviceId": "plainsight-sanctuary",
-    "appVersion": "1.0.0",
-    "currentFileName": "worship.mp4",
-    "timestamp": "2026-01-25T22:00:00Z"
-  }'
+`updateUrl` is `null` when no update is pending. `requestScreenshot` clears after the player calls `screenshot/notify`.
+
+---
+
+### POST /api/device/{deviceId}/logs
+
+Upload a log batch from the player. Body is plain text (newline-separated log lines). Returns `204 No Content`.
+
+---
+
+### POST /api/device/{deviceId}/screenshot/notify
+
+Player calls this after writing a PNG to `/mnt/plainsight/screenshots/{deviceId}/`. Body:
+```json
+{ "fileName": "screenshot_1718589600.png" }
 ```
+Returns `200 OK`. Server verifies the file exists on the share and adds it to the screenshot history.
 
-#### Get All Devices
+---
 
-Retrieve list of all registered devices.
+## Media Serving
 
-**Endpoint**: `GET /device`
+Serves files directly from the SMB share. No auth required (served to players).
+
+### GET /api/media/content/{fileName}
+
+Serve a content file from `/mnt/plainsight/content/`. Supports byte-range requests for streaming.
+
+### GET /api/media/idle/{fileName}
+
+Serve an idle/fallback loop file from `/mnt/plainsight/idle/`.
+
+### GET /api/media/branding/{fileName}
+
+Serve a branding asset from `/mnt/plainsight/branding/`.
+
+### GET /api/media/screenshot/{deviceId}/{fileName}
+
+Serve a screenshot from `/mnt/plainsight/screenshots/{deviceId}/`.
+
+---
+
+## Content Transforms
+
+Server-side media processing. All routes require authentication.
+
+### POST /api/content/{id}/image-to-video
+
+Convert a static image content item into a looping MP4. Creates a new `ContentItem` linked via `SourceContentItemId`.
+
+**Request body**:
+```json
+{ "durationSeconds": 10 }
+```
 
 **Response**:
 ```json
-[
-  {
-    "id": 1,
-    "deviceId": "plainsight-sanctuary",
-    "name": "Sanctuary Display",
-    "group": "Default",
-    "lastSeen": "2026-01-25T22:00:00Z",
-    "currentVersion": "1.0.0",
-    "currentlyPlaying": "worship.mp4",
-    "screenshotRequested": false
-  }
-]
+{ "id": 42, "fileName": "slide_loop.mp4" }
 ```
 
-**Example**:
-```bash
-curl http://localhost:8080/api/device
+---
+
+### POST /api/content/{id}/extract-frame
+
+Extract a frame from a video and save as a new image content item.
+
+**Request body**:
+```json
+{ "position": "first" }
 ```
-
-#### Request Screenshot
-
-Request a screenshot from a specific device.
-
-**Endpoint**: `POST /device/{deviceId}/screenshot`
-
-**Parameters**:
-- `deviceId` (path): Device identifier
-
-**Response**: `200 OK` on success
-
-**Example**:
-```bash
-curl -X POST http://localhost:8080/api/device/plainsight-sanctuary/screenshot
-```
-
-### Version Management
-
-#### Refresh Version Manifest
-
-Trigger an immediate scan of the version updates directory. The server reconciles new manifest files, verifies signatures, and ingests new `PlayerVersion` rows.
-
-**Endpoint**: `POST /versions/refresh`
-
-**Authentication**: Admin only
+`position`: `"first"` or `"last"`.
 
 **Response**:
+```json
+{ "id": 43, "fileName": "worship_frame.jpg" }
+```
+
+---
+
+### POST /api/content/{id}/ken-burns
+
+Generate a Ken Burns zoom-pan video from an image. Creates a new `ContentItem`.
+
+**Request body**:
 ```json
 {
-  "ingested": 2
+  "startX": 0,
+  "startY": 0,
+  "startW": 100,
+  "endX": 10,
+  "endY": 10,
+  "endW": 80,
+  "durationSeconds": 10,
+  "overlayContentItemId": null,
+  "parallaxRate": 0.0,
+  "outputFileName": "slide_kenburns"
 }
 ```
 
-**Status Codes**:
-- `200 OK` - Reconciliation succeeded
-- `503 Service Unavailable` - Reconciliation failed (check logs)
-
-**Example**:
-```bash
-curl -X POST http://localhost:8080/api/versions/refresh \
-  -H "Authorization: Bearer <admin-token>"
+**Response**:
+```json
+{ "id": 44, "fileName": "slide_kenburns.mp4" }
 ```
 
-#### Download Player Binary
+---
 
-Download a specific player version binary.
+## Updates
 
-**Endpoint**: `GET /updates/{version}/binary`
+### GET /api/updates/latest/binary
 
-**Parameters**:
-- `version` (path): Version number (e.g., `1.0.0`)
+Download the latest published player binary (application/octet-stream). Used by players when `updateUrl` is not yet known.
 
-**Response**: Binary file (application/octet-stream)
+### GET /api/updates/{version}/binary
 
-**Example**:
-```bash
-curl -O http://localhost:8080/api/updates/1.0.0/binary
-```
+Download a specific player binary by version string (e.g. `1.19.0`). This is the URL returned in heartbeat responses.
 
-### Health Check
+---
 
-#### Server Health
+## Health Check
 
-Check if the server is running and healthy.
+### GET /health
 
-**Endpoint**: `GET /health`
+Standard ASP.NET health endpoint. Returns `200 Healthy` when the server and database are reachable.
 
-**Response**: `200 OK` if healthy
-
-**Example**:
-```bash
-curl http://localhost:8080/health
-```
+---
 
 ## Data Models
 
 ### DeviceTelemetryDto
-
 ```csharp
 public class DeviceTelemetryDto
 {
-    public string DeviceId { get; set; }
-    public string AppVersion { get; set; }
-    public string? CurrentFileName { get; set; }
-    public DateTime Timestamp { get; set; }
+    public string DeviceId { get; init; }
+    public string AppVersion { get; init; }
+    public string? CurrentFileName { get; init; }
+    public DateTime Timestamp { get; init; }
 }
 ```
 
 ### HeartbeatResponse
-
 ```csharp
 public class HeartbeatResponse
 {
-    public bool RequestScreenshot { get; set; }
-    public string? UpdateUrl { get; set; }
+    public bool RequestScreenshot { get; init; }
+    public string? UpdateUrl { get; init; }
+    public bool ScheduleChanged { get; init; }
 }
 ```
 
-### Device
-
+### ContentItem (key fields)
 ```csharp
-public class Device
+public class ContentItem
 {
-    public int Id { get; set; }
-    public string DeviceId { get; set; }
+    public int Id { get; init; }
     public string Name { get; set; }
-    public string Group { get; set; }
-    public DateTime LastSeen { get; set; }
-    public string CurrentVersion { get; set; }
-    public string? CurrentlyPlaying { get; set; }
-    public bool ScreenshotRequested { get; set; }
+    public string FileName { get; set; }          // unique on disk
+    public ContentType Type { get; set; }          // Video | Image
+    public long FileSizeBytes { get; set; }
+    public int DurationSeconds { get; set; }
+    public string? ThumbnailFileName { get; set; } // sidecar _thumb.jpg
+    public int? SourceContentItemId { get; set; }  // original item this was derived from
+    public int? CompanionContentItemId { get; set; }
+    public CompanionPosition? CompanionPosition { get; set; } // Before | After
 }
 ```
+
+---
 
 ## Error Responses
 
-### 400 Bad Request
-
-Invalid request data.
-
-```json
-{
-  "type": "https://tools.ietf.org/html/rfc7231#section-6.5.1",
-  "title": "One or more validation errors occurred.",
-  "status": 400,
-  "errors": {
-    "DeviceId": ["The DeviceId field is required."]
-  }
-}
-```
-
-### 404 Not Found
-
-Resource not found.
+Standard ASP.NET `ProblemDetails` format:
 
 ```json
 {
@@ -217,154 +214,3 @@ Resource not found.
   "status": 404
 }
 ```
-
-### 500 Internal Server Error
-
-Server error occurred.
-
-```json
-{
-  "type": "https://tools.ietf.org/html/rfc7231#section-6.6.1",
-  "title": "An error occurred while processing your request.",
-  "status": 500
-}
-```
-
-## Rate Limiting
-
-Currently no rate limiting is implemented. Future versions may add:
-- 100 requests per minute per device
-- 1000 requests per minute per IP
-
-## Authentication
-
-Currently no authentication is required. Future versions will add:
-- API key authentication for devices
-- OAuth 2.0 for admin access
-
-## Versioning
-
-API version is not currently enforced in the URL. Future versions may use:
-- URL versioning: `/api/v1/device/heartbeat`
-- Header versioning: `API-Version: 1.0`
-
-## WebSocket Support (Future)
-
-Planned for real-time updates:
-- `/ws/device/{deviceId}` - Real-time device updates
-- `/ws/admin` - Admin dashboard updates
-
-## Examples
-
-### Device Registration Flow
-
-```bash
-# 1. Send initial heartbeat (creates device)
-curl -X POST http://localhost:8080/api/device/heartbeat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "deviceId": "plainsight-new",
-    "appVersion": "1.0.0",
-    "currentFileName": null,
-    "timestamp": "2026-01-25T22:00:00Z"
-  }'
-
-# Response: {"requestScreenshot":false,"updateUrl":null}
-
-# 2. Verify device created
-curl http://localhost:8080/api/device
-
-# 3. Continue sending heartbeats every 30 seconds
-```
-
-### Update Flow
-
-```bash
-# 1. Check current version
-curl http://localhost:8080/api/device | jq '.[] | select(.deviceId=="plainsight-sanctuary")'
-
-# 2. Server admin assigns new version to device group
-
-# 3. Next heartbeat returns update URL
-curl -X POST http://localhost:8080/api/device/heartbeat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "deviceId": "plainsight-sanctuary",
-    "appVersion": "1.0.0",
-    "currentFileName": "worship.mp4",
-    "timestamp": "2026-01-25T22:00:00Z"
-  }'
-
-# Response: {"requestScreenshot":false,"updateUrl":"/api/updates/1.1.0/binary"}
-
-# 4. Device downloads and applies update
-```
-
-### Screenshot Flow
-
-```bash
-# 1. Admin requests screenshot
-curl -X POST http://localhost:8080/api/device/plainsight-sanctuary/screenshot
-
-# 2. Next heartbeat detects screenshot request
-curl -X POST http://localhost:8080/api/device/heartbeat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "deviceId": "plainsight-sanctuary",
-    "appVersion": "1.0.0",
-    "currentFileName": "worship.mp4",
-    "timestamp": "2026-01-25T22:00:00Z"
-  }'
-
-# Response: {"requestScreenshot":true,"updateUrl":null}
-
-# 3. Device captures and uploads screenshot (endpoint TBD)
-```
-
-## Testing
-
-### Using curl
-
-```bash
-# Test heartbeat
-curl -X POST http://localhost:8080/api/device/heartbeat \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"test","appVersion":"1.0.0","timestamp":"2026-01-25T22:00:00Z"}'
-
-# Test get devices
-curl http://localhost:8080/api/device
-
-# Test screenshot request
-curl -X POST http://localhost:8080/api/device/test/screenshot
-```
-
-### Using PowerShell
-
-```powershell
-# Test heartbeat
-$body = @{
-    deviceId = "test"
-    appVersion = "1.0.0"
-    timestamp = "2026-01-25T22:00:00Z"
-} | ConvertTo-Json
-
-Invoke-RestMethod -Uri "http://localhost:8080/api/device/heartbeat" `
-    -Method Post -Body $body -ContentType "application/json"
-
-# Test get devices
-Invoke-RestMethod -Uri "http://localhost:8080/api/device"
-```
-
-## SDK (Future)
-
-Planned client SDKs:
-- .NET Client Library
-- Python Client Library
-- JavaScript/TypeScript Client Library
-
-## Support
-
-For API questions or issues:
-- Open a GitHub issue
-- Check the [Architecture Documentation](architecture.md)
-- Review the [source code](../src/PlainSight.Server/Controllers/)
