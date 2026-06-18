@@ -217,7 +217,6 @@ app.MapDeviceApi();
 app.MapContentApi();
 app.MapUpdateApi();
 app.MapTransformApi();
-app.MapWatermarkApi();
 
 // Ensure storage directories exist
 using (IServiceScope scope = app.Services.CreateScope())

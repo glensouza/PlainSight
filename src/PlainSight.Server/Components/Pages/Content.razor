@@ -12,6 +12,7 @@
 @inject YouTubeDownloadQueue YouTubeDownloadQueue
 @inject SvdGenerationQueue SvdGenerationQueue
 @inject IOptions<SvdOptions> SvdOptions
+@inject WatermarkRemovalService WatermarkRemovalService
 @inject IJSRuntime JS
 @implements IDisposable
 
@@ -40,6 +41,13 @@
     <div class="alert alert-info alert-dismissible py-2 mt-2 mb-0" role="alert">
         <i class="bi bi-info-circle"></i> @syncMessage
         <button type="button" class="btn-close" @onclick="() => syncMessage = null"></button>
+    </div>
+}
+@if (dewatermarkMessage != null)
+{
+    <div class="alert @(dewatermarkMessage.StartsWith("Failed") ? "alert-danger" : "alert-success") alert-dismissible py-2 mt-2 mb-0" role="alert">
+        <i class="bi @(dewatermarkMessage.StartsWith("Failed") ? "bi-exclamation-triangle" : "bi-check-circle")"></i> @dewatermarkMessage
+        <button type="button" class="btn-close" @onclick="() => dewatermarkMessage = null"></button>
     </div>
 }
 
@@ -375,6 +383,16 @@ else
                                 }
                                 <button class="btn btn-outline-secondary" @onclick="() => StartRename(item)" title="Rename">
                                     <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-outline-warning" @onclick="() => RemoveWatermarkAsync(item)" title="Remove watermark" disabled="@(dewatermarkingId == item.Id)">
+                                    @if (dewatermarkingId == item.Id)
+                                    {
+                                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-eraser"></i>
+                                    }
                                 </button>
                                 <AuthorizeView Roles="Admin">
                                     <Authorized>
@@ -950,6 +968,8 @@ else
     private string? evError;
     private DotNetObjectReference<Content>? evDotNetRef;
     private bool evInitialized;
+    private int? dewatermarkingId;
+    private string? dewatermarkMessage;
     private readonly CancellationTokenSource cts = new();
 
     protected override async Task OnInitializedAsync()
@@ -1585,6 +1605,60 @@ else
             len /= 1024;
         }
         return $"{len:0.##} {sizes[order]}";
+    }
+
+    private async Task RemoveWatermarkAsync(ContentItem item)
+    {
+        this.dewatermarkingId = item.Id;
+        this.dewatermarkMessage = null;
+        this.StateHasChanged();
+
+        try
+        {
+            string contentPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
+            string inputPath = Path.Combine(contentPath, item.FileName);
+            string baseName = Path.GetFileNameWithoutExtension(item.FileName);
+            string extension = Path.GetExtension(item.FileName);
+            string outputFileName = $"{baseName}_dewatermarked{extension}";
+            string outputPath = Path.Combine(contentPath, outputFileName);
+
+            await WatermarkRemovalService.RemoveWatermarkAsync(inputPath, outputPath, this.cts.Token);
+
+            ContentType contentType = MediaConstants.IsVideo(outputFileName) ? ContentType.Video : ContentType.Image;
+            int duration = item.DurationSeconds;
+            if (contentType == ContentType.Video)
+            {
+                duration = await MediaMetadataService.GetVideoDurationAsync(outputPath, this.cts.Token);
+            }
+
+            await using PlainSightDbContext dbContext = await DbFactory.CreateDbContextAsync(this.cts.Token);
+            ContentItem newItem = new()
+            {
+                Name = $"{item.Name} (de-watermarked)",
+                FileName = outputFileName,
+                Type = contentType,
+                FileSizeBytes = new FileInfo(outputPath).Length,
+                DurationSeconds = duration,
+                UploadedAt = DateTime.UtcNow,
+                SourceContentItemId = item.Id,
+                Description = item.Description,
+                SourceUrl = item.SourceUrl
+            };
+            dbContext.ContentItems.Add(newItem);
+            await dbContext.SaveChangesAsync(this.cts.Token);
+
+            this.dewatermarkMessage = $"Done — saved as \"{outputFileName}\".";
+            await this.LoadContent();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Watermark removal failed for content {Id}", item.Id);
+            this.dewatermarkMessage = $"Failed: {ex.Message}";
+        }
+        finally
+        {
+            this.dewatermarkingId = null;
+        }
     }
 
     private async Task StartKenBurnsAsync(ContentItem item)

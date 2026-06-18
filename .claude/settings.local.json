@@ -31,7 +31,7 @@
       "Bash(git pull *)",
       "Bash(git stash *)",
       "Bash(gh api *)",
-      "Bash(Remove-Item .tmp_pr_comment.md)",
+      "Bash(Remove-Item *)",
       "Bash(git *)",
       "Bash(Select-String -Pattern \"\")",
       "Bash(Out-Null)",
