@@ -2039,41 +2039,51 @@ else
             string outputFileName = sanitizedInput.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ? sanitizedInput : sanitizedInput + ".mp4";
             string outputPath = Path.Combine(contentPath, outputFileName);
 
-            if (File.Exists(outputPath))
-            {
-                this.evError = "A file with that name already exists on disk. Choose a different file name.";
-                return;
-            }
-
             double? endSeconds = this.evEnd < this.evDuration ? this.evEnd : null;
 
-            await VideoProcessorService.TrimAndCropAsync(
-                inputPath, outputPath, this.evStart, endSeconds, this.evVidW, this.evVidH,
-                this.evCropLeft, this.evCropRight, this.evCropTop, this.evCropBottom,
-                this.evStripAudio, this.evCompress, this.evReverse, this.evSpeed, cts.Token);
-
-            if (!File.Exists(outputPath))
+            // Hold the content-sync lock across the file write + insert so the sync worker cannot
+            // scan the freshly written file and insert its own row first, colliding on FileName.
+            await ContentSyncService.SyncLock.WaitAsync(cts.Token);
+            try
             {
-                throw new InvalidOperationException("Edited video was not produced.");
+                if (File.Exists(outputPath))
+                {
+                    this.evError = "A file with that name already exists on disk. Choose a different file name.";
+                    return;
+                }
+
+                await VideoProcessorService.TrimAndCropAsync(
+                    inputPath, outputPath, this.evStart, endSeconds, this.evVidW, this.evVidH,
+                    this.evCropLeft, this.evCropRight, this.evCropTop, this.evCropBottom,
+                    this.evStripAudio, this.evCompress, this.evReverse, this.evSpeed, cts.Token);
+
+                if (!File.Exists(outputPath))
+                {
+                    throw new InvalidOperationException("Edited video was not produced.");
+                }
+
+                long fileSize = new FileInfo(outputPath).Length;
+                int newDuration = (int)Math.Round((this.evEnd - this.evStart) / this.evSpeed);
+
+                await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(cts.Token);
+                ContentItem newItem = new()
+                {
+                    Name = this.evName.Trim(),
+                    FileName = outputFileName,
+                    Type = ContentType.Video,
+                    FileSizeBytes = fileSize,
+                    DurationSeconds = newDuration,
+                    UploadedAt = DateTime.UtcNow,
+                    SourceContentItemId = this.editItem.Id,
+                    ThumbnailFileName = await VideoProcessorService.TryCreateThumbnailAsync(outputPath, contentPath, cts.Token)
+                };
+                context.ContentItems.Add(newItem);
+                await context.SaveChangesAsync(cts.Token);
             }
-
-            long fileSize = new FileInfo(outputPath).Length;
-            int newDuration = (int)Math.Round((this.evEnd - this.evStart) / this.evSpeed);
-
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(cts.Token);
-            ContentItem newItem = new()
+            finally
             {
-                Name = this.evName.Trim(),
-                FileName = outputFileName,
-                Type = ContentType.Video,
-                FileSizeBytes = fileSize,
-                DurationSeconds = newDuration,
-                UploadedAt = DateTime.UtcNow,
-                SourceContentItemId = this.editItem.Id,
-                ThumbnailFileName = await VideoProcessorService.TryCreateThumbnailAsync(outputPath, contentPath, cts.Token)
-            };
-            context.ContentItems.Add(newItem);
-            await context.SaveChangesAsync(cts.Token);
+                ContentSyncService.SyncLock.Release();
+            }
 
             await this.CloseEditAsync();
             await LoadContent();
