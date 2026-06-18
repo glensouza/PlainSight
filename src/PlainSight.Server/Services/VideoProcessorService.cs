@@ -222,11 +222,13 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
         int cropBottom,
         bool stripAudio = false,
         bool compress = false,
+        bool reverse = false,
+        double speed = 1.0,
         CancellationToken ct = default)
     {
         logger.LogInformation(
-            "Trim/crop: {Input} -> {Output} (start={Start}s end={End}s crop L{Left} R{Right} T{Top} B{Bottom} stripAudio={StripAudio} compress={Compress})",
-            inputPath, outputPath, startSeconds, endSeconds, cropLeft, cropRight, cropTop, cropBottom, stripAudio, compress);
+            "Trim/crop: {Input} -> {Output} (start={Start}s end={End}s crop L{Left} R{Right} T{Top} B{Bottom} stripAudio={StripAudio} compress={Compress} reverse={Reverse} speed={Speed})",
+            inputPath, outputPath, startSeconds, endSeconds, cropLeft, cropRight, cropTop, cropBottom, stripAudio, compress, reverse, speed);
 
         int cropWidth = sourceWidth - cropLeft - cropRight;
         int cropHeight = sourceHeight - cropTop - cropBottom;
@@ -234,6 +236,14 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
         {
             throw new ArgumentException($"Crop leaves no visible area ({cropWidth}x{cropHeight}); reduce the crop amounts.");
         }
+
+        // atempo accepts 0.5–2.0 per stage; keeping speed in that range means audio needs only a single atempo filter.
+        if (speed < 0.5 || speed > 2.0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(speed), speed, "Speed must be between 0.5 and 2.0.");
+        }
+
+        bool hasSpeed = Math.Abs(speed - 1.0) > 0.001;
 
         StringBuilder arguments = new("-y ");
 
@@ -251,11 +261,47 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
             arguments.Append($"-t {duration.ToString("F3", CultureInfo.InvariantCulture)} ");
         }
 
-        // Only filter when an actual crop is requested; trim-only re-encodes the full frame.
+        // Build the video filter chain: crop, then reverse, then speed (setpts). `reverse` buffers
+        // the whole (already-trimmed) clip in memory — fine for short signage loops, slow for long videos.
         bool hasCrop = cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0;
+        List<string> videoFilters = [];
         if (hasCrop)
         {
-            arguments.Append($"-vf \"crop={cropWidth}:{cropHeight}:{cropLeft}:{cropTop}\" ");
+            videoFilters.Add($"crop={cropWidth}:{cropHeight}:{cropLeft}:{cropTop}");
+        }
+
+        if (reverse)
+        {
+            videoFilters.Add("reverse");
+        }
+
+        if (hasSpeed)
+        {
+            videoFilters.Add($"setpts=PTS/{speed.ToString("F4", CultureInfo.InvariantCulture)}");
+        }
+
+        if (videoFilters.Count != 0)
+        {
+            arguments.Append($"-vf \"{string.Join(",", videoFilters)}\" ");
+        }
+
+        if (!stripAudio)
+        {
+            List<string> audioFilters = [];
+            if (reverse)
+            {
+                audioFilters.Add("areverse");
+            }
+
+            if (hasSpeed)
+            {
+                audioFilters.Add($"atempo={speed.ToString("F4", CultureInfo.InvariantCulture)}");
+            }
+
+            if (audioFilters.Count != 0)
+            {
+                arguments.Append($"-af \"{string.Join(",", audioFilters)}\" ");
+            }
         }
 
         // Trim/crop always re-encodes the video, so "compress" raises the CRF for a smaller file rather than toggling a copy.
