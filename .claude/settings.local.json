@@ -59,7 +59,16 @@
       "Bash(ffmpeg -y -ss 5 -i \"C:/tmp/WmVerify/out_dewatermarked.mp4\" -frames:v 1 -vf \"crop=200:200:1080:520\" after_crop.png)",
       "Bash(cygpath -w \"C:/tmp/WmVerify/before_crop.png\")",
       "Bash(ffmpeg -y -ss 5 -i \"C:/github/glensouza/PlainSight/screenshots/please_create_a_second_anim.mp4\" -frames:v 1 -vf \"crop=200:200:1080:520\" \"C:/tmp/WmVerify/before_crop.png\")",
-      "Bash(ffmpeg -y -ss 5 -i \"C:/tmp/WmVerify/out_dewatermarked.mp4\" -frames:v 1 -vf \"crop=200:200:1080:520\" \"C:/tmp/WmVerify/after_crop.png\")"
+      "Bash(ffmpeg -y -ss 5 -i \"C:/tmp/WmVerify/out_dewatermarked.mp4\" -frames:v 1 -vf \"crop=200:200:1080:520\" \"C:/tmp/WmVerify/after_crop.png\")",
+      "Bash(ffmpeg -hide_banner -filters)",
+      "Bash(findstr /I \"zscale scale_npp colorspace\")",
+      "Bash(ffmpeg -hide_banner -version)",
+      "Bash(findstr /I \"version config\")",
+      "Bash(findstr /I \"version configuration\")",
+      "Bash(findstr /I \"zscale colorspace scale\")",
+      "Bash(ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,avg_frame_rate,nb_frames,pix_fmt,color_range,color_space,duration -of default=noprint_wrappers=1 \"C:\\\\github\\\\glensouza\\\\PlainSight\\\\screenshots\\\\please_create_a_second_anim.mp4\")",
+      "Bash(ffprobe -v error -select_streams a -show_entries stream=codec_name -of default=noprint_wrappers=1 \"C:\\\\github\\\\glensouza\\\\PlainSight\\\\screenshots\\\\please_create_a_second_anim.mp4\")",
+      "PowerShell(dotnet run *)"
     ]
   }
 }
