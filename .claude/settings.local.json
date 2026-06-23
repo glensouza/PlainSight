@@ -68,7 +68,12 @@
       "Bash(findstr /I \"zscale colorspace scale\")",
       "Bash(ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,avg_frame_rate,nb_frames,pix_fmt,color_range,color_space,duration -of default=noprint_wrappers=1 \"C:\\\\github\\\\glensouza\\\\PlainSight\\\\screenshots\\\\please_create_a_second_anim.mp4\")",
       "Bash(ffprobe -v error -select_streams a -show_entries stream=codec_name -of default=noprint_wrappers=1 \"C:\\\\github\\\\glensouza\\\\PlainSight\\\\screenshots\\\\please_create_a_second_anim.mp4\")",
-      "PowerShell(dotnet run *)"
+      "PowerShell(dotnet run *)",
+      "PowerShell(dotnet --version; Write-Output \"---SDKS---\"; dotnet --list-sdks; Write-Output \"---RUNTIMES---\"; dotnet --list-runtimes)",
+      "PowerShell(winget *)",
+      "PowerShell(dotnet restore C:\\\\github\\\\glensouza\\\\PlainSight; Write-Output \"---OUTDATED---\"; dotnet list C:\\\\github\\\\glensouza\\\\PlainSight package --outdated)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(dotnet restore *)"
     ]
   }
 }

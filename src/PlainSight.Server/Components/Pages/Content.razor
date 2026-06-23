@@ -497,7 +497,7 @@ else
                         @{
                             bool isVideo = renamingItem.Type == ContentType.Video;
                         }
-                        <input type="number" class="form-control" @bind="newDuration" min="1" max="3600" readonly="@isVideo" disabled="@isVideo" />
+                        <input type="number" class="form-control" @bind="newDuration" min="1" max="3600" readonly="@isVideo" />
                         @if (isVideo)
                         {
                             <small class="text-muted">Video duration is detected automatically.</small>
@@ -511,7 +511,7 @@ else
                         <label class="form-label">Companion Clip</label>
                         <select class="form-select" @bind="companionContentItemId">
                             <option value="">— None —</option>
-                            @foreach (ContentItem ci in contentItems ?? [])
+                            @foreach (ContentItem ci in (contentItems ?? []).OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
                             {
                                 if (ci.Id != renamingItem.Id)
                                 {
