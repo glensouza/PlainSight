@@ -179,19 +179,13 @@ public static class DeviceApi
                     AssignedApiKey = assignedApiKey,
                     PlaylistItems = activePlaylist?.Items
                         .OrderBy(i => i.Order)
-                        .SelectMany(i =>
-                        {
-                            PlaylistItemDto main = new() { FileName = i.ContentItem.FileName, DurationSeconds = i.OverrideDurationSeconds ?? i.ContentItem.DurationSeconds };
-                            if (i.ContentItem.CompanionContentItem == null)
-                            {
-                                return [main];
-                            }
-
-                            PlaylistItemDto companion = new() { FileName = i.ContentItem.CompanionContentItem.FileName, DurationSeconds = i.ContentItem.CompanionContentItem.DurationSeconds };
-                            return i.ContentItem.CompanionPosition == Models.CompanionPosition.Before
-                                ? (IEnumerable<PlaylistItemDto>)[companion, main]
-                                : [main, companion];
-                        })
+                        // Skip announcements whose expiration has passed; their media must no longer be served.
+                        .Where(i => !(i.Announcement != null && i.Announcement.ExpiresAt < DateTime.UtcNow))
+                        .SelectMany(i => i.Announcement != null
+                            ? i.Announcement.Media
+                                .OrderBy(m => m.SortOrder)
+                                .Select(m => new PlaylistItemDto { FileName = m.ContentItem.FileName, DurationSeconds = m.ContentItem.DurationSeconds })
+                            : [new PlaylistItemDto { FileName = i.ContentItem!.FileName, DurationSeconds = i.OverrideDurationSeconds ?? i.ContentItem.DurationSeconds }])
                         .ToList(),
                     BrandingItem = branding != null ? new PlaylistItemDto { FileName = branding.FileName, DurationSeconds = branding.DurationSeconds } : null,
                     LiveMode = liveMode,

@@ -49,15 +49,13 @@ Each item in the library table has action buttons:
 | **Edit** (`scissors` icon) | Opens the video editor modal: trim, crop, reverse, speed (0.5x–2.0x), strip audio, compress. Creates a new item. |
 | **Ken Burns** (`film` icon) | Image only. Opens the Ken Burns modal for zoom-pan animation. |
 | **SVD Animate** (`stars` icon) | Image only. Visible only when `Svd:ComfyUiBaseUrl` is configured. |
-| **Rename** (`pencil` icon) | Edit the display name, filename, or set a companion clip to play before/after. |
+| **Rename** (`pencil` icon) | Edit the display name, filename, or duration. |
 | **Remove Watermark** (`eraser` icon) | Removes Veo/Gemini watermarks via ffmpeg. Creates a new item. |
 | **Delete** (`trash` icon) | Admin only. Permanently deletes the file from disk and the database record. |
 
-## Companion Content
+## Announcements
 
-Two content items can be paired so one always plays immediately before or after the other in any playlist. The server expands companion pairs at heartbeat time — no baked MP4 is created.
-
-Set a companion via the Rename modal: choose a **Companion Clip** from the dropdown and select **Before** or **After**.
+Content items can be grouped into an **Announcement** so they always play back-to-back, in order, in any playlist — see [Playlists, Schedules & Branding](playlists-schedules-branding.md#announcements) for how to create and add one.
 
 ## Idle Content
 

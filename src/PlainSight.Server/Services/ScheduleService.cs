@@ -26,7 +26,11 @@ public class ScheduleService(IDbContextFactory<PlainSightDbContext> dbFactory, S
             .Include(s => s.Playlist)
             .ThenInclude(p => p.Items)
             .ThenInclude(i => i.ContentItem)
-            .ThenInclude(c => c.CompanionContentItem)
+            .Include(s => s.Playlist)
+            .ThenInclude(p => p.Items)
+            .ThenInclude(i => i.Announcement)
+            .ThenInclude(a => a!.Media)
+            .ThenInclude(m => m.ContentItem)
             .Where(s => s.IsActive &&
                         (!s.TargetGroups.Any() || s.TargetGroups.Any(tg => tg.GroupName == deviceGroup)) &&
                         ((s.ScheduledDate == currentDate) || (s.ScheduledDate == null && (s.DaysOfWeek & dayFlag) != 0)) &&

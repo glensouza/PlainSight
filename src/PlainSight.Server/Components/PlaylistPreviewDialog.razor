@@ -30,17 +30,17 @@
                         }
                         else
                         {
-                            <video autoplay muted class="preview-media" @onended="OnVideoEnded" @key="@($"{CurrentItem.Id}-{CurrentItem.ContentItem.FileSizeBytes}")">
+                            <video autoplay muted class="preview-media" @onended="OnVideoEnded" @key="@($"{CurrentItem.ContentItem.Id}-{CurrentItem.ContentItem.FileSizeBytes}")">
                                 <source src="/api/media/content/@CurrentItem.ContentItem.FileName?v=@CurrentItem.ContentItem.FileSizeBytes" type="video/mp4" />
                             </video>
                         }
-                        
+
                         <div class="preview-overlay">
                             <div class="progress-bar-container">
                                 <div class="progress-bar-fill" style="width: @(progress)%"></div>
                             </div>
                             <div class="item-info">
-                                <span class="item-name text-truncate">@CurrentItem.ContentItem.Name</span>
+                                <span class="item-name text-truncate">@CurrentItem.DisplayName</span>
                                 <span class="item-timer ms-2">@Math.Ceiling(remainingTime)s</span>
                             </div>
                         </div>
@@ -77,7 +77,14 @@
     [Parameter] public Playlist Playlist { get; set; } = null!;
     [Parameter] public EventCallback OnClose { get; set; }
 
-    private List<PlaylistItem> orderedItems = [];
+    private sealed class PreviewStep
+    {
+        public required ContentItem ContentItem { get; init; }
+        public required string DisplayName { get; init; }
+        public int? OverrideDurationSeconds { get; init; }
+    }
+
+    private List<PreviewStep> orderedItems = [];
     private int currentIndex;
     private string aspectRatio = "16:9";
     private bool isPaused;
@@ -87,11 +94,20 @@
     private Timer? timer;
     private DateTime lastTick;
 
-    private PlaylistItem? CurrentItem => orderedItems.Count > 0 ? orderedItems[currentIndex] : null;
+    private PreviewStep? CurrentItem => orderedItems.Count > 0 ? orderedItems[currentIndex] : null;
 
     protected override void OnInitialized()
     {
-        orderedItems = Playlist.Items.OrderBy(i => i.Order).ToList();
+        orderedItems = Playlist.Items
+            .OrderBy(i => i.Order)
+            // Skip expired announcements so the preview matches what players are actually served.
+            .Where(i => !(i.Announcement != null && i.Announcement.ExpiresAt < DateTime.UtcNow))
+            .SelectMany(i => i.Announcement != null
+                ? i.Announcement.Media
+                    .OrderBy(m => m.SortOrder)
+                    .Select(m => new PreviewStep { ContentItem = m.ContentItem, DisplayName = $"{i.Announcement.Title} — {m.ContentItem.Name}" })
+                : [new PreviewStep { ContentItem = i.ContentItem!, DisplayName = i.ContentItem!.Name, OverrideDurationSeconds = i.OverrideDurationSeconds }])
+            .ToList();
         if (orderedItems.Count > 0)
         {
             StartItem(0);
