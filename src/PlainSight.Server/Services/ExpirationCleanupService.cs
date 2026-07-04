@@ -14,9 +14,12 @@ public class ExpirationCleanupService(
     {
         DateTime utcNow = DateTime.UtcNow;
 
-        // Remove expired PlaylistItems first (without file deletion)
+        // Remove expired PlaylistItems first (without file deletion). Covers both target kinds:
+        // a ContentItem-backed item whose content expired, and an Announcement-backed item whose
+        // announcement expired.
         List<PlaylistItem> expiredItems = await context.PlaylistItems
-            .Where(pi => pi.ContentItemId != null && pi.ContentItem!.ExpiresAt < utcNow)
+            .Where(pi => (pi.ContentItemId != null && pi.ContentItem!.ExpiresAt < utcNow)
+                || (pi.AnnouncementId != null && pi.Announcement!.ExpiresAt < utcNow))
             .ToListAsync(cancellationToken);
 
         if (expiredItems.Count > 0)
@@ -41,8 +44,12 @@ public class ExpirationCleanupService(
         {
             DateTime graceThreshold = utcNow.AddDays(-graceAfterDays.Value);
 
+            // Skip content still referenced by an Announcement — deleting it would cascade-delete the
+            // AnnouncementMedia row and silently strip media from a live announcement. It becomes
+            // eligible again once the announcement (and its media) is gone.
             List<ContentItem> filesToDelete = await context.ContentItems
-                .Where(ci => ci.ExpiresAt < graceThreshold)
+                .Where(ci => ci.ExpiresAt < graceThreshold
+                    && !context.AnnouncementMedia.Any(am => am.ContentItemId == ci.Id))
                 .ToListAsync(cancellationToken);
 
             if (filesToDelete.Count > 0)

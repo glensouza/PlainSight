@@ -479,7 +479,7 @@ else
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Rename Content</h5>
+                    <h5 class="modal-title">Edit Content</h5>
                     <button type="button" class="btn-close" @onclick="CancelRename"></button>
                 </div>
                 <div class="modal-body">
@@ -506,6 +506,16 @@ else
                         {
                             <small class="text-muted">How long this item displays (especially for images).</small>
                         }
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Event Date (optional)</label>
+                        <input type="date" class="form-control" @bind="newEventDate" />
+                        <small class="text-muted">Used to auto-order playlists set to sort by event date.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Expires At (optional)</label>
+                        <input type="datetime-local" class="form-control" @bind="newExpiresAt" />
+                        <small class="text-muted">After this time the item is dropped from playlists and, once past the grace period, deleted.</small>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -976,6 +986,8 @@ else
     private string newName = "";
     private string newFileName = "";
     private int newDuration = 10;
+    private DateOnly? newEventDate;
+    private DateTime? newExpiresAt;
     private ContentItem? itemToDelete;
     private string youtubeUrl = "";
     private readonly List<YouTubeJobState> youtubeJobs = [];
@@ -1272,6 +1284,9 @@ else
         this.newName = item.Name;
         this.newFileName = Path.GetFileNameWithoutExtension(item.FileName);
         this.newDuration = item.DurationSeconds;
+        this.newEventDate = item.EventDate;
+        // Stored UTC → wall-clock in the configured SystemTimeZone for the datetime-local input.
+        this.newExpiresAt = item.ExpiresAt?.ToLocal();
     }
 
     private void CancelRename()
@@ -1324,6 +1339,9 @@ else
 
             item.Name = newName;
             item.DurationSeconds = newDuration;
+            item.EventDate = newEventDate;
+            // datetime-local yields wall-clock in the configured SystemTimeZone; store UTC (delivery compares against UtcNow).
+            item.ExpiresAt = newExpiresAt?.ToUtc();
 
             await context.SaveChangesAsync();
 

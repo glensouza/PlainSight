@@ -352,16 +352,7 @@ public static class DeviceApi
 
     private static List<PlaylistItemDto> GetSortedPlaylistItems(Playlist playlist, DateTime utcNow)
     {
-        IEnumerable<PlaylistItem> sorted = playlist.SortMode == PlaylistSortMode.ByEventDate
-            ? playlist.Items
-                .OrderBy(i => i.ContentItem?.EventDate ?? DateOnly.MaxValue)
-                .ThenBy(i => i.Announcement?.EventDate ?? DateOnly.MaxValue)
-                .ThenBy(i => i.Order)
-            : playlist.Items.OrderBy(i => i.Order);
-
-        return sorted
-            .Where(i => !(i.Announcement != null && i.Announcement.ExpiresAt < utcNow)
-                && !(i.ContentItem != null && i.ContentItem.ExpiresAt < utcNow))
+        return PlaylistOrdering.SortAndFilter(playlist, utcNow)
             .SelectMany(i => i.Announcement != null
                 ? i.Announcement.Media
                     .OrderBy(m => m.SortOrder)
