@@ -57,6 +57,7 @@ docker compose up -d
 
 - `src/PlainSight.AppHost/AppHost.cs` — Aspire wiring; PostgreSQL uses `ContainerLifetime.Persistent`
 - `src/PlainSight.Server/Data/PlainSightDbContext.cs` — EF Core context with 18 entity types: `Device`, `ContentItem`, `Playlist`, `PlaylistItem`, `Announcement`, `AnnouncementMedia`, `Schedule`, `ScheduleTargetGroup`, `BrandingVideo`, `BrandingSchedule`, `NdiSource`, `LogEntry`, `PlayerVersion`, `DeviceGroup`, `DeviceGroupVersion`, `DeviceScreenshot`, `SystemSetting`, `AdminUser`
+- `src/PlainSight.Server/Services/ExpirationCleanupService.cs` — Removes expired playlist items and optionally deletes files after grace period; runs hourly via `ExpirationCleanupWorkerService`
 - `src/PlainSight.Server/Program.cs` — Service registration; DB migrations run at startup via `Migrate()`
 - `src/PlainSight.Server/Api/DeviceApi.cs` — Heartbeat endpoint is the system's spine; X-Api-Key TOFU auth, playlist delivery, live-mode decisions, screenshot burst triggers
 - `src/PlainSight.Server/Services/ContentSyncService.cs` — Holds `SyncLock` (static `SemaphoreSlim`) across file write + DB insert to prevent unique `FileName` constraint violations (see commit a332c72)
@@ -104,9 +105,11 @@ All pages in `src/PlainSight.Server/Components/Pages/` use `@rendermode Interact
 
 `PlainSightDbContext` manages 18 entity types. `Device.DeviceId` (string, unique) is the natural key used in all player/API interactions. `ContentItem.FileName` is unique. `Playlist` → `PlaylistItem` with cascade delete; a `PlaylistItem` has exactly one of `ContentItemId` or `AnnouncementId` set (nullable FKs, both cascade, enforced by a `CK_PlaylistItems_ExactlyOneTarget` check constraint added via raw SQL in the `AddAnnouncements` migration). `Schedule` has a `Playlist` FK (cascade) and many `ScheduleTargetGroup` entries. `NdiSource.ServiceName` is unique, and `Device` has a nullable FK to `NdiSource`. `BrandingSchedule` references `BrandingVideo` (cascade). `LogEntry` is bulk-inserted from a bounded channel. `PlayerVersion` and `DeviceGroupVersion` store fleet-update metadata. `SystemSetting` is keyed by string. `AdminUser` has a unique `Username`.
 
-`ContentItem` notable fields: `SourceContentItemId` (int?, FK to self — tracks the original item a transform was derived from), `ThumbnailFileName` (string?, sidecar `_thumb.jpg` generated at upload/sync).
+`ContentItem` notable fields: `SourceContentItemId` (int?, FK to self — tracks the original item a transform was derived from), `ThumbnailFileName` (string?, sidecar `_thumb.jpg` generated at upload/sync), `EventDate` (`DateOnly?` — the date the content is about, used for playlist sorting), `ExpiresAt` (`DateTime?`, UTC — after this moment the item is not served and may be cleaned up).
 
 `Announcement` groups related media (e.g. an event's image and video) under one record: `Title`, `Description?`, `EventDate` (`DateOnly?`), `ExpiresAt` (`DateTime?`, UTC), plus an ordered `AnnouncementMedia` list (`ContentItemId` + `SortOrder`). Replaces the old `ContentItem.CompanionContentItemId`/`CompanionPosition` self-FK pairing (removed in the `AddAnnouncements` migration, which also converts any existing companion pairs into `Announcement`s and repoints their `PlaylistItem`s). Server expands an `Announcement` playlist item into its ordered media at heartbeat/preview time — no baked MP4.
+
+`Playlist` has a `SortMode` field (enum: `Manual` = preserve `Order`, `ByEventDate` = sort items by their `EventDate`/`Announcement.EventDate` at serve-time, nulls last). When a playlist item's `EventDate` is set and `ExpiresAt` is not, the server defaults `ExpiresAt` to the end of that day (UTC).
 
 ### Player environment variables
 
@@ -123,6 +126,7 @@ See [docs/configuration.md](docs/configuration.md) for the complete reference. K
 |---|---|---|
 | `ContentSyncWorkerService` | 30 s | Syncs disk files with `ContentItems` DB table |
 | `BrandingSyncWorkerService` | 30 s | Syncs disk files with `BrandingVideos` DB table |
+| `ExpirationCleanupWorkerService` | 1 h | Removes expired playlist items and optionally deletes files after grace period |
 | `RenderWorkerService` | Queue-driven | Renders websites to MP4 via headless browser |
 | `YouTubeDownloadWorkerService` | Queue-driven | Downloads and shrinks YouTube videos |
 | `SvdGenerationWorkerService` | Queue-driven | Generates SVD (ComfyUI) image-to-video |
