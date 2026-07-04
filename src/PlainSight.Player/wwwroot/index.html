@@ -161,8 +161,8 @@
 <body>
     <div class="video-container">
         <!-- We use four elements to allow seamless double-buffering for both videos and images -->
-        <video id="v-player-1" class="player" autoplay muted playsinline></video>
-        <video id="v-player-2" class="player" autoplay muted playsinline></video>
+        <video id="v-player-1" class="player" autoplay muted playsinline preload="auto"></video>
+        <video id="v-player-2" class="player" autoplay muted playsinline preload="auto"></video>
         <img id="i-player-1" class="player">
         <img id="i-player-2" class="player">
     </div>
@@ -210,8 +210,6 @@
         const allPlayers = [...vPlayers, ...iPlayers];
         
         let activePlayer = null;
-        let nextVPlayerIndex = 0;
-        let nextIPlayerIndex = 0;
 
         const statusEl = document.getElementById('status');
         const errorEl = document.getElementById('error-message');
@@ -225,8 +223,16 @@
         let currentPlaylist = [];
         let brandingItem = null;
         let currentIndex = 0;
-        let isSwapping = false;
+
+        // Monotonic generation token: captured when an item starts playing. Every async
+        // callback (image timer, pre-trigger, 'ended', error retry) advances only if its token
+        // still matches playToken, so a callback for an item that is no longer current becomes a
+        // no-op and can never double-advance / skip an item. Replaces the old isSwapping guard.
+        let playToken = 0;
+        let currentPlayingFilename = null;
         let imageTimer = null;
+        let preTriggerTimer = null;
+        let preTriggerScheduledToken = -1;
 
         const debugOverlayEnabled = new URLSearchParams(window.location.search).get('debugOverlay') === '1';
         document.addEventListener('keydown', e => {
@@ -254,7 +260,10 @@
 
         function showIdle() {
             clearTimeout(imageTimer);
-            allPlayers.forEach(p => { 
+            clearTimeout(preTriggerTimer);
+            playToken++;
+            currentPlayingFilename = null;
+            allPlayers.forEach(p => {
                 p.src = ''; 
                 p.classList.remove('active', 'entering'); 
                 if (p.tagName === 'VIDEO') p.load();
@@ -306,78 +315,107 @@
             } catch (_) { /* non-critical */ }
         }
 
+        function contentSrc(filename) {
+            return new URL(`/content/${encodeURIComponent(filename)}`, window.location.origin).href;
+        }
+
+        // Returns the element prepareNextMedia() already preloaded for this file (its src matches);
+        // otherwise the inactive element of the correct type. Deterministic, so the element we
+        // preload is the element we actually play — no cold element / stale src on hand-off.
         function getNextPlayer(filename) {
-            if (isVideo(filename)) {
-                const p = vPlayers[nextVPlayerIndex];
-                nextVPlayerIndex = (nextVPlayerIndex + 1) % vPlayers.length;
-                return p;
-            } else {
-                const p = iPlayers[nextIPlayerIndex];
-                nextIPlayerIndex = (nextIPlayerIndex + 1) % iPlayers.length;
-                return p;
+            const pool = isVideo(filename) ? vPlayers : iPlayers;
+            const src = contentSrc(filename);
+            const preloaded = pool.find(p => p !== activePlayer && p.src === src);
+            if (preloaded) {
+                return preloaded;
             }
+            return pool.find(p => p !== activePlayer) || pool[0];
+        }
+
+        // Computes the item that should follow the current one, honoring branding book-ending.
+        function computeNext() {
+            if (currentPlaylist.length === 0) {
+                return null;
+            }
+            if (currentIndex === -1) {
+                // Branding is playing; next is the first item.
+                return { item: currentPlaylist[0], index: 0, isBranding: false };
+            }
+            if (currentIndex === currentPlaylist.length - 1 && brandingItem) {
+                // At the end; next is branding.
+                return { item: brandingItem, index: -1, isBranding: true };
+            }
+            const nextIndex = (currentIndex + 1) % currentPlaylist.length;
+            return { item: currentPlaylist[nextIndex], index: nextIndex, isBranding: false };
         }
 
         function prepareNextMedia() {
-            if (currentPlaylist.length === 0) return;
-
-            let nextItem;
-            if (currentIndex === -1) {
-                // Currently playing branding, next is first item
-                nextItem = currentPlaylist[0];
-            } else if (currentIndex === currentPlaylist.length - 1 && brandingItem) {
-                // At the end, next is branding
-                nextItem = brandingItem;
-            } else {
-                const nextIndex = (currentIndex + 1) % currentPlaylist.length;
-                nextItem = currentPlaylist[nextIndex];
+            const next = computeNext();
+            if (!next || !next.item) {
+                return;
             }
-
-            if (!nextItem) return;
-            const nextFilename = nextItem.fileName;
-            const nextSrc = new URL(`/content/${encodeURIComponent(nextFilename)}`, window.location.origin).href;
-            
-            if (isVideo(nextFilename)) {
-                const inactiveVPlayer = vPlayers.find(p => p !== activePlayer);
-                if (inactiveVPlayer && inactiveVPlayer.src !== nextSrc) {
-                    inactiveVPlayer.src = nextSrc;
-                    inactiveVPlayer.load();
-                }
+            const nextFilename = next.item.fileName;
+            if (!isValidFilename(nextFilename) || !isVideo(nextFilename)) {
+                return;
+            }
+            const nextSrc = contentSrc(nextFilename);
+            const target = vPlayers.find(p => p !== activePlayer);
+            if (target && target.src !== nextSrc) {
+                target.loop = false;
+                target.preload = 'auto';
+                target.src = nextSrc;
+                target.load();
             }
         }
 
-        async function playMedia(index) {
-            if (currentPlaylist.length === 0) {
+        // Advances to the item after the one identified by `token`. No-ops when the token is
+        // stale — i.e. a newer item is already playing — which makes every caller (ended,
+        // pre-trigger, image timer, error retry) idempotent and unable to skip an item.
+        function advance(token, cause) {
+            if (token !== playToken) {
+                return;
+            }
+            const next = computeNext();
+            if (!next) {
                 showIdle();
                 return;
             }
-            currentIndex = index % currentPlaylist.length;
-            const item = currentPlaylist[currentIndex];
-            await playItemInternal(item, false);
+            playItem(next.item, next.index, next.isBranding, cause);
         }
 
-        async function playItemInternal(item, isBranding) {
-            if (isSwapping) return;
-            isSwapping = true;
+        async function playItem(item, index, isBranding, cause) {
             clearTimeout(imageTimer);
+            clearTimeout(preTriggerTimer);
+            preTriggerScheduledToken = -1;
 
-            const filename = item.fileName;
-            const duration = item.durationSeconds || 10;
-
-            if (!isValidFilename(filename)) {
-                showError('Invalid media filename: ' + filename);
-                isSwapping = false;
+            if (currentPlaylist.length === 0 || !item) {
+                showIdle();
                 return;
             }
 
-            const src = new URL(`/content/${encodeURIComponent(filename)}`, window.location.origin).href;
-            const nextPlayer = getNextPlayer(filename);
+            currentIndex = isBranding ? -1 : index;
+            const token = ++playToken;
+            const filename = item.fileName;
 
-            // If we are already playing this file and it's a video that hasn't ended, stay on it.
-            // (Unless it's the ONLY item, then we loop it)
-            if (activePlayer && activePlayer.src === src && activePlayer.tagName === 'VIDEO' && 
+            if (debugOverlayEnabled) {
+                console.log(`[PlainSight] advance cause=${cause || 'init'} token=${token} index=${isBranding ? 'branding' : currentIndex} file=${filename} t=${new Date().toISOString()}`);
+            }
+
+            if (!isValidFilename(filename)) {
+                showError('Invalid media filename: ' + filename);
+                preTriggerTimer = setTimeout(() => advance(token, 'error'), 3000);
+                return;
+            }
+
+            const duration = item.durationSeconds > 0 ? item.durationSeconds : 10;
+            const src = contentSrc(filename);
+
+            // Already playing this exact video and it hasn't ended: keep it on screen (single-item
+            // loop) and just make sure the following item is preloaded.
+            if (activePlayer && activePlayer.src === src && activePlayer.tagName === 'VIDEO' &&
                 !activePlayer.paused && !activePlayer.ended && (currentPlaylist.length > 1 || isBranding)) {
-                isSwapping = false;
+                currentPlayingFilename = filename;
+                activePlayer._playToken = token;
                 prepareNextMedia();
                 return;
             }
@@ -387,11 +425,12 @@
             updateStatus(`Playing: ${statusPrefix}${filename}${statusIndex} [${duration}s]`);
             hideIdle();
 
-            // Prepare next element
+            const nextPlayer = getNextPlayer(filename);
             if (nextPlayer.src !== src) {
                 nextPlayer.src = src;
             }
-            
+            nextPlayer._playToken = token;
+
             try {
                 // Get the media fully ready while it is still invisible (opacity 0), so the
                 // cross-fade reveals real content instead of a black/blank element.
@@ -402,15 +441,16 @@
                 } else {
                     // Decode the image before showing it; rejects if the file fails to load.
                     await nextPlayer.decode();
+                    imageTimer = setTimeout(() => advance(token, 'timer'), duration * 1000);
+                }
 
-                    // Start timer for next transition based on server-provided duration
-                    imageTimer = setTimeout(() => {
-                        playNext();
-                    }, duration * 1000);
+                // A newer item may have started while we awaited readiness — abandon this one.
+                if (token !== playToken) {
+                    return;
                 }
 
                 // Cross-fade: the ready media fades in on top while the outgoing content fades out.
-                // The outgoing element keeps rendering during the fade, so its tail is no longer cut off.
+                // The outgoing element keeps rendering during the fade, so its tail is not cut off.
                 const outgoing = (activePlayer && activePlayer !== nextPlayer) ? activePlayer : null;
                 nextPlayer.classList.add('entering', 'active');
                 if (outgoing) {
@@ -419,56 +459,39 @@
                 setTimeout(() => nextPlayer.classList.remove('entering'), FadeMs);
 
                 activePlayer = nextPlayer;
+                currentPlayingFilename = filename;
                 hideError();
                 loadingEl.style.display = 'none';
                 reportNowPlaying(filename);
 
-                setTimeout(() => {
-                    prepareNextMedia();
-                }, 100);
+                setTimeout(prepareNextMedia, 100);
             } catch (err) {
                 console.error('Playback error:', err);
                 showError(`Failed to play: ${filename}`);
-                // Try next after a delay
-                setTimeout(() => playNext(), 3000);
-            } finally {
-                isSwapping = false;
+                preTriggerTimer = setTimeout(() => advance(token, 'error'), 3000);
             }
-        }
-
-        function playNext() {
-            if (currentIndex === -1) {
-                // Branding finished, play first item
-                currentIndex = 0;
-                playMedia(0);
-                return;
-            }
-
-            if (currentIndex === currentPlaylist.length - 1 && brandingItem) {
-                // Playlist end reached, play branding
-                playItemInternal(brandingItem, true);
-                currentIndex = -1;
-                return;
-            }
-
-            currentIndex = (currentIndex + 1) % currentPlaylist.length;
-            playMedia(currentIndex);
         }
 
         vPlayers.forEach((p) => {
+            // Authoritative fallback: if the pre-trigger timer somehow didn't fire, the natural
+            // 'ended' still advances. Stale 'ended' events (element no longer active, or its token
+            // superseded) are filtered by the activePlayer check and advance()'s token guard.
             p.addEventListener('ended', () => {
-                // isSwapping guard: the 150ms timeupdate pre-trigger may already have started the
-                // next item. Without this, the outgoing video's natural 'ended' fires a second
-                // playNext() mid-swap, skipping the item being loaded (and cutting it short).
-                if (p !== activePlayer || isSwapping) return;
-                playNext();
+                if (p !== activePlayer) return;
+                advance(p._playToken, 'ended');
             });
 
             p.addEventListener('timeupdate', () => {
-                if (p !== activePlayer || isSwapping) return;
-                // Pre-trigger next for tight loops
-                if (p.duration > 0 && p.currentTime > p.duration - 0.15) {
-                    playNext();
+                if (p !== activePlayer || !(p.duration > 0)) return;
+                // Schedule the cross-fade to begin exactly FadeMs before the true end, once per
+                // item. A one-shot timer (rather than reacting to the ~4 Hz timeupdate threshold)
+                // makes every hand-off land at a constant lead-in, so the 600 ms fade always
+                // completes over real content and there is never a black frame between items.
+                if (p.duration - p.currentTime <= 1 && preTriggerScheduledToken !== p._playToken) {
+                    preTriggerScheduledToken = p._playToken;
+                    const token = p._playToken;
+                    const delay = Math.max(0, (p.duration - p.currentTime - FadeMs / 1000) * 1000);
+                    preTriggerTimer = setTimeout(() => advance(token, 'pretrigger'), delay);
                 }
             });
 
@@ -476,7 +499,8 @@
                 if (p !== activePlayer) return;
                 console.error('Video error — trying next in 3s');
                 showError('Video error. Trying next...');
-                setTimeout(() => playNext(), 3000);
+                const token = p._playToken;
+                preTriggerTimer = setTimeout(() => advance(token, 'error'), 3000);
             });
         });
 
@@ -495,6 +519,7 @@
                 if (!hasItemsChanged && !hasBrandingChanged) return;
 
                 const wasEmpty = currentPlaylist.length === 0;
+                const playingFilename = currentPlayingFilename;
                 currentPlaylist = incomingItems;
                 brandingItem = incomingBranding;
 
@@ -506,9 +531,16 @@
 
                 updateStatus(`Playlist updated: ${currentPlaylist.length} item(s)` + (brandingItem ? ' + Branding' : ''));
                 if (wasEmpty) {
-                    currentIndex = 0;
-                    afterSplashHold(() => playMedia(0));
+                    afterSplashHold(() => playItem(currentPlaylist[0], 0, false, 'init'));
+                } else if (currentIndex !== -1) {
+                    // Re-locate the currently playing item in the new list so the next advance
+                    // continues from the right place instead of an arbitrary index. Do not restart
+                    // the current item if it is still present; fall back to 0 only if it is gone.
+                    const foundIndex = currentPlaylist.findIndex(i => i.fileName === playingFilename);
+                    currentIndex = foundIndex >= 0 ? foundIndex : 0;
+                    prepareNextMedia();
                 } else {
+                    // Branding is playing; leave currentIndex = -1 so it advances into the first item.
                     prepareNextMedia();
                 }
             } catch (err) {
