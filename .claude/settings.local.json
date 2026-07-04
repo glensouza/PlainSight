@@ -73,7 +73,17 @@
       "PowerShell(winget *)",
       "PowerShell(dotnet restore C:\\\\github\\\\glensouza\\\\PlainSight; Write-Output \"---OUTDATED---\"; dotnet list C:\\\\github\\\\glensouza\\\\PlainSight package --outdated)",
       "PowerShell(Get-Process *)",
-      "PowerShell(dotnet restore *)"
+      "PowerShell(dotnet restore *)",
+      "Bash(gh label *)",
+      "Bash(mkdir -p __TRACKED_VAR__/issues)",
+      "Bash(mkdir -p \"/c/Users/admin/AppData/Local/Temp/claude/C--github-glensouza-PlainSight/cc99e168-995c-4563-8b38-0e80988456a2/scratchpad/issues\")",
+      "Bash(sed -i 's/the \"Announcement entity\" issue/#96/' 05-edit-modal-companion.md)",
+      "Bash(sed -i 's/the Announcement entity issue/#96/' 03-expiration.md 08-preview-companion.md 04-parallax.md)",
+      "Read(//c/Users/admin/.claude/projects/C--github-glensouza-PlainSight/memory/**)",
+      "Bash(echo '- [Issue backlog #96-108]\\(project_issue_backlog.md\\) — July 2026 review backlog with per-issue model routing; #96 first.')",
+      "Bash(dotnet repl *)",
+      "Bash(sed 's/.*GetValue[<\\(]*\"\\\\\\([^\"]*\\\\\\)\".*/\\\\1/')",
+      "Bash(sed 's/.*configuration\\\\[\"\\\\\\([^\"]*\\\\\\)\".*/\\\\1/')"
     ]
   }
 }
