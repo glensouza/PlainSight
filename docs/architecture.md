@@ -133,4 +133,4 @@ Stores metadata, telemetry history, and fleet configuration.
 - **Zero-Touch Maintenance**: Players self-heal and self-update via systemd.
 - **Decoupled Playback**: If the Server API goes down, Players continue playing from the local content cache using the last known playlist.
 - **Hardware Acceleration**: Players use the Raspberry Pi 5 VideoCore VII for smooth 4K H.264 decoding.
-- **File Integrity**: Player updates are SHA-256 verified before application; manifests are Ed25519-signed.
+- **File Integrity**: Player updates are SHA-256 verified before application; version manifests are ECDSA-signed (P-256/SHA-256).

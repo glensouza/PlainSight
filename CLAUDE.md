@@ -82,17 +82,6 @@ Content management (upload, delete, rename, playlists, schedules) is performed d
 | Method | Path | Description |
 |---|---|---|
 | POST | `/api/device/heartbeat` | Player telemetry; returns `{ requestScreenshot, updateFileName, expectedSha256, assignedApiKey, playlistItems, brandingItem, liveMode, ndiSourceName, logMinLevel, logShipIntervalSeconds, screenshotBurstCount, screenshotBurstIntervalSeconds }` |
-| POST | `/api/device/{deviceId}/logs` | Player log upload |
-| POST | `/api/device/{deviceId}/screenshot/notify` | Player notifies server a screenshot was written to SMB |
-| GET | `/api/media/content/{fileName}` | Serve content file from SMB share |
-| GET | `/api/media/idle/{fileName}` | Serve idle/fallback file |
-| GET | `/api/media/branding/{fileName}` | Serve branding asset |
-| GET | `/api/media/screenshot/{deviceId}/{fileName}` | Serve screenshot |
-| POST | `/api/content/{id}/image-to-video` | Convert image to looping video via ffmpeg |
-| POST | `/api/content/{id}/extract-frame` | Extract first/last frame from video |
-| POST | `/api/content/{id}/ken-burns` | Generate Ken Burns zoom-pan video from image |
-| GET | `/api/updates/latest/binary` | Download latest player binary |
-| GET | `/api/updates/{version}/binary` | Download specific player version binary |
 | POST | `/api/device/{deviceId}/logs` | Player log upload (JSON `DeviceLogBatchDto`, capped at 500 entries, `X-Api-Key` required) |
 | POST | `/api/device/{deviceId}/screenshot/notify` | Player notifies server a screenshot was written to SMB (`multipart/form-data` with `fileName` field, `X-Api-Key` required) |
 | GET | `/api/media/content/{fileName}` | Serve content file from SMB share |

@@ -55,7 +55,7 @@ Player telemetry heartbeat. Creates or upserts the device record and returns com
   "brandingItem": { "fileName": "logo.mp4", "durationSeconds": 5 },
   "liveMode": false,
   "ndiSourceName": null,
-  "logMinLevel": 4,
+  "logMinLevel": 3,
   "logShipIntervalSeconds": 60,
   "screenshotBurstCount": null,
   "screenshotBurstIntervalSeconds": null
@@ -279,7 +279,7 @@ public class PlaylistItemDto
 
 ### KenBurnsRequest
 ```csharp
-public sealed record KenBurnsRequest(
+internal sealed record KenBurnsRequest(
     double StartX, double StartY, double StartW,
     double EndX, double EndY, double EndW,
     int DurationSeconds,

@@ -57,7 +57,7 @@ Optional — enables auto-live-mode when OBS NDI Output is active.
 
 | Key | Type | Default | Consumer(s) | Description |
 |---|---|---|---|---|
-| `Logging:PlayerMinLevel` | `int` | `4` (Warning) | `DeviceApi` | Minimum `LogLevel` server tells players to ship. Sent in heartbeat response. |
+| `Logging:PlayerMinLevel` | `int` | `3` (Warning) | `DeviceApi` | Minimum `LogLevel` server tells players to ship. Sent in heartbeat response. |
 | `Logging:PlayerShipIntervalSeconds` | `int` | `60` | `DeviceApi` | Interval server tells players to flush buffered logs. Sent in heartbeat response. |
 | `Logging:RetentionDays` | `int` | `30` | `LogRetentionService` | Days to keep log entries in the database before pruning. |
 | `DbLogger:MinimumLevel` | `string` | `Warning` | `DbLoggerProvider` | Minimum log level for entries persisted to the database. |
@@ -88,7 +88,7 @@ Optional — enables auto-live-mode when OBS NDI Output is active.
 | Key | Type | Default | Consumer(s) | Description |
 |---|---|---|---|---|
 | `SystemTimeZone` | `string?` | `null` (OS local) | `TimeExtensions` | IANA time zone ID used for schedule evaluation. Falls back to `TimeZoneInfo.Local` if unset or invalid. |
-| `PublicKeyPath` | `string` | `AppContext.BaseDirectory/Keys/release-signing.pub` | `Program`, `SignatureVerifier` | Filesystem path to Ed25519 (DER) public key for version manifest signature verification. |
+| `PublicKeyPath` | `string` | `AppContext.BaseDirectory/Keys/release-signing.pub` | `Program`, `SignatureVerifier` | Filesystem path to the ECDSA (P-256) PEM public key for version manifest signature verification. |
 | `ConnectionStrings:plainsightdb` | `string` | _(required)_ | `Program` | PostgreSQL connection string for Entity Framework Core. |
 
 ### SVD (Stable Video Diffusion)
