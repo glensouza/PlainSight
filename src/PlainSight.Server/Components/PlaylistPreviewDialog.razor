@@ -100,6 +100,8 @@
     {
         orderedItems = Playlist.Items
             .OrderBy(i => i.Order)
+            // Skip expired announcements so the preview matches what players are actually served.
+            .Where(i => !(i.Announcement != null && i.Announcement.ExpiresAt < DateTime.UtcNow))
             .SelectMany(i => i.Announcement != null
                 ? i.Announcement.Media
                     .OrderBy(m => m.SortOrder)

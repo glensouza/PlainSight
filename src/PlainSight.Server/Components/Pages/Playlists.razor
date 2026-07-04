@@ -374,9 +374,11 @@ else
     {
         try
         {
+            DateTime utcNow = DateTime.UtcNow;
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             availableAnnouncements = await context.Announcements
                 .Include(a => a.Media)
+                .Where(a => a.ExpiresAt == null || a.ExpiresAt >= utcNow)
                 .OrderBy(a => a.Title)
                 .ToListAsync();
         }
@@ -572,7 +574,7 @@ else
 
             if (playlist == null) return;
 
-            int nextOrder = playlist.Items.Any() ? playlist.Items.Max(i => i.Order) + 1 : 1;
+            int nextOrder = playlist.Items.Count != 0 ? playlist.Items.Max(i => i.Order) + 1 : 1;
 
             PlaylistItem playlistItem = new()
             {

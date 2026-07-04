@@ -80,7 +80,7 @@ else
                             </button>
                             <AuthorizeView Roles="Admin">
                                 <Authorized>
-                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAnnouncement(announcement.Id)">
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(announcement)">
                                         <i class="bi bi-trash"></i> Delete
                                     </button>
                                 </Authorized>
@@ -195,6 +195,33 @@ else
     </div>
 }
 
+@if (deleteTarget != null)
+{
+    <div class="modal d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Delete Announcement</h5>
+                    <button type="button" class="btn-close" @onclick="CancelDelete"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Delete <strong>@deleteTarget.Title</strong>? This removes it from any playlists that reference it and cannot be undone.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-danger" @onclick="DeleteAnnouncement" disabled="@isDeleting">
+                        @if (isDeleting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                        }
+                        Delete
+                    </button>
+                    <button class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
 
@@ -219,6 +246,8 @@ else
     private DateTime? announcementExpiresAt;
     private int? managingAnnouncementId;
     private Announcement? selectedAnnouncement;
+    private Announcement? deleteTarget;
+    private bool isDeleting;
     private bool isAddingMedia;
     private bool isReordering;
     private List<ContentItem> availableContentFiltered = [];
@@ -340,18 +369,35 @@ else
         }
     }
 
-    private async Task DeleteAnnouncement(int id)
+    private void ConfirmDelete(Announcement announcement)
     {
-        if (!await this.IsAdminAsync())
+        this.deleteTarget = announcement;
+    }
+
+    private void CancelDelete()
+    {
+        this.deleteTarget = null;
+    }
+
+    private async Task DeleteAnnouncement()
+    {
+        if (this.deleteTarget == null)
         {
-            this.Logger.LogWarning("Non-admin user attempted to delete announcement {Id}", id);
             return;
         }
 
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted to delete announcement {Id}", this.deleteTarget.Id);
+            this.deleteTarget = null;
+            return;
+        }
+
+        this.isDeleting = true;
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-            Announcement? announcement = await context.Announcements.FindAsync(id);
+            Announcement? announcement = await context.Announcements.FindAsync(this.deleteTarget.Id);
             if (announcement != null)
             {
                 context.Announcements.Remove(announcement);
@@ -363,6 +409,11 @@ else
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error deleting announcement");
+        }
+        finally
+        {
+            this.isDeleting = false;
+            this.deleteTarget = null;
         }
     }
 

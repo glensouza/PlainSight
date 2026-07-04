@@ -179,6 +179,8 @@ public static class DeviceApi
                     AssignedApiKey = assignedApiKey,
                     PlaylistItems = activePlaylist?.Items
                         .OrderBy(i => i.Order)
+                        // Skip announcements whose expiration has passed; their media must no longer be served.
+                        .Where(i => !(i.Announcement != null && i.Announcement.ExpiresAt < DateTime.UtcNow))
                         .SelectMany(i => i.Announcement != null
                             ? i.Announcement.Media
                                 .OrderBy(m => m.SortOrder)
