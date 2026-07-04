@@ -43,6 +43,14 @@
                     </label>
                 </div>
             </div>
+            <div class="mb-3">
+                <label class="form-label">Ordering</label>
+                <select class="form-select" @bind="playlistSortMode">
+                    <option value="@PlaylistSortMode.Manual">Manual (drag to reorder)</option>
+                    <option value="@PlaylistSortMode.ByEventDate">Automatic — by event date (soonest first)</option>
+                </select>
+                <div class="form-text">Automatic ordering sorts items by their event date; items without a date play last.</div>
+            </div>
             <button class="btn btn-primary" @onclick="SavePlaylist">
                 <i class="bi bi-save"></i> Save Playlist
             </button>
@@ -288,6 +296,7 @@ else
     private string playlistName = string.Empty;
     private string playlistDescription = string.Empty;
     private bool playlistIsActive = true;
+    private PlaylistSortMode playlistSortMode = PlaylistSortMode.Manual;
     private int? managingPlaylistId;
     private Playlist? selectedPlaylist;
     private bool isAddingItem;
@@ -398,6 +407,7 @@ else
         playlistName = string.Empty;
         playlistDescription = string.Empty;
         playlistIsActive = true;
+        playlistSortMode = PlaylistSortMode.Manual;
     }
 
     private void EditPlaylist(int id)
@@ -413,6 +423,7 @@ else
         playlistName = playlist.Name;
         playlistDescription = playlist.Description ?? string.Empty;
         playlistIsActive = playlist.IsActive;
+        playlistSortMode = playlist.SortMode;
     }
 
     private void CancelEdit()
@@ -441,6 +452,7 @@ else
                     playlist.Name = playlistName;
                     playlist.Description = playlistDescription;
                     playlist.IsActive = playlistIsActive;
+                    playlist.SortMode = playlistSortMode;
                     playlist.UpdatedAt = DateTime.UtcNow;
                 }
             }
@@ -451,6 +463,7 @@ else
                     Name = playlistName,
                     Description = playlistDescription,
                     IsActive = playlistIsActive,
+                    SortMode = playlistSortMode,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };

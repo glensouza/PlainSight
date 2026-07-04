@@ -83,7 +83,23 @@
       "Bash(echo '- [Issue backlog #96-108]\\(project_issue_backlog.md\\) — July 2026 review backlog with per-issue model routing; #96 first.')",
       "Bash(dotnet repl *)",
       "Bash(sed 's/.*GetValue[<\\(]*\"\\\\\\([^\"]*\\\\\\)\".*/\\\\1/')",
-      "Bash(sed 's/.*configuration\\\\[\"\\\\\\([^\"]*\\\\\\)\".*/\\\\1/')"
+      "Bash(sed 's/.*configuration\\\\[\"\\\\\\([^\"]*\\\\\\)\".*/\\\\1/')",
+      "Bash(docker --version)",
+      "Bash(docker run *)",
+      "Bash(docker exec *)",
+      "Bash(break)",
+      "Bash(export PGPASSWORD=test)",
+      "Bash(psql -h localhost -p 15432 -U postgres -d plainsight)",
+      "Bash(export ConnectionStrings__plainsightdb=\"Host=localhost;Port=15432;Database=plainsight;Username=postgres;Password=test\")",
+      "Bash(docker rm *)",
+      "Bash(dotnet format *)",
+      "Bash(dotnet list *)",
+      "Bash(curl -s \"https://api.nuget.org/v3-flatcontainer/microsoft.openapi/index.json\")",
+      "Bash(curl -s \"https://api.github.com/advisories/GHSA-v5pm-xwqc-g5wc\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Summary:', d.get\\('summary'\\)\\); print\\('Severity:', d.get\\('severity'\\)\\); [print\\('Package:', v['package']['name'], '| vulnerable:', v.get\\('vulnerable_version_range'\\), '| patched:', v.get\\('first_patched_version'\\)\\) for v in d.get\\('vulnerabilities',[]\\)]\")",
+      "Bash(gh run *)",
+      "Bash(Get-ChildItem *)",
+      "Bash(dotnet clean *)"
     ]
   }
 }

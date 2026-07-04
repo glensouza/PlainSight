@@ -81,6 +81,8 @@ builder.Services.AddSingleton<SvdGenerationService>();
 builder.Services.AddHostedService<SvdGenerationWorkerService>();
 builder.Services.AddScoped<ContentSyncService>();
 builder.Services.AddHostedService<ContentSyncWorkerService>();
+builder.Services.AddScoped<ExpirationCleanupService>();
+builder.Services.AddHostedService<ExpirationCleanupWorkerService>();
 builder.Services.AddSingleton<VersionService>();
 builder.Services.AddSingleton<SignatureVerifier>(sp =>
 {

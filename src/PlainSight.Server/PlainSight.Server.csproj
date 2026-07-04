@@ -22,10 +22,10 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
-    <PackageReference Include="PuppeteerSharp" Version="25.1.2" />
-    <PackageReference Include="Scalar.AspNetCore" Version="2.16.4" />
-    <PackageReference Include="SkiaSharp" Version="3.119.4" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.4" />
+    <PackageReference Include="PuppeteerSharp" Version="25.3.1" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.16.10" />
+    <PackageReference Include="SkiaSharp" Version="4.148.0" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.148.0" />
     <PackageReference Include="YoutubeExplode" Version="6.6.0" />
     <PackageReference Include="Zeroconf" Version="3.7.16" />
   </ItemGroup>

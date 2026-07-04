@@ -145,7 +145,7 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
         using (SKCanvas drawCanvas = new(canvas))
         {
             drawCanvas.Clear(SKColors.Black);
-            drawCanvas.DrawBitmap(maskBitmap, detection.X, detection.Y);
+            drawCanvas.DrawBitmap(maskBitmap, new SKRect(detection.X, detection.Y, detection.X + maskBitmap.Width, detection.Y + maskBitmap.Height), SKSamplingOptions.Default);
         }
 
         using SKImage image = SKImage.FromBitmap(canvas);
