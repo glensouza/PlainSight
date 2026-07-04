@@ -18,7 +18,7 @@ PlainSight provides a zero-touch maintenance digital signage solution with:
 - **Self-Updating Players**: Raspberry Pi devices automatically update themselves
 - **Live Monitoring**: Real-time playback status and screenshot capture
 - **Content Normalization**: All content normalized to H.264/MP4 for smooth playback
-- **SMB Streaming**: Direct streaming from network share - no local synchronization
+- **Hybrid Storage**: SMB share streaming with local content cache for offline resilience
 
 ## Architecture
 
@@ -61,16 +61,36 @@ The system consists of three main components:
 - On-demand screenshot capture from any screen
 - Playback monitoring and telemetry
 
-### Canary Deployments
-- Test updates on specific device groups
-- Gradual rollout to entire fleet
-- Easy rollback with 5 previous Docker images retained
-
 ### Content Management
-- Server-side web content rendering
-- Automatic conversion to H.264/MP4
-- Direct SMB streaming to devices
-- No complex local synchronization
+- Server-side web content rendering to H.264/MP4
+- Playlists with drag-and-drop ordering and per-item duration overrides
+- Time/day schedules with prioritization and target device groups
+- Branding interstitials between playlist loop passes
+- Idle content fallback when no schedule is active
+- SMB share with local player cache for offline resilience
+
+### Live Video & NDI
+- NDI source auto-discovery via mDNS
+- Per-device NDI assignment with auto-switch on source presence
+- OBS WebSocket integration for live/recording state sync
+- Manual override for force-on/force-off per device
+
+### Media Transforms
+- Image-to-video conversion with configurable duration
+- Ken Burns zoom-pan with optional overlay and parallax
+- Video editing: trim, crop, reverse, speed (0.5x–2.0x), strip audio, compress
+- Frame extraction (first/last)
+- YouTube download with size/duration limits and automatic re-encode
+- AI video generation: Gemini/Veo animation + SVD (ComfyUI) self-hosted option
+- Veo watermark removal via ffmpeg
+- Companion content pairing (play before/after)
+
+### Fleet Operations
+- Device offline email alerts
+- Auto-screenshot bursts on schedule change
+- Device log shipping with configurable minimum level
+- Fleet update version management
+- Canary deployment schema groundwork (`DeviceGroupVersion`); graduated rollout is planned (TODO)
 
 ## Quick Start
 
@@ -113,7 +133,21 @@ curl -sSL https://raw.githubusercontent.com/glensouza/PlainSight/main/deployment
 - [GitHub Actions Workflow](github-actions.md) - CI/CD pipeline
 - [Architecture Overview](architecture.md) - System design details
 - [API Documentation](api.md) - REST API reference
+- [Configuration Reference](configuration.md) - All server/player config keys
 - [Development Guide](development.md) - Local development setup
+- [NDI & OBS Setup](NDI-OBS-Setup.md) - Live video integration
+- [Network & Cloudflare](NETWORK-MANAGEMENT.md) - Network topology and Cloudflare tunnel
+- [Security](SECURITY.md) - Security considerations and checklist
+- [Boot Splash](boot-splash.md) - Boot screen customization
+- [Gmail Setup](gmail-setup.md) - SMTP alert email configuration
+
+### Task-Oriented Guides
+- [Content Management](guides/content-management.md) - Upload, organize, and manage media
+- [Media Transforms](guides/media-transforms.md) - Image-to-video, Ken Burns, video editing
+- [AI Media Workflow](guides/ai-media-workflow.md) - Gemini/Veo and SVD animation pipelines
+- [Playlists, Schedules & Branding](guides/playlists-schedules-branding.md) - Content programming
+- [Live Video](guides/live-video.md) - NDI live mode and OBS integration
+- [YouTube Download](guides/youtube-download.md) - Downloading videos from YouTube
 
 ## System Requirements
 

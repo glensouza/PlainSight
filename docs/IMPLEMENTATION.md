@@ -1,5 +1,7 @@
 # PlainSight Implementation Summary
 
+> **Historical document** — May 14, 2026. This file describes the state of the project at the initial build point. It is superseded by the docs listed in the index below and kept for reference only. For current architecture, see [architecture.md](architecture.md).
+
 This document provides a complete summary of the PlainSight digital signage system implementation.
 
 ## ✅ Completed Implementation

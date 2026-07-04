@@ -1,6 +1,6 @@
 # PlainSight API Documentation
 
-REST API reference for the PlainSight server. All routes requiring authentication use cookie-based auth (admin UI login). Content management (upload, delete, rename, playlists, schedules) is performed server-side via Blazor — these routes are not part of the REST surface.
+> Generated from code. Source files: `src/PlainSight.Server/Api/DeviceApi.cs`, `TransformApi.cs`, `ContentApi.cs`, `UpdateApi.cs`, and DTOs in `src/PlainSight.Shared/Models/`. When updating this document, re-derive from those files — do not patch.
 
 ## Base URL
 
@@ -10,146 +10,203 @@ http://localhost:8080/api
 
 ---
 
+## X-Api-Key Authentication (Trust-On-First-Use)
+
+Device endpoints use `X-Api-Key` header authentication with a trust-on-first-use (TOFU) lifecycle:
+
+1. **Initial heartbeat** — A new device sends `POST /api/device/heartbeat` without an `X-Api-Key` header. The server creates the device record, generates a GUID v7 API key, and returns it in the `assignedApiKey` field of the heartbeat response.
+2. **Subsequent calls** — Every later call from the device (`/heartbeat`, `/logs`, `/screenshot/notify`) must include `X-Api-Key: <the-key>`. Missing or mismatched keys receive a `401` response with `application/problem+json` body.
+3. **Persistence** — The key is stored in the `Device.ApiKey` column in the database. It never expires, but can be rotated by an admin clearing the key (next heartbeat re-registers).
+
+A device that registered but lost its key must have its `ApiKey` cleared on the server before it can re-register.
+
+---
+
 ## Device API
 
 ### POST /api/device/heartbeat
 
-Player telemetry. Creates or upserts the device record and returns pending commands.
+Player telemetry heartbeat. Creates or upserts the device record and returns commands, playlist, and configuration.
 
-**Request body**:
+**Auth:** `X-Api-Key` header (optional on first call for TOFU registration; required thereafter).
+
+**Request body** (`DeviceTelemetryDto`):
 ```json
 {
   "deviceId": "plainsight-sanctuary",
   "appVersion": "1.18.0",
   "currentFileName": "worship.mp4",
+  "callbackUrl": "http://192.168.1.100:5555",
   "timestamp": "2026-06-17T03:00:00Z"
 }
 ```
 
-**Response**:
+**Response** (`HeartbeatResponse`, 200):
 ```json
 {
   "requestScreenshot": false,
-  "updateUrl": "/api/updates/1.19.0/binary",
-  "scheduleChanged": false
+  "updateFileName": "plain-sight-player-linux-arm64",
+  "expectedSha256": "a1b2c3d4e5f6...",
+  "assignedApiKey": "0192abcd1234...",
+  "playlistItems": [
+    { "fileName": "announcement.mp4", "durationSeconds": 30 },
+    { "fileName": "worship.mp4", "durationSeconds": 300 }
+  ],
+  "brandingItem": { "fileName": "logo.mp4", "durationSeconds": 5 },
+  "liveMode": false,
+  "ndiSourceName": null,
+  "logMinLevel": 3,
+  "logShipIntervalSeconds": 60,
+  "screenshotBurstCount": null,
+  "screenshotBurstIntervalSeconds": null
 }
 ```
 
-`updateUrl` is `null` when no update is pending. `requestScreenshot` clears after the player calls `screenshot/notify`.
+| Field | Type | Description |
+|---|---|---|
+| `requestScreenshot` | `bool` | Server has requested a screenshot capture. Player should take one and call `/screenshot/notify`. Clears after this response. |
+| `updateFileName` | `string?` | Filename of the update binary on the share (or `null` if up to date). |
+| `expectedSha256` | `string?` | SHA-256 hash the player must verify before applying the update. |
+| `assignedApiKey` | `string?` | New API key assigned on first heartbeat (`null` for already-registered devices). |
+| `playlistItems` | `PlaylistItemDto[]?` | Active schedule's playlist, already expanded for companion items. `null` if no active schedule. |
+| `brandingItem` | `PlaylistItemDto?` | Active branding video to play between playlist loop passes. |
+| `liveMode` | `bool` | Player should switch to live NDI viewer instead of cached signage. |
+| `ndiSourceName` | `string?` | NDI source name to connect to (only set when `liveMode` is `true`). |
+| `logMinLevel` | `int?` | Minimum `LogLevel` the player should ship. `null` means no change. |
+| `logShipIntervalSeconds` | `int?` | How often the player should flush buffered logs. |
+| `screenshotBurstCount` | `int?` | Number of screenshots to capture on schedule change. `null`/`0` = none. |
+| `screenshotBurstIntervalSeconds` | `int?` | Seconds between burst screenshots. |
 
 ---
 
 ### POST /api/device/{deviceId}/logs
 
-Upload a log batch from the player. Body is plain text (newline-separated log lines). Returns `204 No Content`.
+Upload a batch of log entries from the player. Capped at 500 entries per batch.
+
+**Auth:** `X-Api-Key` header (required; device must be registered).
+
+**Request body** (`DeviceLogBatchDto`):
+```json
+{
+  "entries": [
+    {
+      "level": "Warning",
+      "categoryName": "PlayerWorker",
+      "message": "Content file not found in cache",
+      "exception": null,
+      "timestamp": "2026-06-17T03:01:00Z"
+    }
+  ]
+}
+```
+
+**Response:** `200 OK` (also returns 200 for empty batches).
 
 ---
 
 ### POST /api/device/{deviceId}/screenshot/notify
 
-Player calls this after writing a PNG to `/mnt/plainsight/screenshots/{deviceId}/`. Body:
-```json
-{ "fileName": "screenshot_1718589600.png" }
-```
-Returns `200 OK`. Server verifies the file exists on the share and adds it to the screenshot history.
+Player notifies the server that a screenshot has been written to the SMB share.
+
+**Auth:** `X-Api-Key` header (required).
+
+**Request:** `multipart/form-data` with field `fileName` (string, the filename on the share).
+
+**Response:** `200 OK` on success. `404` if the file is not found on the share. `400` for missing/invalid `fileName`.
 
 ---
 
 ## Media Serving
 
-Serves files directly from the SMB share. No auth required (served to players).
+Serve files directly from the SMB share. All routes require authentication (admin user). Responses include `Cache-Control: no-cache`.
 
 ### GET /api/media/content/{fileName}
 
-Serve a content file from `/mnt/plainsight/content/`. Supports byte-range requests for streaming.
+Serve a content file from the `ContentPath` share. Supports byte-range requests.
 
 ### GET /api/media/idle/{fileName}
 
-Serve an idle/fallback loop file from `/mnt/plainsight/idle/`.
+Serve an idle/fallback file from the `IdlePath` share.
 
 ### GET /api/media/branding/{fileName}
 
-Serve a branding asset from `/mnt/plainsight/branding/`.
+Serve a branding asset from the `BrandingPath` share.
 
 ### GET /api/media/screenshot/{deviceId}/{fileName}
 
-Serve a screenshot from `/mnt/plainsight/screenshots/{deviceId}/`.
+Serve a screenshot PNG from `ScreenshotsPath/{deviceId}/`.
 
 ---
 
 ## Content Transforms
 
-Server-side media processing. All routes require authentication.
+Server-side media processing. All routes require authentication (admin user).
 
-### POST /api/content/{id}/image-to-video
+### POST /api/content/{id:int}/image-to-video
 
-Convert a static image content item into a looping MP4. Creates a new `ContentItem` linked via `SourceContentItemId`.
+Convert a static image into a looping MP4. Creates a new `ContentItem` linked via `SourceContentItemId`.
 
-**Request body**:
-```json
-{ "durationSeconds": 10 }
-```
+**Query parameter:** `durationSeconds` (int, 1–3600).
 
-**Response**:
+**Response** (200):
 ```json
 { "id": 42, "fileName": "slide_loop.mp4" }
 ```
 
 ---
 
-### POST /api/content/{id}/extract-frame
+### POST /api/content/{id:int}/extract-frame
 
 Extract a frame from a video and save as a new image content item.
 
-**Request body**:
-```json
-{ "position": "first" }
-```
-`position`: `"first"` or `"last"`.
+**Query parameter:** `position` (string, `"first"` or `"last"`).
 
-**Response**:
+**Response** (200):
 ```json
-{ "id": 43, "fileName": "worship_frame.jpg" }
+{ "id": 43, "fileName": "worship_frame_first.jpg" }
 ```
 
 ---
 
-### POST /api/content/{id}/ken-burns
+### POST /api/content/{id:int}/ken-burns
 
-Generate a Ken Burns zoom-pan video from an image. Creates a new `ContentItem`.
+Generate a Ken Burns zoom-pan video from an image with optional overlay with parallax. Creates a new `ContentItem` linked via `SourceContentItemId`.
 
-**Request body**:
+**Request body** (`KenBurnsRequest`):
 ```json
 {
-  "startX": 0,
-  "startY": 0,
-  "startW": 100,
-  "endX": 10,
-  "endY": 10,
-  "endW": 80,
+  "startX": 0.1,
+  "startY": 0.0,
+  "startW": 0.8,
+  "endX": 0.0,
+  "endY": 0.1,
+  "endW": 1.0,
   "durationSeconds": 10,
   "overlayContentItemId": null,
-  "parallaxRate": 0.0,
-  "outputFileName": "slide_kenburns"
+  "overlayParallaxRate": 0.0
 }
 ```
 
-**Response**:
+All rect values (`startX`/`startY`/`startW`/`endX`/`endY`/`endW`) are normalized 0.0–1.0 within the image, with the constraint `x + w <= 1` and `y` within image bounds. `durationSeconds` is 1–3600. `overlayParallaxRate` controls the parallax depth effect when an overlay is present.
+
+**Response** (200):
 ```json
-{ "id": 44, "fileName": "slide_kenburns.mp4" }
+{ "id": 44, "fileName": "slide_kenburns_20260617120000.mp4" }
 ```
 
 ---
 
 ## Updates
 
+Publicly accessible (no auth) — used by installer scripts and players.
+
 ### GET /api/updates/latest/binary
 
-Download the latest published player binary (application/octet-stream). Used by players when `updateUrl` is not yet known.
+Download the latest published player binary (application/octet-stream). Returns the most recently uploaded version.
 
 ### GET /api/updates/{version}/binary
 
-Download a specific player binary by version string (e.g. `1.19.0`). This is the URL returned in heartbeat responses.
+Download a specific player binary by version string (e.g. `1.20.0`).
 
 ---
 
@@ -157,7 +214,7 @@ Download a specific player binary by version string (e.g. `1.19.0`). This is the
 
 ### GET /health
 
-Standard ASP.NET health endpoint. Returns `200 Healthy` when the server and database are reachable.
+Standard ASP.NET health check endpoint. Returns `200 Healthy` when the server and database are reachable.
 
 ---
 
@@ -167,10 +224,28 @@ Standard ASP.NET health endpoint. Returns `200 Healthy` when the server and data
 ```csharp
 public class DeviceTelemetryDto
 {
-    public string DeviceId { get; init; }
-    public string AppVersion { get; init; }
-    public string? CurrentFileName { get; init; }
-    public DateTime Timestamp { get; init; }
+    public string DeviceId { get; set; }
+    public string AppVersion { get; set; }
+    public string? CurrentFileName { get; set; }
+    public string? CallbackUrl { get; set; }
+    public DateTime Timestamp { get; set; }
+}
+```
+
+### DeviceLogBatchDto
+```csharp
+public class DeviceLogBatchDto
+{
+    public List<DeviceLogEntryDto> Entries { get; set; }
+}
+
+public class DeviceLogEntryDto
+{
+    public string Level { get; set; }
+    public string? CategoryName { get; set; }
+    public string Message { get; set; }
+    public string? Exception { get; set; }
+    public DateTime Timestamp { get; set; }
 }
 ```
 
@@ -178,39 +253,50 @@ public class DeviceTelemetryDto
 ```csharp
 public class HeartbeatResponse
 {
-    public bool RequestScreenshot { get; init; }
-    public string? UpdateUrl { get; init; }
-    public bool ScheduleChanged { get; init; }
+    public bool RequestScreenshot { get; set; }
+    public string? UpdateFileName { get; set; }
+    public string? ExpectedSha256 { get; set; }
+    public string? AssignedApiKey { get; set; }
+    public List<PlaylistItemDto>? PlaylistItems { get; set; }
+    public PlaylistItemDto? BrandingItem { get; set; }
+    public bool LiveMode { get; set; }
+    public string? NdiSourceName { get; set; }
+    public int? LogMinLevel { get; set; }
+    public int? LogShipIntervalSeconds { get; set; }
+    public int? ScreenshotBurstCount { get; set; }
+    public int? ScreenshotBurstIntervalSeconds { get; set; }
 }
 ```
 
-### ContentItem (key fields)
+### PlaylistItemDto
 ```csharp
-public class ContentItem
+public class PlaylistItemDto
 {
-    public int Id { get; init; }
-    public string Name { get; set; }
-    public string FileName { get; set; }          // unique on disk
-    public ContentType Type { get; set; }          // Video | Image
-    public long FileSizeBytes { get; set; }
+    public string FileName { get; set; }
     public int DurationSeconds { get; set; }
-    public string? ThumbnailFileName { get; set; } // sidecar _thumb.jpg
-    public int? SourceContentItemId { get; set; }  // original item this was derived from
-    public int? CompanionContentItemId { get; set; }
-    public CompanionPosition? CompanionPosition { get; set; } // Before | After
 }
+```
+
+### KenBurnsRequest
+```csharp
+internal sealed record KenBurnsRequest(
+    double StartX, double StartY, double StartW,
+    double EndX, double EndY, double EndW,
+    int DurationSeconds,
+    int? OverlayContentItemId,
+    double OverlayParallaxRate);
 ```
 
 ---
 
 ## Error Responses
 
-Standard ASP.NET `ProblemDetails` format:
+Standard ASP.NET `ProblemDetails` format (`application/problem+json`):
 
 ```json
 {
-  "type": "https://tools.ietf.org/html/rfc7231#section-6.5.4",
-  "title": "Not Found",
-  "status": 404
+  "type": "https://tools.ietf.org/html/rfc7235#section-3.1",
+  "title": "Missing X-Api-Key header",
+  "status": 401
 }
 ```
