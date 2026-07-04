@@ -233,6 +233,9 @@
         let imageTimer = null;
         let preTriggerTimer = null;
         let preTriggerScheduledToken = -1;
+        // Distinct from preTriggerTimer: this is the "something failed, move on in 3s" retry,
+        // kept separate so clearing one can never cancel the other.
+        let retryTimer = null;
 
         const debugOverlayEnabled = new URLSearchParams(window.location.search).get('debugOverlay') === '1';
         document.addEventListener('keydown', e => {
@@ -261,6 +264,7 @@
         function showIdle() {
             clearTimeout(imageTimer);
             clearTimeout(preTriggerTimer);
+            clearTimeout(retryTimer);
             playToken++;
             currentPlayingFilename = null;
             allPlayers.forEach(p => {
@@ -386,6 +390,7 @@
         async function playItem(item, index, isBranding, cause) {
             clearTimeout(imageTimer);
             clearTimeout(preTriggerTimer);
+            clearTimeout(retryTimer);
             preTriggerScheduledToken = -1;
 
             if (currentPlaylist.length === 0 || !item) {
@@ -403,7 +408,7 @@
 
             if (!isValidFilename(filename)) {
                 showError('Invalid media filename: ' + filename);
-                preTriggerTimer = setTimeout(() => advance(token, 'error'), 3000);
+                retryTimer = setTimeout(() => advance(token, 'error'), 3000);
                 return;
             }
 
@@ -468,7 +473,7 @@
             } catch (err) {
                 console.error('Playback error:', err);
                 showError(`Failed to play: ${filename}`);
-                preTriggerTimer = setTimeout(() => advance(token, 'error'), 3000);
+                retryTimer = setTimeout(() => advance(token, 'error'), 3000);
             }
         }
 
@@ -500,7 +505,7 @@
                 console.error('Video error — trying next in 3s');
                 showError('Video error. Trying next...');
                 const token = p._playToken;
-                preTriggerTimer = setTimeout(() => advance(token, 'error'), 3000);
+                retryTimer = setTimeout(() => advance(token, 'error'), 3000);
             });
         });
 
