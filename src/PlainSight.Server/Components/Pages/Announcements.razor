@@ -100,7 +100,7 @@ else
                             }
                             @if (announcement.ExpiresAt.HasValue)
                             {
-                                <span class="badge bg-warning text-dark ms-1">Expires: @announcement.ExpiresAt.Value.ToString("yyyy-MM-dd HH:mm")</span>
+                                <span class="badge bg-warning text-dark ms-1">Expires: @announcement.ExpiresAt.Value.ToLocalString("yyyy-MM-dd HH:mm")</span>
                             }
                         </div>
                         <button class="btn btn-sm btn-primary" @onclick="() => ManageMedia(announcement.Id)">
@@ -311,7 +311,8 @@ else
         announcementTitle = announcement.Title;
         announcementDescription = announcement.Description ?? string.Empty;
         announcementEventDate = announcement.EventDate;
-        announcementExpiresAt = announcement.ExpiresAt;
+        // Stored UTC → wall-clock in the configured SystemTimeZone for the datetime-local input.
+        announcementExpiresAt = announcement.ExpiresAt?.ToLocal();
     }
 
     private void CancelEdit()
@@ -328,6 +329,10 @@ else
             return;
         }
 
+        // The datetime-local input yields a wall-clock value in the configured SystemTimeZone;
+        // convert to UTC for storage (ExpiresAt is a timestamptz column and delivery compares against UtcNow).
+        DateTime? expiresAtUtc = announcementExpiresAt?.ToUtc();
+
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
@@ -340,7 +345,7 @@ else
                     announcement.Title = announcementTitle;
                     announcement.Description = announcementDescription;
                     announcement.EventDate = announcementEventDate;
-                    announcement.ExpiresAt = announcementExpiresAt;
+                    announcement.ExpiresAt = expiresAtUtc;
                     announcement.UpdatedAt = DateTime.UtcNow;
                 }
             }
@@ -351,7 +356,7 @@ else
                     Title = announcementTitle,
                     Description = announcementDescription,
                     EventDate = announcementEventDate,
-                    ExpiresAt = announcementExpiresAt,
+                    ExpiresAt = expiresAtUtc,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
