@@ -56,19 +56,22 @@ docker compose up -d
 ### Key files to read first
 
 - `src/PlainSight.AppHost/AppHost.cs` — Aspire wiring; PostgreSQL uses `ContainerLifetime.Persistent`
-- `src/PlainSight.Server/Data/PlainSightDbContext.cs` — EF Core context with `Device`, `ContentItem`, `Playlist`, `PlaylistItem`
+- `src/PlainSight.Server/Data/PlainSightDbContext.cs` — EF Core context with 16 entity types: `Device`, `ContentItem`, `Playlist`, `PlaylistItem`, `Schedule`, `ScheduleTargetGroup`, `BrandingVideo`, `BrandingSchedule`, `NdiSource`, `LogEntry`, `PlayerVersion`, `DeviceGroup`, `DeviceGroupVersion`, `DeviceScreenshot`, `SystemSetting`, `AdminUser`
 - `src/PlainSight.Server/Program.cs` — Service registration; DB migrations run at startup via `Migrate()`
+- `src/PlainSight.Server/Api/DeviceApi.cs` — Heartbeat endpoint is the system's spine; X-Api-Key TOFU auth, playlist delivery, live-mode decisions, screenshot burst triggers
+- `src/PlainSight.Server/Services/ContentSyncService.cs` — Holds `SyncLock` (static `SemaphoreSlim`) across file write + DB insert to prevent unique `FileName` constraint violations (see commit a332c72)
 - `src/PlainSight.Server/Services/VersionService.cs` — Reads version from assembly metadata set by CI; canary deployment logic is a TODO
+- `src/PlainSight.Player/wwwroot/index.html` — HTML5 double-buffered video player with cross-fade transitions, playlist polling, branding interstitial, idle fallback, and now-playing reporting
 - `version.txt` — Single source of truth for `MAJOR.MINOR`; edit this file to bump the major or minor version
 
 ### Data flow
 
 **Heartbeat cycle (every 30 seconds):**
-Player → `POST /api/device/heartbeat` → server upserts Device record → responds with `{ requestScreenshot, updateUrl }` → player acts on commands.
+Player → `POST /api/device/heartbeat` → server upserts Device record → responds with `HeartbeatResponse` containing `{ requestScreenshot, updateFileName, expectedSha256, assignedApiKey, playlistItems, brandingItem, liveMode, ndiSourceName, logMinLevel, logShipIntervalSeconds, screenshotBurstCount, screenshotBurstIntervalSeconds }` → player acts on commands.
 
-**Self-update:** `updateUrl` in heartbeat response points to `/api/updates/{version}/binary`. Player downloads, swaps binary on disk (keeping `.bak`), then calls `Environment.Exit(0)` so systemd restarts it with the new binary. No signature verification is currently implemented.
+**Self-update:** `updateFileName` in heartbeat response identifies the binary on the share. Player downloads from `/api/updates/{version}/binary`, verifies SHA-256 against `expectedSha256`, swaps binary on disk (keeping `.bak`), then calls `Environment.Exit(0)` so systemd restarts it with the new binary.
 
-**Content delivery:** Files live on a Samba share mounted at `/mnt/plainsight`. The server writes rendered MP4s there. Players stream directly from the SMB mount (`/mnt/plainsight/content`).
+**Content delivery:** Files live on a Samba share mounted at `/mnt/plainsight`. The server writes rendered MP4s there. Players maintain a local content cache (`/var/cache/plainsight/content`) synced every heartbeat with SMB fallback (`ContentSyncService` / `CacheManager`), providing offline resilience when the share is unreachable.
 
 **Player display:** `PlainSight.Player` runs an embedded Kestrel web server serving an HTML5 video player page at `/player`. `KioskService` launches the system Chromium browser in kiosk mode pointed at that local page. `PlaylistService` reads `playlist.json` (with path-traversal validation) or falls back to a directory scan of the content path.
 
@@ -78,7 +81,7 @@ Content management (upload, delete, rename, playlists, schedules) is performed d
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/device/heartbeat` | Player telemetry; returns `{ requestScreenshot, updateUrl, scheduleChanged }` |
+| POST | `/api/device/heartbeat` | Player telemetry; returns `{ requestScreenshot, updateFileName, expectedSha256, assignedApiKey, playlistItems, brandingItem, liveMode, ndiSourceName, logMinLevel, logShipIntervalSeconds, screenshotBurstCount, screenshotBurstIntervalSeconds }` |
 | POST | `/api/device/{deviceId}/logs` | Player log upload |
 | POST | `/api/device/{deviceId}/screenshot/notify` | Player notifies server a screenshot was written to SMB |
 | GET | `/api/media/content/{fileName}` | Serve content file from SMB share |
@@ -90,6 +93,19 @@ Content management (upload, delete, rename, playlists, schedules) is performed d
 | POST | `/api/content/{id}/ken-burns` | Generate Ken Burns zoom-pan video from image |
 | GET | `/api/updates/latest/binary` | Download latest player binary |
 | GET | `/api/updates/{version}/binary` | Download specific player version binary |
+| POST | `/api/device/{deviceId}/logs` | Player log upload (JSON `DeviceLogBatchDto`, capped at 500 entries, `X-Api-Key` required) |
+| POST | `/api/device/{deviceId}/screenshot/notify` | Player notifies server a screenshot was written to SMB (`multipart/form-data` with `fileName` field, `X-Api-Key` required) |
+| GET | `/api/media/content/{fileName}` | Serve content file from SMB share |
+| GET | `/api/media/idle/{fileName}` | Serve idle/fallback file |
+| GET | `/api/media/branding/{fileName}` | Serve branding asset |
+| GET | `/api/media/screenshot/{deviceId}/{fileName}` | Serve screenshot |
+| POST | `/api/content/{id}/image-to-video` | Convert image to looping video via ffmpeg (`durationSeconds` query param) |
+| POST | `/api/content/{id}/extract-frame` | Extract first/last frame from video (`position` query param: `"first"` or `"last"`) |
+| POST | `/api/content/{id}/ken-burns` | Generate Ken Burns zoom-pan video from image (JSON body with normalized 0.0–1.0 rects, optional overlay+parallax) |
+| GET | `/api/updates/latest/binary` | Download latest player binary (public, no auth) |
+| GET | `/api/updates/{version}/binary` | Download specific player version binary (public, no auth) |
+
+Device endpoints (`/heartbeat`, `/logs`, `/screenshot/notify`) use `X-Api-Key` header with trust-on-first-use: a new device gets a key assigned via `assignedApiKey` on its first heartbeat; all later calls must present it or receive `401 Problem`.
 
 ### Blazor pages
 
@@ -97,16 +113,35 @@ All pages in `src/PlainSight.Server/Components/Pages/` use `@rendermode Interact
 
 ### Database schema
 
-`PlainSightDbContext` manages four tables. `Device.DeviceId` (string, unique) is the natural key used in all player/API interactions. `ContentItem.FileName` is unique. `Playlist` → `PlaylistItem` → `ContentItem` with cascade delete on `PlaylistItem` and restrict on `ContentItem`.
+`PlainSightDbContext` manages 16 entity types. `Device.DeviceId` (string, unique) is the natural key used in all player/API interactions. `ContentItem.FileName` is unique. `Playlist` → `PlaylistItem` → `ContentItem` with cascade delete on `PlaylistItem` and restrict on `ContentItem`. `Schedule` has a `Playlist` FK (cascade) and many `ScheduleTargetGroup` entries. `NdiSource.ServiceName` is unique, and `Device` has a nullable FK to `NdiSource`. `BrandingSchedule` references `BrandingVideo` (cascade). `LogEntry` is bulk-inserted from a bounded channel. `PlayerVersion` and `DeviceGroupVersion` store fleet-update metadata. `SystemSetting` is keyed by string. `AdminUser` has a unique `Username`.
 
 `ContentItem` notable fields: `SourceContentItemId` (int?, FK to self — tracks the original item a transform was derived from), `ThumbnailFileName` (string?, sidecar `_thumb.jpg` generated at upload/sync), `CompanionContentItemId` + `CompanionPosition` (`Before`/`After` — virtual pairing; server expands into playlist at serve time, no baked MP4).
 
 ### Player environment variables
 
+See [docs/configuration.md](docs/configuration.md) for the complete reference. Key variables an agent most needs:
+
 | Variable | Default | Used by |
 |---|---|---|
 | `ServerUrl` | `http://plainsight-server` | PlainSight.Player |
 | `ContentPath` | `/mnt/plainsight/content` | PlainSight.Player |
+
+### Background workers
+
+| Worker | Interval/Trigger | Role |
+|---|---|---|
+| `ContentSyncWorkerService` | 30 s | Syncs disk files with `ContentItems` DB table |
+| `BrandingSyncWorkerService` | 30 s | Syncs disk files with `BrandingVideos` DB table |
+| `RenderWorkerService` | Queue-driven | Renders websites to MP4 via headless browser |
+| `YouTubeDownloadWorkerService` | Queue-driven | Downloads and shrinks YouTube videos |
+| `SvdGenerationWorkerService` | Queue-driven | Generates SVD (ComfyUI) image-to-video |
+| `WatermarkVideoWorkerService` | Queue-driven | Removes Veo watermarks via ffmpeg |
+| `DeviceMonitorService` | Periodic | Sends email alerts for offline devices |
+| `AutoScreenshotService` | Configurable | Requests screenshots from all online devices |
+| `LogRetentionService` | 24 h | Prunes old `LogEntry` rows |
+| `ReconciliationBackgroundService` | 60 s | Ingests new player version manifests from disk |
+| `NdiDiscoveryService` | 15 s | Scans mDNS for NDI sources on the network |
+| `ObsDiscoveryService` | Event-driven | Monitors OBS WebSocket for live/recording state |
 
 ### Versioning
 
