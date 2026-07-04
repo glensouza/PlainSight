@@ -175,7 +175,13 @@ app.MapGet("/content/{filename}", (string filename, ILogger<Program> logger) =>
 app.MapGet("/api/playlist", (PlaylistService playlist) =>
     Results.Json(new
     {
-        Items = playlist.GetCurrentPlaylist(),
+        // Guarantee a positive duration server-side so the player never has to coerce a falsy
+        // value (a legit short override was previously clobbered to 10s by `durationSeconds || 10`).
+        Items = playlist.GetCurrentPlaylist().Select(i => new
+        {
+            i.FileName,
+            DurationSeconds = i.DurationSeconds > 0 ? i.DurationSeconds : 10
+        }),
         Branding = playlist.GetBrandingItem()
     }));
 
