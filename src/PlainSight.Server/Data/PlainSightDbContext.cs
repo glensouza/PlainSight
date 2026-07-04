@@ -20,6 +20,8 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
     public DbSet<LogEntry> LogEntries => this.Set<LogEntry>();
     public DbSet<BrandingVideo> BrandingVideos => this.Set<BrandingVideo>();
     public DbSet<BrandingSchedule> BrandingSchedules => this.Set<BrandingSchedule>();
+    public DbSet<Announcement> Announcements => this.Set<Announcement>();
+    public DbSet<AnnouncementMedia> AnnouncementMedia => this.Set<AnnouncementMedia>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -65,10 +67,25 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.FileName).IsUnique();
-            entity.HasOne(e => e.CompanionContentItem)
+        });
+
+        modelBuilder.Entity<Announcement>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasMany(e => e.Media)
+                .WithOne(e => e.Announcement)
+                .HasForeignKey(e => e.AnnouncementId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AnnouncementMedia>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.AnnouncementId, e.SortOrder });
+            entity.HasOne(e => e.ContentItem)
                 .WithMany()
-                .HasForeignKey(e => e.CompanionContentItemId)
-                .OnDelete(DeleteBehavior.SetNull);
+                .HasForeignKey(e => e.ContentItemId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Playlist>(entity =>
@@ -97,6 +114,14 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
         modelBuilder.Entity<PlaylistItem>(entity =>
         {
             entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.ContentItem)
+                .WithMany()
+                .HasForeignKey(e => e.ContentItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Announcement)
+                .WithMany()
+                .HasForeignKey(e => e.AnnouncementId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<DeviceGroupVersion>(entity =>

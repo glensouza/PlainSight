@@ -78,7 +78,7 @@ public class ContentSyncService(
 
             // Batch clear playlist references first
             List<PlaylistItem> refs = await context.PlaylistItems
-                .Where(pi => itemIdsToRemove.Contains(pi.ContentItemId))
+                .Where(pi => pi.ContentItemId != null && itemIdsToRemove.Contains(pi.ContentItemId.Value))
                 .ToListAsync(cancellationToken);
 
             context.PlaylistItems.RemoveRange(refs);

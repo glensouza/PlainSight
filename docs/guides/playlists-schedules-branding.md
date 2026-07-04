@@ -24,13 +24,31 @@ Navigate to **Playlists** from the sidebar.
 - Click **Manage Content** on a playlist card.
 - **Current Items**: Drag to reorder (grip handle on each row). Click the trash icon to remove.
 - **Add Content**: Lists all content NOT already in the playlist. Click **Add** on any item.
+- **Add Announcement**: Lists all announcements NOT already in the playlist. Click **Add** on any item.
 - Click **Preview** to see how the playlist will look to viewers.
 - Changes invalidate the schedule cache immediately.
 
 ### Notes
 - Each item shows its duration badge. Set an override duration per item in the Content page's Rename modal.
-- Companion pairs are expanded at heartbeat time — you don't need to add both items manually.
+- An announcement's media is expanded, in order, at heartbeat/preview time — you don't need to add its items individually.
 - Reordering renumbers all items 1-indexed and updates the `UpdatedAt` timestamp.
+
+## Announcements
+
+Navigate to **Announcements** from the sidebar. An announcement groups related media (e.g. an event's image and video) under one title, so it can be added to a playlist as a single item that plays its media back-to-back, in order.
+
+### Creating an Announcement
+- Click **Create New Announcement**.
+- Enter a **Title** and optional **Description**.
+- Optionally set an **Event Date** and **Expires At**.
+- Click **Save Announcement**.
+
+### Managing Media
+- Click **Manage Media** on an announcement card.
+- **Current Media**: Reorder with the up/down arrows. Click the trash icon to remove.
+- **Add Content**: Lists all content NOT already in the announcement. Click **Add** on any item.
+
+Once created, add the announcement to a playlist from that playlist's **Add Announcement** list (see above).
 
 ## Schedules
 

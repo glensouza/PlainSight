@@ -56,7 +56,7 @@ docker compose up -d
 ### Key files to read first
 
 - `src/PlainSight.AppHost/AppHost.cs` — Aspire wiring; PostgreSQL uses `ContainerLifetime.Persistent`
-- `src/PlainSight.Server/Data/PlainSightDbContext.cs` — EF Core context with 16 entity types: `Device`, `ContentItem`, `Playlist`, `PlaylistItem`, `Schedule`, `ScheduleTargetGroup`, `BrandingVideo`, `BrandingSchedule`, `NdiSource`, `LogEntry`, `PlayerVersion`, `DeviceGroup`, `DeviceGroupVersion`, `DeviceScreenshot`, `SystemSetting`, `AdminUser`
+- `src/PlainSight.Server/Data/PlainSightDbContext.cs` — EF Core context with 18 entity types: `Device`, `ContentItem`, `Playlist`, `PlaylistItem`, `Announcement`, `AnnouncementMedia`, `Schedule`, `ScheduleTargetGroup`, `BrandingVideo`, `BrandingSchedule`, `NdiSource`, `LogEntry`, `PlayerVersion`, `DeviceGroup`, `DeviceGroupVersion`, `DeviceScreenshot`, `SystemSetting`, `AdminUser`
 - `src/PlainSight.Server/Program.cs` — Service registration; DB migrations run at startup via `Migrate()`
 - `src/PlainSight.Server/Api/DeviceApi.cs` — Heartbeat endpoint is the system's spine; X-Api-Key TOFU auth, playlist delivery, live-mode decisions, screenshot burst triggers
 - `src/PlainSight.Server/Services/ContentSyncService.cs` — Holds `SyncLock` (static `SemaphoreSlim`) across file write + DB insert to prevent unique `FileName` constraint violations (see commit a332c72)
@@ -98,13 +98,15 @@ Device endpoints (`/heartbeat`, `/logs`, `/screenshot/notify`) use `X-Api-Key` h
 
 ### Blazor pages
 
-All pages in `src/PlainSight.Server/Components/Pages/` use `@rendermode InteractiveServer`. The `Devices` page auto-refreshes every 5 seconds via a `Timer`. The `Versions` page currently uses in-memory hardcoded data — version management is not yet database-driven.
+All pages in `src/PlainSight.Server/Components/Pages/` use `@rendermode InteractiveServer`. The `Devices` page auto-refreshes every 5 seconds via a `Timer`. The `Versions` page currently uses in-memory hardcoded data — version management is not yet database-driven. The `Announcements` page manages `Announcement`/`AnnouncementMedia` records (title, event date, expiration, ordered media); `Playlists` can add an `Announcement` as a playlist item alongside plain `ContentItem`s.
 
 ### Database schema
 
-`PlainSightDbContext` manages 16 entity types. `Device.DeviceId` (string, unique) is the natural key used in all player/API interactions. `ContentItem.FileName` is unique. `Playlist` → `PlaylistItem` → `ContentItem` with cascade delete on `PlaylistItem` and restrict on `ContentItem`. `Schedule` has a `Playlist` FK (cascade) and many `ScheduleTargetGroup` entries. `NdiSource.ServiceName` is unique, and `Device` has a nullable FK to `NdiSource`. `BrandingSchedule` references `BrandingVideo` (cascade). `LogEntry` is bulk-inserted from a bounded channel. `PlayerVersion` and `DeviceGroupVersion` store fleet-update metadata. `SystemSetting` is keyed by string. `AdminUser` has a unique `Username`.
+`PlainSightDbContext` manages 18 entity types. `Device.DeviceId` (string, unique) is the natural key used in all player/API interactions. `ContentItem.FileName` is unique. `Playlist` → `PlaylistItem` with cascade delete; a `PlaylistItem` has exactly one of `ContentItemId` or `AnnouncementId` set (nullable FKs, both cascade, enforced by a `CK_PlaylistItems_ExactlyOneTarget` check constraint added via raw SQL in the `AddAnnouncements` migration). `Schedule` has a `Playlist` FK (cascade) and many `ScheduleTargetGroup` entries. `NdiSource.ServiceName` is unique, and `Device` has a nullable FK to `NdiSource`. `BrandingSchedule` references `BrandingVideo` (cascade). `LogEntry` is bulk-inserted from a bounded channel. `PlayerVersion` and `DeviceGroupVersion` store fleet-update metadata. `SystemSetting` is keyed by string. `AdminUser` has a unique `Username`.
 
-`ContentItem` notable fields: `SourceContentItemId` (int?, FK to self — tracks the original item a transform was derived from), `ThumbnailFileName` (string?, sidecar `_thumb.jpg` generated at upload/sync), `CompanionContentItemId` + `CompanionPosition` (`Before`/`After` — virtual pairing; server expands into playlist at serve time, no baked MP4).
+`ContentItem` notable fields: `SourceContentItemId` (int?, FK to self — tracks the original item a transform was derived from), `ThumbnailFileName` (string?, sidecar `_thumb.jpg` generated at upload/sync).
+
+`Announcement` groups related media (e.g. an event's image and video) under one record: `Title`, `Description?`, `EventDate` (`DateOnly?`), `ExpiresAt` (`DateTime?`, UTC), plus an ordered `AnnouncementMedia` list (`ContentItemId` + `SortOrder`). Replaces the old `ContentItem.CompanionContentItemId`/`CompanionPosition` self-FK pairing (removed in the `AddAnnouncements` migration, which also converts any existing companion pairs into `Announcement`s and repoints their `PlaylistItem`s). Server expands an `Announcement` playlist item into its ordered media at heartbeat/preview time — no baked MP4.
 
 ### Player environment variables
 

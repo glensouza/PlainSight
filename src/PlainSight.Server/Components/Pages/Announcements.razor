@@ -1,0 +1,540 @@
+@page "/announcements"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IDbContextFactory<PlainSightDbContext> DbFactory
+@inject ILogger<Announcements> Logger
+@inject ScheduleCache ScheduleCache
+
+<PageTitle>Announcements — PlainSight</PageTitle>
+
+<div class="page-header">
+    <h1>Announcements</h1>
+    <p class="text-muted mb-0">Group related media (e.g. an event's image and video) into a single playlist item</p>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <button class="btn btn-primary" @onclick="ShowCreateAnnouncement">
+            <i class="bi bi-plus-circle"></i> Create New Announcement
+        </button>
+    </div>
+</div>
+
+@if (showCreateForm)
+{
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">@(editingAnnouncementId.HasValue ? "Edit" : "Create") Announcement</h5>
+        </div>
+        <div class="card-body">
+            <div class="mb-3">
+                <label class="form-label">Title</label>
+                <input type="text" class="form-control" @bind="announcementTitle" placeholder="Fall Festival" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Description</label>
+                <textarea class="form-control" @bind="announcementDescription" rows="2" placeholder="Optional description"></textarea>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Event Date</label>
+                    <input type="date" class="form-control" @bind="announcementEventDate" />
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Expires At</label>
+                    <input type="datetime-local" class="form-control" @bind="announcementExpiresAt" />
+                </div>
+            </div>
+            <button class="btn btn-primary" @onclick="SaveAnnouncement">
+                <i class="bi bi-save"></i> Save Announcement
+            </button>
+            <button class="btn btn-secondary" @onclick="CancelEdit">
+                Cancel
+            </button>
+        </div>
+    </div>
+}
+
+@if (announcements == null)
+{
+    <p><em>Loading announcements...</em></p>
+}
+else if (announcements.Count == 0)
+{
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> No announcements created yet.
+    </div>
+}
+else
+{
+    <div class="row">
+        @foreach (Announcement announcement in announcements)
+        {
+            <div class="col-md-6 mb-3">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">@announcement.Title</h5>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary" @onclick="() => EditAnnouncement(announcement.Id)">
+                                <i class="bi bi-pencil"></i> Edit
+                            </button>
+                            <AuthorizeView Roles="Admin">
+                                <Authorized>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAnnouncement(announcement.Id)">
+                                        <i class="bi bi-trash"></i> Delete
+                                    </button>
+                                </Authorized>
+                            </AuthorizeView>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        @if (!string.IsNullOrEmpty(announcement.Description))
+                        {
+                            <p class="text-muted small">@announcement.Description</p>
+                        }
+                        <div class="mb-2">
+                            <strong>Media:</strong> @announcement.Media.Count
+                            @if (announcement.EventDate.HasValue)
+                            {
+                                <span class="badge bg-secondary ms-2">Event: @announcement.EventDate.Value.ToString("yyyy-MM-dd")</span>
+                            }
+                            @if (announcement.ExpiresAt.HasValue)
+                            {
+                                <span class="badge bg-warning text-dark ms-1">Expires: @announcement.ExpiresAt.Value.ToString("yyyy-MM-dd HH:mm")</span>
+                            }
+                        </div>
+                        <button class="btn btn-sm btn-primary" @onclick="() => ManageMedia(announcement.Id)">
+                            <i class="bi bi-collection"></i> Manage Media
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (managingAnnouncementId.HasValue && selectedAnnouncement != null)
+{
+    <div class="modal d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Manage Media: @selectedAnnouncement.Title</h5>
+                    <button type="button" class="btn-close" @onclick="CloseManageMedia"></button>
+                </div>
+                <div class="modal-body">
+                    <h6>Current Media (@selectedAnnouncement.Media.Count)</h6>
+                    @if (selectedAnnouncement.Media.Count != 0)
+                    {
+                        <div class="list-group mb-3">
+                            @foreach (AnnouncementMedia media in selectedAnnouncement.Media.OrderBy(m => m.SortOrder))
+                            {
+                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>@(media.SortOrder + 1).</strong> @media.ContentItem.Name
+                                        <span class="badge bg-secondary ms-2">@media.ContentItem.DurationSeconds s</span>
+                                        <span class="badge bg-info ms-1">@media.ContentItem.Type</span>
+                                    </div>
+                                    <div>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => MoveMedia(media.Id, -1)" disabled="@isReordering">
+                                            <i class="bi bi-arrow-up"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => MoveMedia(media.Id, 1)" disabled="@isReordering">
+                                            <i class="bi bi-arrow-down"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveMedia(media.Id)">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-muted">No media in this announcement yet.</p>
+                    }
+
+                    <hr />
+
+                    <h6>Add Content</h6>
+                    @if (availableContent == null)
+                    {
+                        <p><em>Loading available content...</em></p>
+                    }
+                    else if (AvailableContentFiltered.Count == 0)
+                    {
+                        <div class="alert alert-info py-2 small">
+                            <i class="bi bi-check-circle"></i> All content has been added to this announcement.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="list-group">
+                            @foreach (ContentItem content in AvailableContentFiltered)
+                            {
+                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span>@content.Name</span>
+                                        <span class="badge bg-secondary ms-2">@content.DurationSeconds s</span>
+                                        <span class="badge bg-info ms-1">@content.Type</span>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => AddMedia(content.Id)" disabled="@isAddingMedia">
+                                        <i class="bi bi-plus"></i> Add
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseManageMedia">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private async Task<bool> IsAdminAsync()
+    {
+        if (this.AuthState == null)
+        {
+            return false;
+        }
+
+        AuthenticationState state = await this.AuthState;
+        return state.User.IsInRole("Admin");
+    }
+
+    private List<Announcement>? announcements;
+    private List<ContentItem>? availableContent;
+    private bool showCreateForm;
+    private int? editingAnnouncementId;
+    private string announcementTitle = string.Empty;
+    private string announcementDescription = string.Empty;
+    private DateOnly? announcementEventDate;
+    private DateTime? announcementExpiresAt;
+    private int? managingAnnouncementId;
+    private Announcement? selectedAnnouncement;
+    private bool isAddingMedia;
+    private bool isReordering;
+    private List<ContentItem> availableContentFiltered = [];
+
+    private List<ContentItem> AvailableContentFiltered => this.availableContentFiltered;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAnnouncements();
+    }
+
+    private async Task LoadAnnouncements()
+    {
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            announcements = await context.Announcements
+                .Include(a => a.Media)
+                .OrderByDescending(a => a.UpdatedAt)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading announcements");
+            announcements = [];
+        }
+    }
+
+    private void RecomputeAvailableContentFiltered()
+    {
+        if (this.availableContent == null || this.selectedAnnouncement == null)
+        {
+            this.availableContentFiltered = [];
+            return;
+        }
+
+        HashSet<int> inAnnouncement = this.selectedAnnouncement.Media.Select(m => m.ContentItemId).ToHashSet();
+        this.availableContentFiltered = this.availableContent.Where(c => !inAnnouncement.Contains(c.Id)).ToList();
+    }
+
+    private void ShowCreateAnnouncement()
+    {
+        showCreateForm = true;
+        editingAnnouncementId = null;
+        announcementTitle = string.Empty;
+        announcementDescription = string.Empty;
+        announcementEventDate = null;
+        announcementExpiresAt = null;
+    }
+
+    private void EditAnnouncement(int id)
+    {
+        Announcement? announcement = announcements?.FirstOrDefault(a => a.Id == id);
+        if (announcement == null)
+        {
+            return;
+        }
+
+        showCreateForm = true;
+        editingAnnouncementId = id;
+        announcementTitle = announcement.Title;
+        announcementDescription = announcement.Description ?? string.Empty;
+        announcementEventDate = announcement.EventDate;
+        announcementExpiresAt = announcement.ExpiresAt;
+    }
+
+    private void CancelEdit()
+    {
+        showCreateForm = false;
+        editingAnnouncementId = null;
+    }
+
+    private async Task SaveAnnouncement()
+    {
+        if (string.IsNullOrWhiteSpace(announcementTitle))
+        {
+            Logger.LogWarning("Announcement title is required");
+            return;
+        }
+
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+
+            if (editingAnnouncementId.HasValue)
+            {
+                Announcement? announcement = await context.Announcements.FindAsync(editingAnnouncementId.Value);
+                if (announcement != null)
+                {
+                    announcement.Title = announcementTitle;
+                    announcement.Description = announcementDescription;
+                    announcement.EventDate = announcementEventDate;
+                    announcement.ExpiresAt = announcementExpiresAt;
+                    announcement.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+            else
+            {
+                Announcement announcement = new()
+                {
+                    Title = announcementTitle,
+                    Description = announcementDescription,
+                    EventDate = announcementEventDate,
+                    ExpiresAt = announcementExpiresAt,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                context.Announcements.Add(announcement);
+            }
+
+            await context.SaveChangesAsync();
+            showCreateForm = false;
+            editingAnnouncementId = null;
+            await LoadAnnouncements();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving announcement");
+        }
+    }
+
+    private async Task DeleteAnnouncement(int id)
+    {
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted to delete announcement {Id}", id);
+            return;
+        }
+
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            Announcement? announcement = await context.Announcements.FindAsync(id);
+            if (announcement != null)
+            {
+                context.Announcements.Remove(announcement);
+                await context.SaveChangesAsync();
+                ScheduleCache.Invalidate();
+                await LoadAnnouncements();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error deleting announcement");
+        }
+    }
+
+    private async Task ManageMedia(int announcementId)
+    {
+        managingAnnouncementId = announcementId;
+        availableContent = null;
+        try
+        {
+            await ReloadSelectedAnnouncementAsync(announcementId);
+
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            availableContent = await context.ContentItems.OrderBy(c => c.Name).ToListAsync();
+            this.RecomputeAvailableContentFiltered();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading announcement media");
+        }
+    }
+
+    private async Task ReloadSelectedAnnouncementAsync(int announcementId)
+    {
+        await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+        selectedAnnouncement = await context.Announcements
+            .Include(a => a.Media)
+            .ThenInclude(m => m.ContentItem)
+            .FirstOrDefaultAsync(a => a.Id == announcementId);
+
+        this.RecomputeAvailableContentFiltered();
+    }
+
+    private void CloseManageMedia()
+    {
+        managingAnnouncementId = null;
+        selectedAnnouncement = null;
+        availableContent = null;
+        this.availableContentFiltered = [];
+    }
+
+    private async Task AddMedia(int contentItemId)
+    {
+        if (!managingAnnouncementId.HasValue)
+        {
+            return;
+        }
+
+        isAddingMedia = true;
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            Announcement? announcement = await context.Announcements
+                .Include(a => a.Media)
+                .FirstOrDefaultAsync(a => a.Id == managingAnnouncementId.Value);
+
+            if (announcement == null)
+            {
+                return;
+            }
+
+            int nextOrder = announcement.Media.Count != 0 ? announcement.Media.Max(m => m.SortOrder) + 1 : 0;
+
+            context.AnnouncementMedia.Add(new AnnouncementMedia
+            {
+                AnnouncementId = managingAnnouncementId.Value,
+                ContentItemId = contentItemId,
+                SortOrder = nextOrder
+            });
+            announcement.UpdatedAt = DateTime.UtcNow;
+            await context.SaveChangesAsync();
+            ScheduleCache.Invalidate();
+
+            await ReloadSelectedAnnouncementAsync(managingAnnouncementId.Value);
+            await LoadAnnouncements();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error adding media to announcement");
+        }
+        finally
+        {
+            isAddingMedia = false;
+        }
+    }
+
+    private async Task RemoveMedia(int mediaId)
+    {
+        if (!managingAnnouncementId.HasValue)
+        {
+            return;
+        }
+
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            AnnouncementMedia? media = await context.AnnouncementMedia.FindAsync(mediaId);
+            if (media != null)
+            {
+                context.AnnouncementMedia.Remove(media);
+                Announcement? announcement = await context.Announcements.FindAsync(managingAnnouncementId.Value);
+                if (announcement != null)
+                {
+                    announcement.UpdatedAt = DateTime.UtcNow;
+                }
+
+                await context.SaveChangesAsync();
+                ScheduleCache.Invalidate();
+
+                await ReloadSelectedAnnouncementAsync(managingAnnouncementId.Value);
+                await LoadAnnouncements();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error removing media from announcement");
+        }
+    }
+
+    private async Task MoveMedia(int mediaId, int direction)
+    {
+        if (!managingAnnouncementId.HasValue || isReordering || selectedAnnouncement == null)
+        {
+            return;
+        }
+
+        List<AnnouncementMedia> ordered = selectedAnnouncement.Media.OrderBy(m => m.SortOrder).ToList();
+        int index = ordered.FindIndex(m => m.Id == mediaId);
+        int targetIndex = index + direction;
+        if (index == -1 || targetIndex < 0 || targetIndex >= ordered.Count)
+        {
+            return;
+        }
+
+        isReordering = true;
+        try
+        {
+            (ordered[targetIndex], ordered[index]) = (ordered[index], ordered[targetIndex]);
+
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            List<AnnouncementMedia> dbMedia = await context.AnnouncementMedia
+                .Where(m => m.AnnouncementId == managingAnnouncementId.Value)
+                .ToListAsync();
+
+            Dictionary<int, AnnouncementMedia> mediaMap = dbMedia.ToDictionary(m => m.Id);
+
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                if (mediaMap.TryGetValue(ordered[i].Id, out AnnouncementMedia? dbItem))
+                {
+                    dbItem.SortOrder = i;
+                }
+            }
+
+            Announcement? announcement = await context.Announcements.FindAsync(managingAnnouncementId.Value);
+            if (announcement != null)
+            {
+                announcement.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await context.SaveChangesAsync();
+            ScheduleCache.Invalidate();
+
+            await ReloadSelectedAnnouncementAsync(managingAnnouncementId.Value);
+            await LoadAnnouncements();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error reordering announcement media");
+        }
+        finally
+        {
+            isReordering = false;
+        }
+    }
+}

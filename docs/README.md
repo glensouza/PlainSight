@@ -83,7 +83,7 @@ The system consists of three main components:
 - YouTube download with size/duration limits and automatic re-encode
 - AI video generation: Gemini/Veo animation + SVD (ComfyUI) self-hosted option
 - Veo watermark removal via ffmpeg
-- Companion content pairing (play before/after)
+- Announcements: group related media (e.g. an event's image + video) into one ordered playlist item
 
 ### Fleet Operations
 - Device offline email alerts
