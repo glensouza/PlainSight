@@ -38,6 +38,16 @@ public static class TimeExtensions
         return utcDateTime.ToLocal().ToString(format);
     }
 
+    /// <summary>
+    /// Interprets a wall-clock value (e.g. from a datetime-local input) as time in the configured
+    /// SystemTimeZone and converts it to UTC for storage. DST-aware.
+    /// </summary>
+    public static DateTime ToUtc(this DateTime localDateTime)
+    {
+        DateTime unspecified = DateTime.SpecifyKind(localDateTime, DateTimeKind.Unspecified);
+        return TimeZoneInfo.ConvertTimeToUtc(unspecified, localTimeZone);
+    }
+
     public static string GetTimeZoneName() => localTimeZone.DisplayName;
 
     /// <summary>
