@@ -8,6 +8,13 @@ public class Playlist
     public DateTime CreatedAt { get; init; }
     public DateTime UpdatedAt { get; set; }
     public bool IsActive { get; set; }
+    public PlaylistSortMode SortMode { get; set; } = PlaylistSortMode.Manual;
 
     public List<PlaylistItem> Items { get; init; } = [];
+}
+
+public enum PlaylistSortMode
+{
+    Manual = 0,
+    ByEventDate = 1
 }
