@@ -148,7 +148,10 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
             string expr = $"clip((A-{alpha}*255)/(1-{alpha}),0,255)";
 
             StringBuilder args = new();
-            args.Append(CultureInfo.InvariantCulture, $"-y -i \"{inputPath}\" -loop 1 -i \"{maskPath}\" -loop 1 -i \"{edgeMaskPath}\" -filter_complex \"[0:v]format=gbrp[v];[1:v]format=gbrp[m];[v][m]blend=c0_expr='{expr}':c1_expr='{expr}':c2_expr='{expr}':shortest=1,format=yuv420p[restored];[restored]boxblur=2:1[blurred];[2:v]format=gray[edge];[restored][blurred][edge]maskedmerge=shortest=1[out]\" -map \"[out]\" -map 0:a? -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -c:a copy -movflags +faststart \"{outputPath}\"");
+            // The edge mask is a single unlooped frame: framesync repeats it for every video frame and
+            // ends the output with the finite [restored] base. maskedmerge has no `shortest` option (only
+            // blend does), so termination relies on that finite primary input rather than a filter flag.
+            args.Append(CultureInfo.InvariantCulture, $"-y -i \"{inputPath}\" -loop 1 -i \"{maskPath}\" -i \"{edgeMaskPath}\" -filter_complex \"[0:v]format=gbrp[v];[1:v]format=gbrp[m];[v][m]blend=c0_expr='{expr}':c1_expr='{expr}':c2_expr='{expr}':shortest=1,format=yuv420p[restored];[restored]boxblur=2:1[blurred];[2:v]format=gray[edge];[restored][blurred][edge]maskedmerge[out]\" -map \"[out]\" -map 0:a? -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -c:a copy -movflags +faststart \"{outputPath}\"");
 
             await this.RunFfmpegAsync(args.ToString(), ct);
 
@@ -162,8 +165,10 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
         }
     }
 
-    // Evenly spaced sample seconds across the clip, skipping the first/last second where fades often
-    // hide or distort the logo.
+    // Up to `count` evenly spaced sample seconds across the clip, skipping the first/last second where
+    // fades often hide or distort the logo. Returns fewer than `count` for short clips (<= 3s yields a
+    // single midpoint) or when rounding collapses adjacent indices to the same second; the caller
+    // tolerates any non-empty subset.
     private static IEnumerable<int> ComputeSampleSeconds(int duration, int count)
     {
         int start = 1;
@@ -209,18 +214,34 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
         await this.RunFfmpegAsync($"-y -ss {seekSeconds.ToString(CultureInfo.InvariantCulture)} -i \"{inputPath}\" -frames:v 1 \"{framePath}\"", ct);
     }
 
-    // Black canvas at the video resolution with the chosen white-on-black mask composited at the detected
-    // position. ffmpeg reads its pixel brightness directly as B in the blend expression.
+    // Black canvas at the video resolution with the resolved mask rendered from its alpha array at the
+    // detected position. Uses the same ResolveMask(detection) shape as BuildEdgeBandMask and feathering,
+    // so the blend and feather passes operate on identical pixels even under the scaled-mask fallback.
+    // ffmpeg reads the rendered brightness (alpha*255) directly as B in the blend expression.
     private static void BuildFullFrameMask(WatermarkDetection detection, int width, int height, string maskPath)
     {
-        string resource = detection.Large ? Mask96Resource : Mask48Resource;
-        using Stream stream = typeof(WatermarkRemovalService).Assembly.GetManifestResourceStream(resource) ?? throw new InvalidOperationException($"Embedded watermark mask not found: {resource}");
-        using SKBitmap maskBitmap = SKBitmap.Decode(stream) ?? throw new InvalidOperationException($"Failed to decode watermark mask: {resource}");
+        WatermarkMask mask = ResolveMask(detection);
+
         using SKBitmap canvas = new(width, height);
         using (SKCanvas drawCanvas = new(canvas))
         {
             drawCanvas.Clear(SKColors.Black);
-            drawCanvas.DrawBitmap(maskBitmap, new SKRect(detection.X, detection.Y, detection.X + detection.Width, detection.Y + detection.Height), SKSamplingOptions.Default);
+        }
+
+        for (int my = 0; my < mask.Height; my++)
+        {
+            for (int mx = 0; mx < mask.Width; mx++)
+            {
+                int ix = detection.X + mx;
+                int iy = detection.Y + my;
+                if (ix < 0 || iy < 0 || ix >= width || iy >= height)
+                {
+                    continue;
+                }
+
+                byte value = ClampToByte(mask.Alphas[(my * mask.Width) + mx] * 255.0);
+                canvas.SetPixel(ix, iy, new SKColor(value, value, value));
+            }
         }
 
         using SKImage image = SKImage.FromBitmap(canvas);
@@ -768,6 +789,9 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
             canvas.DrawBitmap(bitmap, 0, 0, SKSamplingOptions.Default, paint);
         }
 
+        SKColor[] pixels = bitmap.Pixels;
+        SKColor[] blurredPixels = blurred.Pixels;
+
         for (int my = 0; my < mask.Height; my++)
         {
             for (int mx = 0; mx < mask.Width; mx++)
@@ -784,9 +808,12 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
                     continue;
                 }
 
-                bitmap.SetPixel(ix, iy, blurred.GetPixel(ix, iy));
+                int index = (iy * width) + ix;
+                pixels[index] = blurredPixels[index];
             }
         }
+
+        bitmap.Pixels = pixels;
     }
 
     private static double Restore(double channel, double alpha, double oneMinusAlpha)
