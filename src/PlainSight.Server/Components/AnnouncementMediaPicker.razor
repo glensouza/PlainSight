@@ -1,4 +1,3 @@
-@using PlainSight.Shared.Models
 @rendermode InteractiveServer
 
 <div class="mb-2">
@@ -17,9 +16,9 @@
                     <option value="@a.Id">@a.Title@(a.Media.Any(m => m.ContentItemId == CurrentItemId) ? " (already added)" : "")</option>
                 }
             </select>
-            <button type="button" class="btn btn-outline-primary" @onclick="HandleAddToAnnouncement" disabled="@(SelectedAnnouncementId == null)">Add</button>
+            <button type="button" class="btn btn-outline-primary" @onclick="HandleAddToAnnouncementAsync" disabled="@(SelectedAnnouncementId == null)">Add</button>
         </div>
-        <button type="button" class="btn btn-sm btn-link px-0 mt-1" @onclick="HandleCreateAnnouncement">+ New announcement from this item</button>
+        <button type="button" class="btn btn-sm btn-link px-0 mt-1" @onclick="HandleCreateAnnouncementAsync">+ New announcement from this item</button>
         @if (!string.IsNullOrEmpty(Message))
         {
             <div class="small text-success mt-1">@Message</div>
@@ -49,12 +48,12 @@
     [Parameter]
     public EventCallback OnCreateAnnouncement { get; set; }
 
-    private async Task HandleAddToAnnouncement()
+    private async Task HandleAddToAnnouncementAsync()
     {
         await OnAddToAnnouncement.InvokeAsync(SelectedAnnouncementId);
     }
 
-    private async Task HandleCreateAnnouncement()
+    private async Task HandleCreateAnnouncementAsync()
     {
         await OnCreateAnnouncement.InvokeAsync();
     }

@@ -2133,8 +2133,12 @@ else
 
             double? endSeconds = this.evEnd < this.evDuration ? this.evEnd : null;
 
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(cts.Token);
+            ContentItem newItem;
+
             // Hold the content-sync lock across the file write + insert so the sync worker cannot
             // scan the freshly written file and insert its own row first, colliding on FileName.
+            // The announcement link (below) doesn't touch FileName, so it stays outside the lock.
             await ContentSyncService.SyncLock.WaitAsync(cts.Token);
             try
             {
@@ -2157,8 +2161,7 @@ else
                 long fileSize = new FileInfo(outputPath).Length;
                 int newDuration = (int)Math.Round((this.evEnd - this.evStart) / this.evSpeed);
 
-                await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(cts.Token);
-                ContentItem newItem = new()
+                newItem = new()
                 {
                     Name = this.evName.Trim(),
                     FileName = outputFileName,
@@ -2171,25 +2174,25 @@ else
                 };
                 context.ContentItems.Add(newItem);
                 await context.SaveChangesAsync(cts.Token);
-
-                if (this.evEditToAnnouncementId.HasValue)
-                {
-                    Announcement? announcement = await context.Announcements
-                        .Include(a => a.Media)
-                        .FirstOrDefaultAsync(a => a.Id == this.evEditToAnnouncementId.Value, cts.Token);
-                    if (announcement != null)
-                    {
-                        int nextOrder = announcement.Media.Count != 0 ? announcement.Media.Max(m => m.SortOrder) + 1 : 0;
-                        context.AnnouncementMedia.Add(new AnnouncementMedia { AnnouncementId = announcement.Id, ContentItemId = newItem.Id, SortOrder = nextOrder });
-                        announcement.UpdatedAt = DateTime.UtcNow;
-                        await context.SaveChangesAsync(cts.Token);
-                        ScheduleCache.Invalidate();
-                    }
-                }
             }
             finally
             {
                 ContentSyncService.SyncLock.Release();
+            }
+
+            if (this.evEditToAnnouncementId.HasValue)
+            {
+                Announcement? announcement = await context.Announcements
+                    .Include(a => a.Media)
+                    .FirstOrDefaultAsync(a => a.Id == this.evEditToAnnouncementId.Value, cts.Token);
+                if (announcement != null)
+                {
+                    int nextOrder = announcement.Media.Count != 0 ? announcement.Media.Max(m => m.SortOrder) + 1 : 0;
+                    context.AnnouncementMedia.Add(new AnnouncementMedia { AnnouncementId = announcement.Id, ContentItemId = newItem.Id, SortOrder = nextOrder });
+                    announcement.UpdatedAt = DateTime.UtcNow;
+                    await context.SaveChangesAsync(cts.Token);
+                    ScheduleCache.Invalidate();
+                }
             }
 
             await this.CloseEditAsync();
