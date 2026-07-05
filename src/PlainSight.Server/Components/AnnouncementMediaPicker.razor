@@ -1,0 +1,61 @@
+@using PlainSight.Shared.Models
+@rendermode InteractiveServer
+
+<div class="mb-2">
+    <label class="form-label">Add to announcement</label>
+    @if (Announcements == null)
+    {
+        <p class="small text-muted mb-0"><em>Loading…</em></p>
+    }
+    else
+    {
+        <div class="input-group">
+            <select class="form-select" @bind="SelectedAnnouncementId">
+                <option value="">Choose an announcement…</option>
+                @foreach (Announcement a in Announcements)
+                {
+                    <option value="@a.Id">@a.Title@(a.Media.Any(m => m.ContentItemId == CurrentItemId) ? " (already added)" : "")</option>
+                }
+            </select>
+            <button type="button" class="btn btn-outline-primary" @onclick="HandleAddToAnnouncement" disabled="@(SelectedAnnouncementId == null)">Add</button>
+        </div>
+        <button type="button" class="btn btn-sm btn-link px-0 mt-1" @onclick="HandleCreateAnnouncement">+ New announcement from this item</button>
+        @if (!string.IsNullOrEmpty(Message))
+        {
+            <div class="small text-success mt-1">@Message</div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    public List<Announcement>? Announcements { get; set; }
+
+    [Parameter]
+    public int? CurrentItemId { get; set; }
+
+    [Parameter]
+    public int? SelectedAnnouncementId { get; set; }
+
+    [Parameter]
+    public EventCallback<int?> SelectedAnnouncementIdChanged { get; set; }
+
+    [Parameter]
+    public string? Message { get; set; }
+
+    [Parameter]
+    public EventCallback<int?> OnAddToAnnouncement { get; set; }
+
+    [Parameter]
+    public EventCallback OnCreateAnnouncement { get; set; }
+
+    private async Task HandleAddToAnnouncement()
+    {
+        await OnAddToAnnouncement.InvokeAsync(SelectedAnnouncementId);
+    }
+
+    private async Task HandleCreateAnnouncement()
+    {
+        await OnCreateAnnouncement.InvokeAsync();
+    }
+}
