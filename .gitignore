@@ -418,3 +418,6 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Claude Code personal per-project overrides (checked-in config lives in .claude/settings.json)
+.claude/settings.local.json
