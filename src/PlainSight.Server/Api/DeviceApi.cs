@@ -353,11 +353,9 @@ public static class DeviceApi
     private static List<PlaylistItemDto> GetSortedPlaylistItems(Playlist playlist, DateTime utcNow)
     {
         return PlaylistOrdering.SortAndFilter(playlist, utcNow)
-            .SelectMany(i => i.Announcement != null
-                ? i.Announcement.Media
-                    .OrderBy(m => m.SortOrder)
-                    .Select(m => new PlaylistItemDto { FileName = m.ContentItem.FileName, DurationSeconds = m.ContentItem.DurationSeconds })
-                : [new PlaylistItemDto { FileName = i.ContentItem!.FileName, DurationSeconds = i.OverrideDurationSeconds ?? i.ContentItem.DurationSeconds }])
+            .SelectMany(i => i.Announcement.Media
+                .OrderBy(m => m.SortOrder)
+                .Select(m => new PlaylistItemDto { FileName = m.ContentItem.FileName, DurationSeconds = m.ContentItem.DurationSeconds }))
             .ToList();
     }
 

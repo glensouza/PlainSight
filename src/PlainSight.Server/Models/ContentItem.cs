@@ -13,8 +13,6 @@ public class ContentItem
     public string? SourceUrl { get; set; }
     public int? SourceContentItemId { get; set; }
     public string? ThumbnailFileName { get; set; }
-    public DateOnly? EventDate { get; set; }
-    public DateTime? ExpiresAt { get; set; }
 }
 
 public enum ContentType

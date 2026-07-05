@@ -163,16 +163,8 @@ else
                                     <div class="d-flex align-items-center">
                                         <i class="bi bi-grip-vertical me-3 text-muted" style="font-size: 1.2rem;"></i>
                                         <div>
-                                            @if (item.Announcement != null)
-                                            {
-                                                <strong>@item.Order.</strong> @item.Announcement.Title
-                                                <span class="badge bg-info ms-2">Announcement · @item.Announcement.Media.Count media</span>
-                                            }
-                                            else
-                                            {
-                                                <strong>@item.Order.</strong> @item.ContentItem!.Name
-                                                <span class="badge bg-secondary ms-2">@item.ContentItem.DurationSeconds s</span>
-                                            }
+                                            <strong>@item.Order.</strong> @item.Announcement.Title
+                                            <span class="badge bg-info ms-2">Announcement · @item.Announcement.Media.Count media</span>
                                         </div>
                                     </div>
                                     <button class="btn btn-sm btn-outline-danger"
@@ -191,45 +183,7 @@ else
 
                     <hr />
 
-                    <h6>Add Content</h6>
-                    @if (availableContent == null)
-                    {
-                        <p><em>Loading available content...</em></p>
-                    }
-                    else if (availableContent.Count == 0)
-                    {
-                        <div class="alert alert-warning py-2 small">
-                            No content available. Upload content on the <a href="content">Content</a> page first.
-                        </div>
-                    }
-                    else if (AvailableContentFiltered.Count == 0)
-                    {
-                        <div class="alert alert-info py-2 small">
-                            <i class="bi bi-check-circle"></i> All content has been added to this playlist.
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="list-group">
-                            @foreach (ContentItem content in AvailableContentFiltered)
-                            {
-                                <div class="list-group-item d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <span>@content.Name</span>
-                                        <span class="badge bg-secondary ms-2">@content.DurationSeconds s</span>
-                                        <span class="badge bg-info ms-1">@content.Type</span>
-                                    </div>
-                                    <button class="btn btn-sm btn-outline-primary"
-                                            @onclick="() => AddToPlaylist(content.Id)"
-                                            disabled="@isAddingItem">
-                                        <i class="bi bi-plus"></i> Add
-                                    </button>
-                                </div>
-                            }
-                        </div>
-                    }
-
-                    <h6 class="mt-3">Add Announcement</h6>
+                    <h6>Add Announcement</h6>
                     @if (availableAnnouncements == null)
                     {
                         <p><em>Loading announcements...</em></p>
@@ -289,7 +243,6 @@ else
     }
 
     private List<Playlist>? playlists;
-    private List<ContentItem>? availableContent;
     private List<Announcement>? availableAnnouncements;
     private bool showCreateForm;
     private int? editingPlaylistId;
@@ -306,35 +259,22 @@ else
     private int? draggedFromPlaylistId;
     private int? dragOverItemId;
 
-    // Cached list of content not already in the open playlist. Recomputed only when the open
-    // playlist or the available-content list changes, not on every render.
-    private List<ContentItem> availableContentFiltered = [];
+    // Cached list of announcements not already in the open playlist. Recomputed only when the open
+    // playlist or the available-announcements list changes, not on every render.
     private List<Announcement> availableAnnouncementsFiltered = [];
 
-    private List<ContentItem> AvailableContentFiltered => this.availableContentFiltered;
     private List<Announcement> AvailableAnnouncementsFiltered => this.availableAnnouncementsFiltered;
 
-    private void RecomputeAvailableContentFiltered()
+    private void RecomputeAvailableAnnouncementsFiltered()
     {
-        if (this.availableContent == null || this.selectedPlaylist == null)
-        {
-            this.availableContentFiltered = [];
-        }
-        else
-        {
-            HashSet<int> inPlaylist = this.selectedPlaylist.Items.Where(i => i.ContentItemId.HasValue).Select(i => i.ContentItemId!.Value).ToHashSet();
-            this.availableContentFiltered = this.availableContent.Where(c => !inPlaylist.Contains(c.Id)).ToList();
-        }
-
         if (this.availableAnnouncements == null || this.selectedPlaylist == null)
         {
             this.availableAnnouncementsFiltered = [];
+            return;
         }
-        else
-        {
-            HashSet<int> inPlaylist = this.selectedPlaylist.Items.Where(i => i.AnnouncementId.HasValue).Select(i => i.AnnouncementId!.Value).ToHashSet();
-            this.availableAnnouncementsFiltered = this.availableAnnouncements.Where(a => !inPlaylist.Contains(a.Id)).ToList();
-        }
+
+        HashSet<int> inPlaylist = this.selectedPlaylist.Items.Select(i => i.AnnouncementId).ToHashSet();
+        this.availableAnnouncementsFiltered = this.availableAnnouncements.Where(a => !inPlaylist.Contains(a.Id)).ToList();
     }
 
     protected override async Task OnInitializedAsync()
@@ -361,33 +301,16 @@ else
         }
     }
 
-    private async Task LoadAvailableContent()
-    {
-        try
-        {
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-            availableContent = await context.ContentItems
-                .OrderBy(c => c.Name)
-                .ToListAsync();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error loading content items");
-            availableContent = [];
-        }
-
-        this.RecomputeAvailableContentFiltered();
-    }
-
     private async Task LoadAvailableAnnouncements()
     {
         try
         {
-            DateTime utcNow = DateTime.UtcNow;
+            // Hide announcements that have already expired (past the end of their event day, local).
+            DateOnly localToday = DateOnly.FromDateTime(DateTime.UtcNow.ToLocal());
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             availableAnnouncements = await context.Announcements
                 .Include(a => a.Media)
-                .Where(a => a.ExpiresAt == null || a.ExpiresAt >= utcNow)
+                .Where(a => a.EventDate == null || a.EventDate >= localToday)
                 .OrderBy(a => a.Title)
                 .ToListAsync();
         }
@@ -397,7 +320,7 @@ else
             availableAnnouncements = [];
         }
 
-        this.RecomputeAvailableContentFiltered();
+        this.RecomputeAvailableAnnouncementsFiltered();
     }
 
     private void ShowCreatePlaylist()
@@ -510,12 +433,10 @@ else
     private async Task ManagePlaylistItems(int playlistId)
     {
         managingPlaylistId = playlistId;
-        availableContent = null;
         availableAnnouncements = null;
         try
         {
             await ReloadSelectedPlaylistAsync(playlistId);
-            await LoadAvailableContent();
             await LoadAvailableAnnouncements();
         }
         catch (Exception ex)
@@ -532,14 +453,12 @@ else
         await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
         selectedPlaylist = await context.Playlists
             .Include(p => p.Items)
-            .ThenInclude(i => i.ContentItem)
-            .Include(p => p.Items)
             .ThenInclude(i => i.Announcement)
-            .ThenInclude(a => a!.Media)
+            .ThenInclude(a => a.Media)
             .ThenInclude(m => m.ContentItem)
             .FirstOrDefaultAsync(p => p.Id == playlistId);
 
-        this.RecomputeAvailableContentFiltered();
+        this.RecomputeAvailableAnnouncementsFiltered();
     }
 
     private async Task PreviewPlaylist(int playlistId)
@@ -549,10 +468,8 @@ else
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
             selectedPlaylist = await context.Playlists
                 .Include(p => p.Items)
-                .ThenInclude(i => i.ContentItem)
-                .Include(p => p.Items)
                 .ThenInclude(i => i.Announcement)
-                .ThenInclude(a => a!.Media)
+                .ThenInclude(a => a.Media)
                 .ThenInclude(m => m.ContentItem)
                 .FirstOrDefaultAsync(p => p.Id == playlistId);
 
@@ -571,47 +488,6 @@ else
     {
         isPreviewing = false;
         selectedPlaylist = null;
-    }
-
-    private async Task AddToPlaylist(int contentItemId)
-    {
-        if (!managingPlaylistId.HasValue) return;
-
-        isAddingItem = true;
-        try
-        {
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-            Playlist? playlist = await context.Playlists
-                .Include(p => p.Items)
-                .FirstOrDefaultAsync(p => p.Id == managingPlaylistId.Value);
-
-            if (playlist == null) return;
-
-            int nextOrder = playlist.Items.Count != 0 ? playlist.Items.Max(i => i.Order) + 1 : 1;
-
-            PlaylistItem playlistItem = new()
-            {
-                PlaylistId = managingPlaylistId.Value,
-                ContentItemId = contentItemId,
-                Order = nextOrder
-            };
-
-            context.PlaylistItems.Add(playlistItem);
-            playlist.UpdatedAt = DateTime.UtcNow;
-            await context.SaveChangesAsync();
-            ScheduleCache.Invalidate();
-
-            await ReloadSelectedPlaylistAsync(managingPlaylistId.Value);
-            await LoadPlaylists();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error adding item to playlist");
-        }
-        finally
-        {
-            isAddingItem = false;
-        }
     }
 
     private async Task AddAnnouncementToPlaylist(int announcementId)
@@ -751,9 +627,7 @@ else
     {
         managingPlaylistId = null;
         selectedPlaylist = null;
-        availableContent = null;
         availableAnnouncements = null;
-        this.availableContentFiltered = [];
         this.availableAnnouncementsFiltered = [];
     }
 

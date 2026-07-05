@@ -12,19 +12,30 @@
     <p class="text-muted mb-0">Group related media (e.g. an event's image and video) into a single playlist item</p>
 </div>
 
-<div class="row mb-4">
-    <div class="col-md-12">
+<div class="row mb-4 align-items-end">
+    <div class="col-md-8">
         <button class="btn btn-primary" @onclick="ShowCreateAnnouncement">
             <i class="bi bi-plus-circle"></i> Create New Announcement
         </button>
     </div>
+    @if (announcements != null && announcements.Count != 0)
+    {
+        <div class="col-md-4">
+            <label class="form-label small text-muted mb-1">Sort by</label>
+            <select class="form-select" @bind="sortMode">
+                <option value="TitleAsc">Title (A–Z)</option>
+                <option value="UpdatedDesc">Recently updated</option>
+                <option value="EventDateAsc">Event date (soonest first)</option>
+            </select>
+        </div>
+    }
 </div>
 
 @if (showCreateForm)
 {
     <div class="card mb-4">
         <div class="card-header">
-            <h5 class="mb-0">@(editingAnnouncementId.HasValue ? "Edit" : "Create") Announcement</h5>
+            <h5 class="mb-0">Create Announcement</h5>
         </div>
         <div class="card-body">
             <div class="mb-3">
@@ -35,15 +46,10 @@
                 <label class="form-label">Description</label>
                 <textarea class="form-control" @bind="announcementDescription" rows="2" placeholder="Optional description"></textarea>
             </div>
-            <div class="row">
-                <div class="col-md-6 mb-3">
-                    <label class="form-label">Event Date</label>
-                    <input type="date" class="form-control" @bind="announcementEventDate" />
-                </div>
-                <div class="col-md-6 mb-3">
-                    <label class="form-label">Expires At</label>
-                    <input type="datetime-local" class="form-control" @bind="announcementExpiresAt" />
-                </div>
+            <div class="mb-3">
+                <label class="form-label">Event Date</label>
+                <input type="date" class="form-control" @bind="announcementEventDate" />
+                <div class="form-text">Shown through the end of this day, then the announcement and its content are removed. Leave blank to keep it indefinitely.</div>
             </div>
             <button class="btn btn-primary" @onclick="SaveAnnouncement">
                 <i class="bi bi-save"></i> Save Announcement
@@ -68,45 +74,71 @@ else if (announcements.Count == 0)
 else
 {
     <div class="row">
-        @foreach (Announcement announcement in announcements)
+        @foreach (Announcement announcement in SortedAnnouncements)
         {
             <div class="col-md-6 mb-3">
                 <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">@announcement.Title</h5>
-                        <div>
-                            <button class="btn btn-sm btn-outline-primary" @onclick="() => EditAnnouncement(announcement.Id)">
-                                <i class="bi bi-pencil"></i> Edit
+                    @if (editingAnnouncementId == announcement.Id)
+                    {
+                        <div class="card-header">
+                            <h5 class="mb-0">Edit Announcement</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Title</label>
+                                <input type="text" class="form-control" @bind="announcementTitle" placeholder="Fall Festival" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Description</label>
+                                <textarea class="form-control" @bind="announcementDescription" rows="2" placeholder="Optional description"></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Event Date</label>
+                                <input type="date" class="form-control" @bind="announcementEventDate" />
+                                <div class="form-text">Shown through the end of this day, then the announcement and its content are removed. Leave blank to keep it indefinitely.</div>
+                            </div>
+                            <button class="btn btn-primary" @onclick="SaveAnnouncement">
+                                <i class="bi bi-save"></i> Save
                             </button>
-                            <AuthorizeView Roles="Admin">
-                                <Authorized>
-                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(announcement)">
-                                        <i class="bi bi-trash"></i> Delete
-                                    </button>
-                                </Authorized>
-                            </AuthorizeView>
+                            <button class="btn btn-secondary" @onclick="CancelEdit">
+                                Cancel
+                            </button>
                         </div>
-                    </div>
-                    <div class="card-body">
-                        @if (!string.IsNullOrEmpty(announcement.Description))
-                        {
-                            <p class="text-muted small">@announcement.Description</p>
-                        }
-                        <div class="mb-2">
-                            <strong>Media:</strong> @announcement.Media.Count
-                            @if (announcement.EventDate.HasValue)
-                            {
-                                <span class="badge bg-secondary ms-2">Event: @announcement.EventDate.Value.ToString("yyyy-MM-dd")</span>
-                            }
-                            @if (announcement.ExpiresAt.HasValue)
-                            {
-                                <span class="badge bg-warning text-dark ms-1">Expires: @announcement.ExpiresAt.Value.ToLocalString("yyyy-MM-dd HH:mm")</span>
-                            }
+                    }
+                    else
+                    {
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">@announcement.Title</h5>
+                            <div>
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => EditAnnouncement(announcement.Id)">
+                                    <i class="bi bi-pencil"></i> Edit
+                                </button>
+                                <AuthorizeView Roles="Admin">
+                                    <Authorized>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(announcement)">
+                                            <i class="bi bi-trash"></i> Delete
+                                        </button>
+                                    </Authorized>
+                                </AuthorizeView>
+                            </div>
                         </div>
-                        <button class="btn btn-sm btn-primary" @onclick="() => ManageMedia(announcement.Id)">
-                            <i class="bi bi-collection"></i> Manage Media
-                        </button>
-                    </div>
+                        <div class="card-body">
+                            @if (!string.IsNullOrEmpty(announcement.Description))
+                            {
+                                <p class="text-muted small">@announcement.Description</p>
+                            }
+                            <div class="mb-2">
+                                <strong>Media:</strong> @announcement.Media.Count
+                                @if (announcement.EventDate.HasValue)
+                                {
+                                    <span class="badge bg-secondary ms-2">Event: @announcement.EventDate.Value.ToString("yyyy-MM-dd")</span>
+                                }
+                            </div>
+                            <button class="btn btn-sm btn-primary" @onclick="() => ManageMedia(announcement.Id)">
+                                <i class="bi bi-collection"></i> Manage Media
+                            </button>
+                        </div>
+                    }
                 </div>
             </div>
         }
@@ -237,13 +269,13 @@ else
     }
 
     private List<Announcement>? announcements;
+    private string sortMode = "TitleAsc";
     private List<ContentItem>? availableContent;
     private bool showCreateForm;
     private int? editingAnnouncementId;
     private string announcementTitle = string.Empty;
     private string announcementDescription = string.Empty;
     private DateOnly? announcementEventDate;
-    private DateTime? announcementExpiresAt;
     private int? managingAnnouncementId;
     private Announcement? selectedAnnouncement;
     private Announcement? deleteTarget;
@@ -253,6 +285,25 @@ else
     private List<ContentItem> availableContentFiltered = [];
 
     private List<ContentItem> AvailableContentFiltered => this.availableContentFiltered;
+
+    private IEnumerable<Announcement> SortedAnnouncements
+    {
+        get
+        {
+            if (this.announcements == null)
+            {
+                return [];
+            }
+
+            return this.sortMode switch
+            {
+                "TitleAsc" => this.announcements.OrderBy(a => a.Title, StringComparer.OrdinalIgnoreCase),
+                // Nulls last: items with a date come first, then by the date itself.
+                "EventDateAsc" => this.announcements.OrderBy(a => a.EventDate.HasValue ? 0 : 1).ThenBy(a => a.EventDate),
+                _ => this.announcements.OrderByDescending(a => a.UpdatedAt)
+            };
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -295,7 +346,6 @@ else
         announcementTitle = string.Empty;
         announcementDescription = string.Empty;
         announcementEventDate = null;
-        announcementExpiresAt = null;
     }
 
     private void EditAnnouncement(int id)
@@ -306,13 +356,12 @@ else
             return;
         }
 
-        showCreateForm = true;
+        // Edit happens inline in the card, not in the top create form.
+        showCreateForm = false;
         editingAnnouncementId = id;
         announcementTitle = announcement.Title;
         announcementDescription = announcement.Description ?? string.Empty;
         announcementEventDate = announcement.EventDate;
-        // Stored UTC → wall-clock in the configured SystemTimeZone for the datetime-local input.
-        announcementExpiresAt = announcement.ExpiresAt?.ToLocal();
     }
 
     private void CancelEdit()
@@ -329,10 +378,6 @@ else
             return;
         }
 
-        // The datetime-local input yields a wall-clock value in the configured SystemTimeZone;
-        // convert to UTC for storage (ExpiresAt is a timestamptz column and delivery compares against UtcNow).
-        DateTime? expiresAtUtc = announcementExpiresAt?.ToUtc();
-
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
@@ -345,7 +390,6 @@ else
                     announcement.Title = announcementTitle;
                     announcement.Description = announcementDescription;
                     announcement.EventDate = announcementEventDate;
-                    announcement.ExpiresAt = expiresAtUtc;
                     announcement.UpdatedAt = DateTime.UtcNow;
                 }
             }
@@ -356,7 +400,6 @@ else
                     Title = announcementTitle,
                     Description = announcementDescription,
                     EventDate = announcementEventDate,
-                    ExpiresAt = expiresAtUtc,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };

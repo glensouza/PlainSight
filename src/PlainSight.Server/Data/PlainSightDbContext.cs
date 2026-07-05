@@ -114,10 +114,6 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
         modelBuilder.Entity<PlaylistItem>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.HasOne(e => e.ContentItem)
-                .WithMany()
-                .HasForeignKey(e => e.ContentItemId)
-                .OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(e => e.Announcement)
                 .WithMany()
                 .HasForeignKey(e => e.AnnouncementId)

@@ -81,7 +81,6 @@
     {
         public required ContentItem ContentItem { get; init; }
         public required string DisplayName { get; init; }
-        public int? OverrideDurationSeconds { get; init; }
     }
 
     private List<PreviewStep> orderedItems = [];
@@ -100,11 +99,9 @@
     {
         // Order and expiration-filter identically to what players are served (DeviceApi uses the same helper).
         orderedItems = PlaylistOrdering.SortAndFilter(Playlist, DateTime.UtcNow)
-            .SelectMany(i => i.Announcement != null
-                ? i.Announcement.Media
-                    .OrderBy(m => m.SortOrder)
-                    .Select(m => new PreviewStep { ContentItem = m.ContentItem, DisplayName = $"{i.Announcement.Title} — {m.ContentItem.Name}" })
-                : [new PreviewStep { ContentItem = i.ContentItem!, DisplayName = i.ContentItem!.Name, OverrideDurationSeconds = i.OverrideDurationSeconds }])
+            .SelectMany(i => i.Announcement.Media
+                .OrderBy(m => m.SortOrder)
+                .Select(m => new PreviewStep { ContentItem = m.ContentItem, DisplayName = $"{i.Announcement.Title} — {m.ContentItem.Name}" }))
             .ToList();
         if (orderedItems.Count > 0)
         {
@@ -126,7 +123,7 @@
             return;
         }
 
-        totalDuration = CurrentItem.OverrideDurationSeconds ?? CurrentItem.ContentItem.DurationSeconds;
+        totalDuration = CurrentItem.ContentItem.DurationSeconds;
         // Min duration for preview safety
         if (totalDuration < 1) totalDuration = 5;
         remainingTime = totalDuration;

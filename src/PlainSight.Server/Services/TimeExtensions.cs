@@ -51,6 +51,13 @@ public static class TimeExtensions
     public static string GetTimeZoneName() => localTimeZone.DisplayName;
 
     /// <summary>
+    /// True once the local calendar day is past <paramref name="eventDate"/> — i.e. an announcement
+    /// is served through the end of its event day (local time) and expires afterward. A null date
+    /// never expires. Single source of truth for both serve-time filtering and cleanup.
+    /// </summary>
+    public static bool IsExpiredOn(this DateOnly? eventDate, DateTime utcNow) => eventDate.HasValue && eventDate.Value < DateOnly.FromDateTime(utcNow.ToLocal());
+
+    /// <summary>
     /// Current wall-clock time in the configured SystemTimeZone (or local time if not configured).
     /// Use for schedule evaluation so all scheduling logic stays in sync.
     /// </summary>

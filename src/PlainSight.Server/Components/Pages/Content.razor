@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @inject IDbContextFactory<PlainSightDbContext> DbFactory
+@inject ScheduleCache ScheduleCache
 @inject ContentSyncService ContentSyncService
 @inject MediaMetadataService MediaMetadataService
 @inject VideoProcessorService VideoProcessorService
@@ -507,15 +508,31 @@ else
                             <small class="text-muted">How long this item displays (especially for images).</small>
                         }
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Event Date (optional)</label>
-                        <input type="date" class="form-control" @bind="newEventDate" />
-                        <small class="text-muted">Used to auto-order playlists set to sort by event date.</small>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Expires At (optional)</label>
-                        <input type="datetime-local" class="form-control" @bind="newExpiresAt" />
-                        <small class="text-muted">After this time the item is dropped from playlists and, once past the grace period, deleted.</small>
+                    <hr />
+                    <div class="mb-2">
+                        <label class="form-label">Add to announcement</label>
+                        @if (editAnnouncements == null)
+                        {
+                            <p class="small text-muted mb-0"><em>Loading…</em></p>
+                        }
+                        else
+                        {
+                            <div class="input-group">
+                                <select class="form-select" @bind="addToAnnouncementId">
+                                    <option value="">Choose an announcement…</option>
+                                    @foreach (Announcement a in editAnnouncements)
+                                    {
+                                        <option value="@a.Id">@a.Title@(a.Media.Any(m => m.ContentItemId == renamingItem.Id) ? " (already added)" : "")</option>
+                                    }
+                                </select>
+                                <button type="button" class="btn btn-outline-primary" @onclick="AddToAnnouncement" disabled="@(addToAnnouncementId == null)">Add</button>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-link px-0 mt-1" @onclick="CreateAnnouncementFromItem">+ New announcement from this item</button>
+                            @if (!string.IsNullOrEmpty(addToAnnouncementMessage))
+                            {
+                                <div class="small text-success mt-1">@addToAnnouncementMessage</div>
+                            }
+                        }
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -983,11 +1000,12 @@ else
     private ContentItem? processingItem;
     private bool isProcessingExisting;
     private ContentItem? renamingItem;
+    private List<Announcement>? editAnnouncements;
+    private int? addToAnnouncementId;
+    private string? addToAnnouncementMessage;
     private string newName = "";
     private string newFileName = "";
     private int newDuration = 10;
-    private DateOnly? newEventDate;
-    private DateTime? newExpiresAt;
     private ContentItem? itemToDelete;
     private string youtubeUrl = "";
     private readonly List<YouTubeJobState> youtubeJobs = [];
@@ -1278,15 +1296,104 @@ else
         }
     }
 
-    private void StartRename(ContentItem item)
+    private async Task StartRename(ContentItem item)
     {
         this.renamingItem = item;
         this.newName = item.Name;
         this.newFileName = Path.GetFileNameWithoutExtension(item.FileName);
         this.newDuration = item.DurationSeconds;
-        this.newEventDate = item.EventDate;
-        // Stored UTC → wall-clock in the configured SystemTimeZone for the datetime-local input.
-        this.newExpiresAt = item.ExpiresAt?.ToLocal();
+        this.addToAnnouncementId = null;
+        this.addToAnnouncementMessage = null;
+        this.editAnnouncements = null;
+        await this.ReloadEditAnnouncementsAsync();
+    }
+
+    private async Task ReloadEditAnnouncementsAsync()
+    {
+        if (this.renamingItem == null)
+        {
+            this.editAnnouncements = [];
+            return;
+        }
+
+        // Only offer announcements that haven't expired (past the end of their event day, local).
+        DateOnly localToday = DateOnly.FromDateTime(DateTime.UtcNow.ToLocal());
+        await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+        this.editAnnouncements = await context.Announcements
+            .Include(a => a.Media)
+            .Where(a => a.EventDate == null || a.EventDate >= localToday)
+            .OrderBy(a => a.Title)
+            .ToListAsync();
+    }
+
+    private async Task AddToAnnouncement()
+    {
+        if (this.renamingItem == null || this.addToAnnouncementId == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            Announcement? announcement = await context.Announcements
+                .Include(a => a.Media)
+                .FirstOrDefaultAsync(a => a.Id == this.addToAnnouncementId.Value);
+            if (announcement == null)
+            {
+                return;
+            }
+
+            if (announcement.Media.Any(m => m.ContentItemId == this.renamingItem.Id))
+            {
+                this.addToAnnouncementMessage = $"Already in \"{announcement.Title}\".";
+                return;
+            }
+
+            int nextOrder = announcement.Media.Count != 0 ? announcement.Media.Max(m => m.SortOrder) + 1 : 0;
+            context.AnnouncementMedia.Add(new AnnouncementMedia { AnnouncementId = announcement.Id, ContentItemId = this.renamingItem.Id, SortOrder = nextOrder });
+            announcement.UpdatedAt = DateTime.UtcNow;
+            await context.SaveChangesAsync();
+            ScheduleCache.Invalidate();
+
+            this.addToAnnouncementMessage = $"Added to \"{announcement.Title}\".";
+            await this.ReloadEditAnnouncementsAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error adding content to announcement");
+        }
+    }
+
+    private async Task CreateAnnouncementFromItem()
+    {
+        if (this.renamingItem == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            Announcement announcement = new()
+            {
+                Title = this.renamingItem.Name,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            announcement.Media.Add(new AnnouncementMedia { ContentItemId = this.renamingItem.Id, SortOrder = 0 });
+            context.Announcements.Add(announcement);
+            await context.SaveChangesAsync();
+            ScheduleCache.Invalidate();
+
+            this.addToAnnouncementMessage = $"Created announcement \"{announcement.Title}\" with this item.";
+            this.addToAnnouncementId = announcement.Id;
+            await this.ReloadEditAnnouncementsAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error creating announcement from content");
+        }
     }
 
     private void CancelRename()
@@ -1339,9 +1446,6 @@ else
 
             item.Name = newName;
             item.DurationSeconds = newDuration;
-            item.EventDate = newEventDate;
-            // datetime-local yields wall-clock in the configured SystemTimeZone; store UTC (delivery compares against UtcNow).
-            item.ExpiresAt = newExpiresAt?.ToUtc();
 
             await context.SaveChangesAsync();
 

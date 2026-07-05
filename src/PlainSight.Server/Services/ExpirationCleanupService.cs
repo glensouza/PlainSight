@@ -14,87 +14,82 @@ public class ExpirationCleanupService(
     {
         DateTime utcNow = DateTime.UtcNow;
 
-        // Remove expired PlaylistItems first (without file deletion). Covers both target kinds:
-        // a ContentItem-backed item whose content expired, and an Announcement-backed item whose
-        // announcement expired.
-        List<PlaylistItem> expiredItems = await context.PlaylistItems
-            .Where(pi => (pi.ContentItemId != null && pi.ContentItem!.ExpiresAt < utcNow)
-                || (pi.AnnouncementId != null && pi.Announcement!.ExpiresAt < utcNow))
+        // An announcement is served through the end of its event day (local time); it expires the
+        // following local day. A null EventDate never expires.
+        List<Announcement> expired = await context.Announcements
+            .Include(a => a.Media)
+            .Where(a => a.EventDate != null && a.EventDate < DateOnly.FromDateTime(utcNow.ToLocal()))
             .ToListAsync(cancellationToken);
 
-        if (expiredItems.Count > 0)
+        if (expired.Count == 0)
         {
-            await ContentSyncService.SyncLock.WaitAsync(cancellationToken);
-            try
-            {
-                context.PlaylistItems.RemoveRange(expiredItems);
-                await context.SaveChangesAsync(cancellationToken);
-                cache.Invalidate();
-                logger.LogInformation("Cleanup removed {Count} expired playlist items", expiredItems.Count);
-            }
-            finally
-            {
-                ContentSyncService.SyncLock.Release();
-            }
+            return;
         }
 
-        // Remove expired ContentItems and files if grace period has passed
-        int? graceAfterDays = configuration.GetValue<int?>("ContentExpiration:DeleteAfterDays");
-        if (graceAfterDays.HasValue && graceAfterDays > 0)
+        await ContentSyncService.SyncLock.WaitAsync(cancellationToken);
+        try
         {
-            DateTime graceThreshold = utcNow.AddDays(-graceAfterDays.Value);
+            // Content items in the expiring announcements are candidates for deletion. Manual
+            // announcement deletion never deletes content — only this expiry path does.
+            HashSet<int> candidateContentIds = expired.SelectMany(a => a.Media.Select(m => m.ContentItemId)).ToHashSet();
 
-            // Skip content still referenced by an Announcement — deleting it would cascade-delete the
-            // AnnouncementMedia row and silently strip media from a live announcement. It becomes
-            // eligible again once the announcement (and its media) is gone.
-            List<ContentItem> filesToDelete = await context.ContentItems
-                .Where(ci => ci.ExpiresAt < graceThreshold
-                    && !context.AnnouncementMedia.Any(am => am.ContentItemId == ci.Id))
+            // Deleting the announcements cascade-removes their AnnouncementMedia rows and any
+            // PlaylistItems that referenced them. Persist that first so the orphan check below sees
+            // the post-deletion reference state.
+            context.Announcements.RemoveRange(expired);
+            await context.SaveChangesAsync(cancellationToken);
+
+            // Only delete a candidate content item if no surviving announcement still references it.
+            HashSet<int> stillReferenced = (await context.AnnouncementMedia
+                .Where(am => candidateContentIds.Contains(am.ContentItemId))
+                .Select(am => am.ContentItemId)
+                .Distinct()
+                .ToListAsync(cancellationToken)).ToHashSet();
+
+            List<ContentItem> orphaned = await context.ContentItems
+                .Where(ci => candidateContentIds.Contains(ci.Id) && !stillReferenced.Contains(ci.Id))
                 .ToListAsync(cancellationToken);
 
-            if (filesToDelete.Count > 0)
+            if (orphaned.Count > 0)
             {
-                await ContentSyncService.SyncLock.WaitAsync(cancellationToken);
-                try
+                string contentPath = MediaPathResolver.Resolve(configuration["ContentPath"] ?? "/mnt/plainsight/content");
+
+                foreach (ContentItem item in orphaned)
                 {
-                    string contentPath = MediaPathResolver.Resolve(configuration["ContentPath"] ?? "/mnt/plainsight/content");
-
-                    foreach (ContentItem item in filesToDelete)
+                    try
                     {
-                        try
+                        string filePath = Path.Combine(contentPath, item.FileName);
+                        if (File.Exists(filePath))
                         {
-                            string filePath = Path.Combine(contentPath, item.FileName);
-                            if (File.Exists(filePath))
-                            {
-                                File.Delete(filePath);
-                                logger.LogInformation("Cleanup deleted expired file: {FileName}", item.FileName);
-                            }
-
-                            if (!string.IsNullOrEmpty(item.ThumbnailFileName))
-                            {
-                                string thumbPath = Path.Combine(contentPath, item.ThumbnailFileName);
-                                if (File.Exists(thumbPath))
-                                {
-                                    File.Delete(thumbPath);
-                                }
-                            }
+                            File.Delete(filePath);
+                            logger.LogInformation("Cleanup deleted expired file: {FileName}", item.FileName);
                         }
-                        catch (Exception ex)
+
+                        if (!string.IsNullOrEmpty(item.ThumbnailFileName))
                         {
-                            logger.LogError(ex, "Error deleting expired file: {FileName}", item.FileName);
+                            string thumbPath = Path.Combine(contentPath, item.ThumbnailFileName);
+                            if (File.Exists(thumbPath))
+                            {
+                                File.Delete(thumbPath);
+                            }
                         }
                     }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Error deleting expired file: {FileName}", item.FileName);
+                    }
+                }
 
-                    context.ContentItems.RemoveRange(filesToDelete);
-                    await context.SaveChangesAsync(cancellationToken);
-                    cache.Invalidate();
-                    logger.LogInformation("Cleanup deleted {Count} expired content items and files", filesToDelete.Count);
-                }
-                finally
-                {
-                    ContentSyncService.SyncLock.Release();
-                }
+                context.ContentItems.RemoveRange(orphaned);
+                await context.SaveChangesAsync(cancellationToken);
             }
+
+            cache.Invalidate();
+            logger.LogInformation("Cleanup removed {Announcements} expired announcement(s) and {Files} orphaned content item(s)", expired.Count, orphaned.Count);
+        }
+        finally
+        {
+            ContentSyncService.SyncLock.Release();
         }
     }
 }

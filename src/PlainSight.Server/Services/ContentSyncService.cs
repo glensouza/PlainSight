@@ -74,14 +74,8 @@ public class ContentSyncService(
         List<ContentItem> itemsToRemove = dbItems.Where(i => !diskFiles.Contains(i.FileName)).ToList();
         if (itemsToRemove.Count != 0)
         {
-            List<int> itemIdsToRemove = itemsToRemove.Select(i => i.Id).ToList();
-
-            // Batch clear playlist references first
-            List<PlaylistItem> refs = await context.PlaylistItems
-                .Where(pi => pi.ContentItemId != null && itemIdsToRemove.Contains(pi.ContentItemId.Value))
-                .ToListAsync(cancellationToken);
-
-            context.PlaylistItems.RemoveRange(refs);
+            // AnnouncementMedia rows referencing these content items are removed by the DB's
+            // ON DELETE CASCADE FK, so we only need to remove the content items themselves.
             context.ContentItems.RemoveRange(itemsToRemove);
 
             foreach (ContentItem item in itemsToRemove)

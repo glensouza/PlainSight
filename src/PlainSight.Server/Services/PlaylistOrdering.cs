@@ -10,13 +10,12 @@ public static class PlaylistOrdering
     {
         IEnumerable<PlaylistItem> sorted = playlist.SortMode == PlaylistSortMode.ByEventDate
             ? playlist.Items
-                // Coalesce across the XOR target so a ContentItem-backed and an Announcement-backed
-                // item interleave by their actual event date; nulls sort last.
-                .OrderBy(i => i.ContentItem?.EventDate ?? i.Announcement?.EventDate ?? DateOnly.MaxValue)
+                // Sort by the announcement's event date; nulls sort last.
+                .OrderBy(i => i.Announcement.EventDate ?? DateOnly.MaxValue)
                 .ThenBy(i => i.Order)
             : playlist.Items.OrderBy(i => i.Order);
 
-        return sorted.Where(i => !(i.Announcement != null && i.Announcement.ExpiresAt < utcNow)
-            && !(i.ContentItem != null && i.ContentItem.ExpiresAt < utcNow));
+        // Serve an announcement through the end of its event day (local); no date never expires.
+        return sorted.Where(i => !i.Announcement.EventDate.IsExpiredOn(utcNow));
     }
 }
