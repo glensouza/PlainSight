@@ -6,6 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PlainSight is a distributed digital signage system built for churches. It uses server-side rendering to convert websites to video, then streams content to Raspberry Pi players over SMB. Players self-update by polling the server heartbeat API.
 
+## Recent Features & Fixes (Issues #96–108)
+
+This batch of issues (merged ~July 2026) significantly expanded the platform's capabilities:
+
+| Issue | Feature | Key Files |
+|-------|---------|-----------|
+| #96 | **Announcement Entity**: Replaced companion-clip self-pairing with an `Announcement` grouping related media (image + video, ordered, with expiration) | `PlainSightDbContext`, `Announcement.cs`, `PlaylistItem.cs` (composite FK logic) |
+| #97 | **Watermark Removal**: Multi-frame detection + CRF 18 encode + position refinement for Veo and Gemini video cleanup | `WatermarkVideoWorkerService`, `SvdGenerationWorkerService` |
+| #98 | **Content Expiration**: Expire-by-date on items, auto-sort playlists by event date at serve time, auto-delete expired content after grace period | `ContentItem.ExpiresAt`, `Playlist.SortMode` (enum: `Manual` / `ByEventDate`), `ExpirationCleanupWorkerService` |
+| #100 | **Edit Modal Companion**: Allow setting/changing Announcement when editing video output | Blazor `EditModal.razor`, `VideoEditorService` |
+| #104 | **Playback State Machine Hardening**: Fixed race condition causing player to skip/cut-short items; replaced `isSwapping` guard with monotonic `playToken` | `index.html` (`playToken`, state machine logic) |
+| #105 | **Emergency Broadcast**: Instant full-screen takeover on all/targeted screens, overlays above playlist content (z-index 500) | `EmergencyBroadcastService`, `EmergencyBroadcastController`, player overlay CSS |
+| #106 | **Player Watchdog + Self-Healing**: Detects stalled playback, logs diagnostic emails, reloads page or restarts kiosk via systemd | `PlaybackWatchdogService`, heartbeat field `reloadRequested` |
+| #108 | **Ticker Overlay**: Scrolling/fading text band (4s rotation), active/time-window/group filtering, server-driven sorting | `TickerMessage` entity, `TickerMessages.razor` admin page, player overlay (z-index 70, below emergency) |
+
+Also merged: #102 (media atomic writes), #103 (companion preview fix), #109–113 (documentation).
+
 ## Commands
 
 ```bash
@@ -62,13 +79,13 @@ docker compose up -d
 - `src/PlainSight.Server/Api/DeviceApi.cs` — Heartbeat endpoint is the system's spine; X-Api-Key TOFU auth, playlist delivery, live-mode decisions, screenshot burst triggers
 - `src/PlainSight.Server/Services/ContentSyncService.cs` — Holds `SyncLock` (static `SemaphoreSlim`) across file write + DB insert to prevent unique `FileName` constraint violations (see commit a332c72)
 - `src/PlainSight.Server/Services/VersionService.cs` — Reads version from assembly metadata set by CI; canary deployment logic is a TODO
-- `src/PlainSight.Player/wwwroot/index.html` — HTML5 double-buffered video player with cross-fade transitions, playlist polling, branding interstitial, idle fallback, and now-playing reporting
+- `src/PlainSight.Player/wwwroot/index.html` — HTML5 double-buffered video player with cross-fade transitions, playlist polling, branding interstitial, idle fallback, emergency broadcast overlay (z-index 500), ticker message band (z-index 70), and now-playing reporting
 - `version.txt` — Single source of truth for `MAJOR.MINOR`; edit this file to bump the major or minor version
 
 ### Data flow
 
 **Heartbeat cycle (every 30 seconds):**
-Player → `POST /api/device/heartbeat` → server upserts Device record → responds with `HeartbeatResponse` containing `{ requestScreenshot, updateFileName, expectedSha256, assignedApiKey, playlistItems, brandingItem, liveMode, ndiSourceName, logMinLevel, logShipIntervalSeconds, screenshotBurstCount, screenshotBurstIntervalSeconds }` → player acts on commands.
+Player → `POST /api/device/heartbeat` → server upserts Device record → responds with `HeartbeatResponse` containing `{ requestScreenshot, updateFileName, expectedSha256, assignedApiKey, playlistItems, brandingItem, emergency, tickerMessages, liveMode, ndiSourceName, reloadRequested, logMinLevel, logShipIntervalSeconds, screenshotBurstCount, screenshotBurstIntervalSeconds }` → player acts on commands.
 
 **Self-update:** `updateFileName` in heartbeat response identifies the binary on the share. Player downloads from `/api/updates/{version}/binary`, verifies SHA-256 against `expectedSha256`, swaps binary on disk (keeping `.bak`), then calls `Environment.Exit(0)` so systemd restarts it with the new binary.
 
@@ -82,7 +99,7 @@ Content management (upload, delete, rename, playlists, schedules) is performed d
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/device/heartbeat` | Player telemetry; returns `{ requestScreenshot, updateFileName, expectedSha256, assignedApiKey, playlistItems, brandingItem, liveMode, ndiSourceName, logMinLevel, logShipIntervalSeconds, screenshotBurstCount, screenshotBurstIntervalSeconds }` |
+| POST | `/api/device/heartbeat` | Player telemetry; returns `{ requestScreenshot, updateFileName, expectedSha256, assignedApiKey, playlistItems, brandingItem, emergency, tickerMessages, liveMode, ndiSourceName, reloadRequested, logMinLevel, logShipIntervalSeconds, screenshotBurstCount, screenshotBurstIntervalSeconds }` |
 | POST | `/api/device/{deviceId}/logs` | Player log upload (JSON `DeviceLogBatchDto`, capped at 500 entries, `X-Api-Key` required) |
 | POST | `/api/device/{deviceId}/screenshot/notify` | Player notifies server a screenshot was written to SMB (`multipart/form-data` with `fileName` field, `X-Api-Key` required) |
 | GET | `/api/media/content/{fileName}` | Serve content file from SMB share |
