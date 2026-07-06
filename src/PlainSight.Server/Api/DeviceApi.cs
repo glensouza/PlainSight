@@ -208,7 +208,7 @@ public static class DeviceApi
                     ScreenshotBurstCount = burstCount,
                     ScreenshotBurstIntervalSeconds = burstInterval,
                     Emergency = emergency != null ? new EmergencyBroadcastDto { Message = emergency.Message, FileName = emergency.ContentItem?.FileName } : null,
-                    TickerMessages = tickerMessages?.Any() == true ? tickerMessages : null
+                    TickerMessages = tickerMessages is { Count: > 0 } ? tickerMessages : null
                 };
 
                 // Clear the request flag in the database AFTER we have captured the value for the response.
