@@ -240,9 +240,14 @@ public static class TransformApi
                 return Results.BadRequest(new { error = "Overlay layers must reference distinct content items" });
             }
 
-            if (requestedOverlays.Any(o => o.ContentItemId == id || o.ParallaxRate < 0 || o.ParallaxRate > 1))
+            if (requestedOverlays.Any(o => o.ContentItemId == id))
             {
-                return Results.BadRequest(new { error = "Overlay layers must differ from the source image and have a parallax rate between 0.0 and 1.0" });
+                return Results.BadRequest(new { error = "Overlay layers must differ from the source image" });
+            }
+
+            if (requestedOverlays.Any(o => o.ParallaxRate is < 0 or > 1))
+            {
+                return Results.BadRequest(new { error = "Parallax rate must be between 0.0 and 1.0" });
             }
 
             await using PlainSightDbContext dbContext = await dbFactory.CreateDbContextAsync(ct);
@@ -277,7 +282,7 @@ public static class TransformApi
                 string overlayCandidatePath = Path.Combine(contentPath, overlayItem.FileName);
                 if (!File.Exists(overlayCandidatePath))
                 {
-                    return Results.NotFound();
+                    return Results.BadRequest(new { error = $"Overlay file for content item {requestedOverlay.ContentItemId} not found on disk" });
                 }
 
                 overlays.Add(new KenBurnsOverlayLayer(overlayCandidatePath, requestedOverlay.ParallaxRate));

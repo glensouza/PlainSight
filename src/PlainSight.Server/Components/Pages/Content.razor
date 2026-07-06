@@ -1948,6 +1948,12 @@ else
             return;
         }
 
+        if (!string.IsNullOrEmpty(this.kbGraphicsOverlayId) && this.kbGraphicsOverlayId == this.kbTextOverlayId)
+        {
+            this.kbError = "Graphics and text overlays must be distinct.";
+            return;
+        }
+
         this.kbProcessing = true;
         this.kbError = null;
         try

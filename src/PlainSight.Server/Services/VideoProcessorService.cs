@@ -144,12 +144,14 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger, MediaF
 
                 bool isLast = i == overlays.Count - 1;
                 string outLabel = isLast ? "out" : $"t{i}";
-                filterComplex.Append($"[{previousLabel}][{fgLabel}]overlay=0:0[{outLabel}];");
+                filterComplex.Append($"[{previousLabel}][{fgLabel}]overlay=0:0[{outLabel}]");
+                if (!isLast)
+                {
+                    filterComplex.Append(';');
+                }
+
                 previousLabel = outLabel;
             }
-
-            // Trim the trailing separator left by the loop above
-            filterComplex.Length--;
 
             args = $"-y {inputs}" +
                    $"-filter_complex \"{filterComplex}\" " +
