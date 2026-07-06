@@ -37,7 +37,7 @@ public static class DeviceApi
             .WithGroupName("Device API")
             .DisableAntiforgery();
 
-        group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ScheduleService scheduleService, BrandingService brandingService, ScheduleChangeTracker scheduleChangeTracker, ObsDiscoveryService obsService, IConfiguration configuration, ILoggerFactory loggerFactory, CancellationToken ct) =>
+        group.MapPost("/heartbeat", async (DeviceTelemetryDto data, HttpContext httpContext, PlainSightDbContext context, VersionService versionService, ScheduleService scheduleService, BrandingService brandingService, EmergencyBroadcastService emergencyBroadcastService, ScheduleChangeTracker scheduleChangeTracker, ObsDiscoveryService obsService, IConfiguration configuration, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             ILogger logger = loggerFactory.CreateLogger("DeviceApi");
 
@@ -114,6 +114,9 @@ public static class DeviceApi
                 // Resolve branding
                 BrandingVideo? branding = await brandingService.GetActiveBrandingAsync(device.Group, ct);
 
+                // Resolve emergency broadcast
+                EmergencyBroadcast? emergency = await emergencyBroadcastService.GetActiveBroadcastAsync(device.Group, ct);
+
                 // Resolve live mode: explicit override wins, otherwise auto-switch.
                 int sourceStaleness = configuration.GetValue("Ndi:StalenessSeconds", 60);
                 bool liveMode = false;
@@ -186,7 +189,8 @@ public static class DeviceApi
                     LogMinLevel = logMinLevel,
                     LogShipIntervalSeconds = logShipInterval,
                     ScreenshotBurstCount = burstCount,
-                    ScreenshotBurstIntervalSeconds = burstInterval
+                    ScreenshotBurstIntervalSeconds = burstInterval,
+                    Emergency = emergency != null ? new EmergencyBroadcastDto { Message = emergency.Message, FileName = emergency.ContentItem?.FileName } : null
                 };
 
                 // Clear the request flag in the database AFTER we have captured the value for the response.

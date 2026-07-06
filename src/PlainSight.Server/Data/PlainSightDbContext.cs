@@ -22,6 +22,7 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
     public DbSet<BrandingSchedule> BrandingSchedules => this.Set<BrandingSchedule>();
     public DbSet<Announcement> Announcements => this.Set<Announcement>();
     public DbSet<AnnouncementMedia> AnnouncementMedia => this.Set<AnnouncementMedia>();
+    public DbSet<EmergencyBroadcast> EmergencyBroadcasts => this.Set<EmergencyBroadcast>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -147,6 +148,15 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
                 .WithMany()
                 .HasForeignKey(e => e.DeviceId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<EmergencyBroadcast>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.ContentItem)
+                .WithMany()
+                .HasForeignKey(e => e.ContentItemId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<LogEntry>(entity =>
