@@ -2,7 +2,7 @@ using SkiaSharp;
 
 namespace PlainSight.Server.Services;
 
-public class ImageProcessorService(ILogger<ImageProcessorService> logger)
+public class ImageProcessorService(ILogger<ImageProcessorService> logger, MediaFileStager stager)
 {
     private const int MaxLongSide = 320;
 
@@ -48,8 +48,14 @@ public class ImageProcessorService(ILogger<ImageProcessorService> logger)
 
             using SKImage image = SKImage.FromBitmap(resized);
             using SKData data = image.Encode(SKEncodedImageFormat.Jpeg, 80);
-            await using FileStream stream = new(thumbPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true);
-            data.SaveTo(stream);
+
+            string workPath = stager.CreateWorkPath(thumbPath);
+            await using (FileStream stream = new(workPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true))
+            {
+                data.SaveTo(stream);
+            }
+
+            await stager.CommitAsync(workPath, thumbPath, ct);
 
             logger.LogInformation("Thumbnail generated for {ImagePath} -> {ThumbFileName}", imagePath, thumbFileName);
             return thumbFileName;

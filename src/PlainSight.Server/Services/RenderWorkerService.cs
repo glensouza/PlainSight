@@ -22,17 +22,7 @@ public class RenderWorkerService(
                 job.Status = RenderJobStatus.Processing;
                 logger.LogInformation("Processing render job {Id}: {Url}", job.Id, job.Url);
 
-                // Use a .tmp.mp4 extension during recording so the ContentSyncService ignores it
-                // but FFmpeg still knows it's an MP4 container.
-                string tempPath = job.OutputPath + ".tmp.mp4";
-                await recorder.ConvertUrlToVideoAsync(job.Url, job.DurationSeconds, tempPath, stoppingToken);
-
-                if (File.Exists(job.OutputPath))
-                {
-                    File.Delete(job.OutputPath);
-                }
-
-                File.Move(tempPath, job.OutputPath);
+                await recorder.ConvertUrlToVideoAsync(job.Url, job.DurationSeconds, job.OutputPath, stoppingToken);
 
                 long fileSize = File.Exists(job.OutputPath) ? new FileInfo(job.OutputPath).Length : 0;
 

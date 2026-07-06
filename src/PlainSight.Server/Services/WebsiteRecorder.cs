@@ -5,7 +5,7 @@ using PuppeteerSharp;
 
 namespace PlainSight.Server.Services;
 
-public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
+public class WebsiteRecorder(ILogger<WebsiteRecorder> logger, MediaFileStager stager)
 {
     private const int FrameRate = 10;
     private const int JpegQuality = 80;
@@ -49,6 +49,8 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
     public async Task ConvertUrlToVideoAsync(string url, int durationSec, string outputPath, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Starting screencast render: {Url} ({Duration}s) -> {OutputPath}", url, durationSec, outputPath);
+
+        string workPath = stager.CreateWorkPath(outputPath);
 
         // Log environment details for diagnostics
         if (OperatingSystem.IsLinux())
@@ -137,7 +139,7 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
             everyNthFrame = 1
         });
 
-        using Process ffmpegProcess = this.StartFfmpegProcess(outputPath);
+        using Process ffmpegProcess = this.StartFfmpegProcess(workPath);
         StringBuilder ffmpegError = new();
         ffmpegProcess.ErrorDataReceived += (_, e) =>
         {
@@ -221,16 +223,37 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
             }
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-
-        ffmpegProcess.StandardInput.BaseStream.Close();
-        await ffmpegProcess.WaitForExitAsync(CancellationToken.None);
-
-        if (ffmpegProcess.ExitCode != 0)
+        try
         {
-            string errorDetails = ffmpegError.ToString();
-            logger.LogError("FFmpeg failed with exit code {ExitCode}. Output: {Output}", ffmpegProcess.ExitCode, errorDetails);
-            throw new InvalidOperationException($"FFmpeg exited with code {ffmpegProcess.ExitCode}. Details: {errorDetails}");
+            cancellationToken.ThrowIfCancellationRequested();
+
+            ffmpegProcess.StandardInput.BaseStream.Close();
+            await ffmpegProcess.WaitForExitAsync(CancellationToken.None);
+
+            if (ffmpegProcess.ExitCode != 0)
+            {
+                string errorDetails = ffmpegError.ToString();
+                logger.LogError("FFmpeg failed with exit code {ExitCode}. Output: {Output}", ffmpegProcess.ExitCode, errorDetails);
+                throw new InvalidOperationException($"FFmpeg exited with code {ffmpegProcess.ExitCode}. Details: {errorDetails}");
+            }
+
+            await stager.CommitAsync(workPath, outputPath, cancellationToken);
+        }
+        catch
+        {
+            if (File.Exists(workPath))
+            {
+                try
+                {
+                    File.Delete(workPath);
+                }
+                catch (IOException)
+                {
+                    /* best-effort cleanup of failed work file */
+                }
+            }
+
+            throw;
         }
 
         logger.LogInformation("Screencast complete: {OutputPath} ({FrameCount} frames at {FrameRate} fps)", outputPath, frameCount, FrameRate);
@@ -322,16 +345,13 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger)
 
     private Process StartFfmpegProcess(string outputPath)
     {
-        // Use Matroska format for the temporary file as it's very robust for pipes/streams
-        // and doesn't require seekable output for headers (unlike standard MP4).
-        string format = outputPath.EndsWith(".tmp") ? "matroska" : "mp4";
-
+        // outputPath is a local work file on a seekable disk, so the MP4 muxer is safe here.
         Process process = new()
         {
             StartInfo = new ProcessStartInfo()
             {
                 FileName = "ffmpeg",
-                Arguments = $"-y -f image2pipe -framerate {FrameRate} -i pipe:0 -c:v libx264 -pix_fmt yuv420p -preset fast -f {format} \"{outputPath}\"",
+                Arguments = $"-y -f image2pipe -framerate {FrameRate} -i pipe:0 -c:v libx264 -pix_fmt yuv420p -preset fast -f mp4 \"{outputPath}\"",
                 RedirectStandardInput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,

@@ -13,6 +13,7 @@ public class YouTubeDownloadService(
     IConfiguration configuration,
     MediaMetadataService mediaMetadataService,
     VideoProcessorService videoProcessor,
+    MediaFileStager stager,
     ILogger<YouTubeDownloadService> logger)
 {
     private const long DefaultMaxDownloadBytes = 2L * 1024 * 1024 * 1024; // 2 GB
@@ -56,25 +57,25 @@ public class YouTubeDownloadService(
 
         string fileName = BuildFileName(video, streamInfo.Container.Name);
         string filePath = Path.Combine(contentPath, fileName);
-        string tempPath = filePath + ".tmp";
+        string workPath = stager.CreateWorkPath(filePath);
 
         try
         {
-            await youtube.Videos.Streams.DownloadAsync(streamInfo, tempPath, cancellationToken: ct);
-            File.Move(tempPath, filePath);
+            await youtube.Videos.Streams.DownloadAsync(streamInfo, workPath, cancellationToken: ct);
+            await stager.CommitAsync(workPath, filePath, ct);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "YouTube download failed for {Url}", videoUrl);
-            if (File.Exists(tempPath))
+            if (File.Exists(workPath))
             {
                 try
                 {
-                    File.Delete(tempPath);
+                    File.Delete(workPath);
                 }
                 catch (IOException cleanupEx)
                 {
-                    logger.LogWarning(cleanupEx, "Failed to delete partial download {TempPath}", tempPath);
+                    logger.LogWarning(cleanupEx, "Failed to delete partial download {WorkPath}", workPath);
                 }
             }
 
@@ -155,7 +156,10 @@ public class YouTubeDownloadService(
 
         string directory = Path.GetDirectoryName(filePath) ?? string.Empty;
         string nameWithoutExt = Path.GetFileNameWithoutExtension(filePath);
-        string shrunkPath = Path.Combine(directory, nameWithoutExt + ".shrink.tmp.mp4");
+        // Ends in .tmp (not .mp4) so ContentSyncService's extension filter skips this
+        // intermediate on the SMB share during the commit -> rename window. ProcessVideoAsync
+        // forces the container with `-f mp4`, so the extension is irrelevant to ffmpeg.
+        string shrunkPath = Path.Combine(directory, nameWithoutExt + ".shrink.mp4.tmp");
         string finalPath = Path.Combine(directory, nameWithoutExt + ".mp4");
         long originalBytes = new FileInfo(filePath).Length;
 

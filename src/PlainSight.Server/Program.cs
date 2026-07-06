@@ -64,6 +64,7 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =
 
 // Add custom services
 builder.Services.AddSingleton<MediaMetadataService>();
+builder.Services.AddSingleton<MediaFileStager>();
 builder.Services.AddSingleton<VideoProcessorService>();
 builder.Services.AddSingleton<ImageProcessorService>();
 builder.Services.AddSingleton<WatermarkRemovalService>();
@@ -135,6 +136,8 @@ using (IServiceScope scope = app.Services.CreateScope())
 {
     PlainSightDbContext dbContext = scope.ServiceProvider.GetRequiredService<PlainSightDbContext>();
     dbContext.Database.Migrate();
+
+    scope.ServiceProvider.GetRequiredService<MediaFileStager>().CleanupOrphanedWorkFiles();
 
     // One-time migration: clear SHA-256-hashed API keys (64-char hex) left from before the
     // plaintext-key switch. Affected devices re-register and receive a new key on next heartbeat.

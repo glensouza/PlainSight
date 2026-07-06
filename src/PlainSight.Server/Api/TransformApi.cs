@@ -72,25 +72,36 @@ public static class TransformApi
 
             try
             {
-                await videoProcessor.ImageToVideoAsync(inputPath, outputPath, durationSeconds, ct);
-
-                long fileSize = new FileInfo(outputPath).Length;
-
-                ContentItem newItem = new()
+                // Hold the content-sync lock across the file publish + DB insert so the sync worker
+                // cannot scan the freshly published file and insert its own row first (see WatermarkVideoWorkerService).
+                await ContentSyncService.SyncLock.WaitAsync(ct);
+                ContentItem newItem;
+                try
                 {
-                    Name = $"{item.Name} (video)",
-                    FileName = outputFileName,
-                    Type = ContentType.Video,
-                    FileSizeBytes = fileSize,
-                    DurationSeconds = durationSeconds,
-                    UploadedAt = DateTime.UtcNow,
-                    SourceContentItemId = item.Id,
-                    Description = item.Description,
-                    SourceUrl = item.SourceUrl
-                };
+                    await videoProcessor.ImageToVideoAsync(inputPath, outputPath, durationSeconds, ct);
 
-                dbContext.ContentItems.Add(newItem);
-                await dbContext.SaveChangesAsync(ct);
+                    long fileSize = new FileInfo(outputPath).Length;
+
+                    newItem = new ContentItem
+                    {
+                        Name = $"{item.Name} (video)",
+                        FileName = outputFileName,
+                        Type = ContentType.Video,
+                        FileSizeBytes = fileSize,
+                        DurationSeconds = durationSeconds,
+                        UploadedAt = DateTime.UtcNow,
+                        SourceContentItemId = item.Id,
+                        Description = item.Description,
+                        SourceUrl = item.SourceUrl
+                    };
+
+                    dbContext.ContentItems.Add(newItem);
+                    await dbContext.SaveChangesAsync(ct);
+                }
+                finally
+                {
+                    ContentSyncService.SyncLock.Release();
+                }
 
                 logger.LogInformation("Converted image {Id} to video, new item: {NewId}", id, newItem.Id);
 
@@ -145,32 +156,43 @@ public static class TransformApi
 
             try
             {
-                if (position == "first")
+                // Hold the content-sync lock across the file publish + DB insert so the sync worker
+                // cannot scan the freshly published file and insert its own row first (see WatermarkVideoWorkerService).
+                await ContentSyncService.SyncLock.WaitAsync(ct);
+                ContentItem newItem;
+                try
                 {
-                    await videoProcessor.ExtractFirstFrameAsync(inputPath, outputPath, ct);
+                    if (position == "first")
+                    {
+                        await videoProcessor.ExtractFirstFrameAsync(inputPath, outputPath, ct);
+                    }
+                    else
+                    {
+                        await videoProcessor.ExtractLastFrameAsync(inputPath, outputPath, ct);
+                    }
+
+                    long fileSize = new FileInfo(outputPath).Length;
+
+                    newItem = new ContentItem
+                    {
+                        Name = $"{item.Name} ({position} frame)",
+                        FileName = outputFileName,
+                        Type = ContentType.Image,
+                        FileSizeBytes = fileSize,
+                        DurationSeconds = 10,
+                        UploadedAt = DateTime.UtcNow,
+                        SourceContentItemId = item.Id,
+                        Description = item.Description,
+                        SourceUrl = item.SourceUrl
+                    };
+
+                    dbContext.ContentItems.Add(newItem);
+                    await dbContext.SaveChangesAsync(ct);
                 }
-                else
+                finally
                 {
-                    await videoProcessor.ExtractLastFrameAsync(inputPath, outputPath, ct);
+                    ContentSyncService.SyncLock.Release();
                 }
-
-                long fileSize = new FileInfo(outputPath).Length;
-
-                ContentItem newItem = new()
-                {
-                    Name = $"{item.Name} ({position} frame)",
-                    FileName = outputFileName,
-                    Type = ContentType.Image,
-                    FileSizeBytes = fileSize,
-                    DurationSeconds = 10,
-                    UploadedAt = DateTime.UtcNow,
-                    SourceContentItemId = item.Id,
-                    Description = item.Description,
-                    SourceUrl = item.SourceUrl
-                };
-
-                dbContext.ContentItems.Add(newItem);
-                await dbContext.SaveChangesAsync(ct);
 
                 logger.LogInformation("Extracted {Position} frame from content {Id}, new item: {NewId}", position, id, newItem.Id);
 
@@ -246,28 +268,39 @@ public static class TransformApi
 
             try
             {
-                await videoProcessor.KenBurnsAsync(
-                    inputPath, outputPath, imageWidth, imageHeight,
-                    body.StartX, body.StartY, body.StartW,
-                    body.EndX, body.EndY, body.EndW,
-                    body.DurationSeconds, overlayPath, body.OverlayParallaxRate, ct);
-
-                long fileSize = new FileInfo(outputPath).Length;
-
-                ContentItem newItem = new()
+                // Hold the content-sync lock across the file publish + DB insert so the sync worker
+                // cannot scan the freshly published file and insert its own row first (see WatermarkVideoWorkerService).
+                await ContentSyncService.SyncLock.WaitAsync(ct);
+                ContentItem newItem;
+                try
                 {
-                    Name = $"{item.Name} (Ken Burns)",
-                    FileName = outputFileName,
-                    Type = ContentType.Video,
-                    FileSizeBytes = fileSize,
-                    DurationSeconds = body.DurationSeconds,
-                    UploadedAt = DateTime.UtcNow,
-                    SourceContentItemId = item.Id,
-                    ThumbnailFileName = await videoProcessor.TryCreateThumbnailAsync(outputPath, contentPath, ct)
-                };
+                    await videoProcessor.KenBurnsAsync(
+                        inputPath, outputPath, imageWidth, imageHeight,
+                        body.StartX, body.StartY, body.StartW,
+                        body.EndX, body.EndY, body.EndW,
+                        body.DurationSeconds, overlayPath, body.OverlayParallaxRate, ct);
 
-                dbContext.ContentItems.Add(newItem);
-                await dbContext.SaveChangesAsync(ct);
+                    long fileSize = new FileInfo(outputPath).Length;
+
+                    newItem = new ContentItem
+                    {
+                        Name = $"{item.Name} (Ken Burns)",
+                        FileName = outputFileName,
+                        Type = ContentType.Video,
+                        FileSizeBytes = fileSize,
+                        DurationSeconds = body.DurationSeconds,
+                        UploadedAt = DateTime.UtcNow,
+                        SourceContentItemId = item.Id,
+                        ThumbnailFileName = await videoProcessor.TryCreateThumbnailAsync(outputPath, contentPath, ct)
+                    };
+
+                    dbContext.ContentItems.Add(newItem);
+                    await dbContext.SaveChangesAsync(ct);
+                }
+                finally
+                {
+                    ContentSyncService.SyncLock.Release();
+                }
 
                 logger.LogInformation("Ken Burns applied to image {Id}, new item: {NewId}", id, newItem.Id);
                 return Results.Ok(new { id = newItem.Id, fileName = outputFileName });
