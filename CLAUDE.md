@@ -19,6 +19,7 @@ This batch of issues (merged ~July 2026) significantly expanded the platform's c
 | #104 | **Playback State Machine Hardening**: Fixed race condition causing player to skip/cut-short items; replaced `isSwapping` guard with monotonic `playToken` | `index.html` (`playToken`, state machine logic) |
 | #105 | **Emergency Broadcast**: Instant full-screen takeover on all/targeted screens, overlays above playlist content (z-index 500) | `EmergencyBroadcastService`, `EmergencyBroadcastController`, player overlay CSS |
 | #106 | **Player Watchdog + Self-Healing**: Detects stalled playback, logs diagnostic emails, reloads page or restarts kiosk via systemd | `PlaybackWatchdogService`, heartbeat field `reloadRequested` |
+| #107 | **DB-driven Version Management + Canary**: `VersionService.GetTargetVersionAsync` resolves the target version from the DB (group pin → `Default` pin → newest ingested `PlayerVersion`), cached ~30 s; Versions page manages real `PlayerVersion` rows + per-group assignments with a one-click "Promote to all groups"; rollback works because the player applies any `updateFileName` on version mismatch | `VersionService`, `DeviceApi` (heartbeat `UpdateFileName`), `Versions.razor`, `ManifestReconciler` |
 | #108 | **Ticker Overlay**: Scrolling/fading text band (4s rotation), active/time-window/group filtering, server-driven sorting | `TickerMessage` entity, `TickerMessages.razor` admin page, player overlay (z-index 70, below emergency) |
 
 Also merged: #102 (media atomic writes), #103 (companion preview fix), #109–113 (documentation).
@@ -78,7 +79,7 @@ docker compose up -d
 - `src/PlainSight.Server/Program.cs` — Service registration; DB migrations run at startup via `Migrate()`
 - `src/PlainSight.Server/Api/DeviceApi.cs` — Heartbeat endpoint is the system's spine; X-Api-Key TOFU auth, playlist delivery, live-mode decisions, screenshot burst triggers
 - `src/PlainSight.Server/Services/ContentSyncService.cs` — Holds `SyncLock` (static `SemaphoreSlim`) across file write + DB insert to prevent unique `FileName` constraint violations (see commit a332c72)
-- `src/PlainSight.Server/Services/VersionService.cs` — Reads version from assembly metadata set by CI; canary deployment logic is a TODO
+- `src/PlainSight.Server/Services/VersionService.cs` — Reads server version from assembly metadata; `GetTargetVersionAsync` resolves the per-group target version from the DB (group pin → `Default` pin → newest `PlayerVersion`), cached ~30 s for the heartbeat hot path
 - `src/PlainSight.Player/wwwroot/index.html` — HTML5 double-buffered video player with cross-fade transitions, playlist polling, branding interstitial, idle fallback, emergency broadcast overlay (z-index 500), ticker message band (z-index 70), and now-playing reporting
 - `version.txt` — Single source of truth for `MAJOR.MINOR`; edit this file to bump the major or minor version
 
@@ -116,7 +117,7 @@ Device endpoints (`/heartbeat`, `/logs`, `/screenshot/notify`) use `X-Api-Key` h
 
 ### Blazor pages
 
-All pages in `src/PlainSight.Server/Components/Pages/` use `@rendermode InteractiveServer`. The `Devices` page auto-refreshes every 5 seconds via a `Timer`. The `Versions` page currently uses in-memory hardcoded data — version management is not yet database-driven. The `Announcements` page manages `Announcement`/`AnnouncementMedia` records (title, event date, expiration, ordered media); `Playlists` can add an `Announcement` as a playlist item alongside plain `ContentItem`s.
+All pages in `src/PlainSight.Server/Components/Pages/` use `@rendermode InteractiveServer`. The `Devices` page auto-refreshes every 5 seconds via a `Timer`. The `Versions` page is database-driven: it lists real `PlayerVersion` rows (populated by `ManifestReconciler`), manages per-group `DeviceGroupVersion` assignments for canary rollouts, and offers a one-click "Promote to all groups". The `Announcements` page manages `Announcement`/`AnnouncementMedia` records (title, event date, expiration, ordered media); `Playlists` can add an `Announcement` as a playlist item alongside plain `ContentItem`s.
 
 ### Database schema
 
@@ -191,7 +192,7 @@ printf 'MAJOR_MINOR=1.1\nPATCH=0\n' > ~/.plainsight/player-build-state
 - Async methods must accept and thread `CancellationToken` where appropriate.
 - No silent catches — log and rethrow, or return errors explicitly. Empty catch blocks must use a brace body with a comment explaining what's swallowed (e.g., `catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* expected during shutdown */ }`); never `catch { }` on one line.
 - When adding EF schema changes, always create and apply a migration; do not modify existing migration files.
-- `VersionService.GetTargetVersion` is intentionally hardcoded; database-driven canary deployment is an open TODO.
+- `VersionService.GetTargetVersionAsync` resolves the target version from the DB and caches it ~30 s; it must never return a hardcoded version string (empty string means "no update target").
 
 ### Style rules — apply on every edit
 
