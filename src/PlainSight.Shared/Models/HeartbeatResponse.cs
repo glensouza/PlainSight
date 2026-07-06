@@ -46,4 +46,9 @@ public class HeartbeatResponse
     /// Active emergency broadcast to display as a full-screen overlay, or null when none is active.
     /// </summary>
     public EmergencyBroadcastDto? Emergency { get; set; }
+
+    /// <summary>
+    /// Active ticker messages to display as a lower-third overlay, ordered by SortOrder.
+    /// </summary>
+    public List<TickerMessageDto>? TickerMessages { get; set; }
 }

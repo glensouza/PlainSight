@@ -125,6 +125,17 @@ public static class DeviceApi
                 // Resolve emergency broadcast
                 EmergencyBroadcast? emergency = await emergencyBroadcastService.GetActiveBroadcastAsync(device.Group, ct);
 
+                // Resolve ticker messages: active, within time window, matching group
+                DateTime now = DateTime.UtcNow;
+                List<TickerMessageDto>? tickerMessages = await context.TickerMessages
+                    .Where(t => t.IsActive &&
+                               (t.StartsAt == null || t.StartsAt <= now) &&
+                               (t.ExpiresAt == null || t.ExpiresAt > now) &&
+                               (t.TargetGroup == null || t.TargetGroup == device.Group))
+                    .OrderBy(t => t.SortOrder)
+                    .Select(t => new TickerMessageDto { Text = t.Text, SortOrder = t.SortOrder })
+                    .ToListAsync(ct);
+
                 // Resolve live mode: explicit override wins, otherwise auto-switch.
                 int sourceStaleness = configuration.GetValue("Ndi:StalenessSeconds", 60);
                 bool liveMode = false;
@@ -196,7 +207,8 @@ public static class DeviceApi
                     LogShipIntervalSeconds = logShipInterval,
                     ScreenshotBurstCount = burstCount,
                     ScreenshotBurstIntervalSeconds = burstInterval,
-                    Emergency = emergency != null ? new EmergencyBroadcastDto { Message = emergency.Message, FileName = emergency.ContentItem?.FileName } : null
+                    Emergency = emergency != null ? new EmergencyBroadcastDto { Message = emergency.Message, FileName = emergency.ContentItem?.FileName } : null,
+                    TickerMessages = tickerMessages?.Any() == true ? tickerMessages : null
                 };
 
                 // Clear the request flag in the database AFTER we have captured the value for the response.

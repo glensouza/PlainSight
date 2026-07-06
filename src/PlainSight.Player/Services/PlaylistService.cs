@@ -14,6 +14,7 @@ public class PlaylistService
     private List<PlaylistItemDto> idlePlaylist = [];
     private PlaylistItemDto? brandingItem;
     private EmergencyBroadcastDto? emergencyBroadcast;
+    private List<TickerMessageDto>? tickerMessages;
     private string? currentFile;
     private DateTime? currentFileSetAt;
     private bool reloadRequested;
@@ -140,6 +141,22 @@ public class PlaylistService
         lock (this.@lock)
         {
             return this.emergencyBroadcast;
+        }
+    }
+
+    public void UpdateTickerMessages(List<TickerMessageDto>? messages)
+    {
+        lock (this.@lock)
+        {
+            this.tickerMessages = messages;
+        }
+    }
+
+    public List<TickerMessageDto>? GetTickerMessages()
+    {
+        lock (this.@lock)
+        {
+            return this.tickerMessages;
         }
     }
 

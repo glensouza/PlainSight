@@ -187,6 +187,7 @@ app.MapGet("/api/playlist", (PlaylistService playlist) =>
         }),
         Branding = playlist.GetBrandingItem(),
         Emergency = playlist.GetEmergencyBroadcast(),
+        Ticker = playlist.GetTickerMessages(),
         ReloadRequested = playlist.ConsumeReloadRequested()
     }));
 
