@@ -87,7 +87,9 @@
 </div>
 
 <!-- Modal -->
-<div class="modal fade" id="messageModal" tabindex="-1">
+@if (this.showModal)
+{
+    <div class="modal fade show d-block add-modal-backdrop" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header bg-info bg-opacity-10">
@@ -98,7 +100,7 @@
                 <form>
                     <div class="mb-3">
                         <label class="form-label">Message Text</label>
-                        <input type="text" class="form-control form-control-sm" @bind="this.formText" placeholder="e.g., Potluck Sunday after service" />
+                        <input type="text" class="form-control form-control-sm" maxlength="500" @bind="this.formText" placeholder="e.g., Potluck Sunday after service" />
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Sort Order</label>
@@ -132,11 +134,13 @@
             </div>
         </div>
     </div>
-</div>
+    </div>
+}
 
 @code {
     private List<TickerMessage>? messages;
     private int? editingId;
+    private bool showModal;
 
     private string formText = string.Empty;
     private int formSortOrder;
@@ -165,7 +169,7 @@
         this.formExpiresAt = null;
         this.formIsActive = true;
 
-        this.ShowModal("messageModal");
+        this.showModal = true;
     }
 
     private void OpenEditModal(TickerMessage msg)
@@ -178,7 +182,7 @@
         this.formExpiresAt = msg.ExpiresAt;
         this.formIsActive = msg.IsActive;
 
-        this.ShowModal("messageModal");
+        this.showModal = true;
     }
 
     private async Task SaveMessage()
@@ -248,24 +252,8 @@
         }
     }
 
-    private void ShowModal(string modalId)
-    {
-        this.InvokeAsync(() =>
-        {
-            IJSRuntime js = this.JS;
-            js.InvokeVoidAsync("showModal", modalId);
-        });
-    }
-
     private void CloseModal()
     {
-        this.InvokeAsync(() =>
-        {
-            IJSRuntime js = this.JS;
-            js.InvokeVoidAsync("hideModal", "messageModal");
-        });
+        this.showModal = false;
     }
-
-    [Inject]
-    private IJSRuntime JS { get; set; } = null!;
 }
