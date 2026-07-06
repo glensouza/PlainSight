@@ -133,7 +133,7 @@ public static class DeviceApi
                                (t.ExpiresAt == null || t.ExpiresAt > now) &&
                                (t.TargetGroup == null || t.TargetGroup == device.Group))
                     .OrderBy(t => t.SortOrder)
-                    .Select(t => new TickerMessageDto { Text = t.Text, SortOrder = t.SortOrder })
+                    .Select(t => new TickerMessageDto { Text = t.Text })
                     .ToListAsync(ct);
 
                 // Resolve live mode: explicit override wins, otherwise auto-switch.
