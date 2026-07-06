@@ -173,6 +173,35 @@
                             <i class="bi bi-plus-circle"></i> Add
                         </button>
                     </div>
+
+                    <hr class="my-3" />
+                    <label class="small text-muted mb-1 d-block">Promote a version to every group (finish a canary rollout)</label>
+                    <div class="input-group input-group-sm">
+                        <select class="form-select" @bind="promoteVersion" disabled="@(versions == null || versions.Count == 0)">
+                            <option value="">Select version…</option>
+                            @if (versions != null)
+                            {
+                                @foreach (PlayerVersion v in versions)
+                                {
+                                    <option value="@v.VersionNumber">@v.VersionNumber</option>
+                                }
+                            }
+                        </select>
+                        <button class="btn btn-outline-success"
+                                @onclick="PromoteToAllGroups"
+                                disabled="@(string.IsNullOrWhiteSpace(promoteVersion) || groups == null || groups.Count == 0 || promoting)">
+                            @if (promoting)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-arrow-up-circle me-1"></i>
+                            }
+                            <span>Promote to all</span>
+                        </button>
+                    </div>
+
                     @if (groupError != null)
                     {
                         <div class="alert alert-danger py-1 mt-2 small">@groupError</div>
@@ -204,6 +233,8 @@
     private List<DeviceGroupVersion>? groups;
 
     private string? newGroupName;
+    private string? promoteVersion;
+    private bool promoting;
     private string? groupError;
     private int? deletingId;
     private string? loadError;
@@ -384,6 +415,47 @@
         {
             Logger.LogError(ex, "Error saving group version for {Group}", groupName);
             groupError = "Save failed — check server logs.";
+        }
+    }
+
+    private async Task PromoteToAllGroups()
+    {
+        if (string.IsNullOrWhiteSpace(promoteVersion) || groups == null || groups.Count == 0)
+        {
+            return;
+        }
+
+        promoting = true;
+        groupError = null;
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+
+            bool versionExists = await context.PlayerVersions.AnyAsync(v => v.VersionNumber == promoteVersion);
+            if (!versionExists)
+            {
+                groupError = $"Version {promoteVersion} does not exist";
+                return;
+            }
+
+            List<DeviceGroupVersion> all = await context.DeviceGroupVersions.ToListAsync();
+            foreach (DeviceGroupVersion g in all)
+            {
+                g.TargetVersion = promoteVersion;
+            }
+
+            await context.SaveChangesAsync();
+            promoteVersion = null;
+            await LoadAll();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error promoting version to all groups");
+            groupError = "Promote failed — check server logs.";
+        }
+        finally
+        {
+            promoting = false;
         }
     }
 
