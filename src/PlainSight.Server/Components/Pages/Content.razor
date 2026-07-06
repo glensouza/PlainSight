@@ -1553,7 +1553,7 @@ else
 
             // Hold the content-sync lock across the file publish + DB insert so the sync worker
             // cannot scan the freshly published file and insert its own row first (see WatermarkVideoWorkerService).
-            await ContentSyncService.SyncLock.WaitAsync();
+            await ContentSyncService.SyncLock.WaitAsync(cts.Token);
             try
             {
                 await MediaFileStager.CommitAsync(workPath, filePath);

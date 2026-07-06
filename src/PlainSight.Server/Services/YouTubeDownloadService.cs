@@ -156,7 +156,10 @@ public class YouTubeDownloadService(
 
         string directory = Path.GetDirectoryName(filePath) ?? string.Empty;
         string nameWithoutExt = Path.GetFileNameWithoutExtension(filePath);
-        string shrunkPath = Path.Combine(directory, nameWithoutExt + ".shrink.tmp.mp4");
+        // Ends in .tmp (not .mp4) so ContentSyncService's extension filter skips this
+        // intermediate on the SMB share during the commit -> rename window. ProcessVideoAsync
+        // forces the container with `-f mp4`, so the extension is irrelevant to ffmpeg.
+        string shrunkPath = Path.Combine(directory, nameWithoutExt + ".shrink.mp4.tmp");
         string finalPath = Path.Combine(directory, nameWithoutExt + ".mp4");
         long originalBytes = new FileInfo(filePath).Length;
 

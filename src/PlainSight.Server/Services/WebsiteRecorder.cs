@@ -345,16 +345,13 @@ public class WebsiteRecorder(ILogger<WebsiteRecorder> logger, MediaFileStager st
 
     private Process StartFfmpegProcess(string outputPath)
     {
-        // Use Matroska format for the temporary file as it's very robust for pipes/streams
-        // and doesn't require seekable output for headers (unlike standard MP4).
-        string format = outputPath.EndsWith(".tmp") ? "matroska" : "mp4";
-
+        // outputPath is a local work file on a seekable disk, so the MP4 muxer is safe here.
         Process process = new()
         {
             StartInfo = new ProcessStartInfo()
             {
                 FileName = "ffmpeg",
-                Arguments = $"-y -f image2pipe -framerate {FrameRate} -i pipe:0 -c:v libx264 -pix_fmt yuv420p -preset fast -f {format} \"{outputPath}\"",
+                Arguments = $"-y -f image2pipe -framerate {FrameRate} -i pipe:0 -c:v libx264 -pix_fmt yuv420p -preset fast -f mp4 \"{outputPath}\"",
                 RedirectStandardInput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
