@@ -16,6 +16,7 @@ public sealed class SvdGenerationService(
     IDbContextFactory<PlainSightDbContext> dbFactory,
     MediaMetadataService mediaMetadataService,
     VideoProcessorService videoProcessor,
+    MediaFileStager stager,
     IConfiguration configuration,
     ILogger<SvdGenerationService> logger)
 {
@@ -70,10 +71,22 @@ public sealed class SvdGenerationService(
                 throw new InvalidOperationException("No video output found in ComfyUI history.");
             }
 
-            string outputFileName = await this.DownloadAndSaveAsync(http, videoRef, contentPath, opts.FilenamePrefix, token);
-            logger.LogInformation("SVD job {Id}: saved as {OutputFileName}", job.Id, outputFileName);
+            // Hold the content-sync lock across the file publish + DB insert so the sync worker
+            // cannot scan the freshly published file and insert its own row first (see WatermarkVideoWorkerService).
+            await ContentSyncService.SyncLock.WaitAsync(token);
+            string outputFileName;
+            try
+            {
+                outputFileName = await this.DownloadAndSaveAsync(http, videoRef, contentPath, opts.FilenamePrefix, token);
+                logger.LogInformation("SVD job {Id}: saved as {OutputFileName}", job.Id, outputFileName);
 
-            await this.SaveContentItemAsync(job, outputFileName, contentPath, token);
+                await this.SaveContentItemAsync(job, outputFileName, contentPath, token);
+            }
+            finally
+            {
+                ContentSyncService.SyncLock.Release();
+            }
+
             job.OutputFileName = outputFileName;
         }
         finally
@@ -376,24 +389,32 @@ public sealed class SvdGenerationService(
 
         string outputFileName = $"{prefix}_{DateTime.UtcNow:yyyyMMddHHmmssfff}.mp4";
         string outputPath = Path.Combine(contentPath, outputFileName);
-        string tempPath = outputPath + ".tmp";
+        string workPath = stager.CreateWorkPath(outputPath);
 
         try
         {
             await using Stream src = await response.Content.ReadAsStreamAsync(ct);
-            await using FileStream dest = new(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536, useAsync: true);
+            await using FileStream dest = new(workPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536, useAsync: true);
             await src.CopyToAsync(dest, ct);
         }
         catch
         {
-            if (File.Exists(tempPath))
+            if (File.Exists(workPath))
             {
-                try { File.Delete(tempPath); } catch (Exception) { /* best effort cleanup */ }
+                try
+                {
+                    File.Delete(workPath);
+                }
+                catch (IOException)
+                {
+                    /* best-effort cleanup of failed work file */
+                }
             }
+
             throw;
         }
 
-        File.Move(tempPath, outputPath);
+        await stager.CommitAsync(workPath, outputPath, ct);
         return outputFileName;
     }
 

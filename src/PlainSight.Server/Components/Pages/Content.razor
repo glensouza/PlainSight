@@ -7,6 +7,7 @@
 @inject MediaMetadataService MediaMetadataService
 @inject VideoProcessorService VideoProcessorService
 @inject ImageProcessorService ImageProcessorService
+@inject MediaFileStager MediaFileStager
 @inject RenderQueue RenderQueue
 @inject IConfiguration Configuration
 @inject ILogger<Content> Logger
@@ -1244,13 +1245,9 @@ else
         try
         {
             string folderPath = MediaPathResolver.Resolve(Configuration["ContentPath"] ?? "/mnt/plainsight/content");
-            
+
             string oldFileName = processingItem.FileName;
             string filePath = Path.Combine(folderPath, oldFileName);
-            
-            // Generate a unique temporary path for processing
-            string tempFileName = $"{Guid.CreateVersion7():N}.tmp.mp4";
-            string tempPath = Path.Combine(folderPath, tempFileName);
 
             if (!File.Exists(filePath))
             {
@@ -1258,18 +1255,17 @@ else
                 return;
             }
 
-            // Process the video to the temp MP4 file
-            await VideoProcessorService.ProcessVideoAsync(filePath, tempPath, stripAudio, compressVideo, cancellationToken: cts.Token);
-
             // Determine the target file name (ensure it ends with .mp4 since we processed to MP4)
             string targetFileName = Path.ChangeExtension(oldFileName, ".mp4");
             string targetPath = Path.Combine(folderPath, targetFileName);
 
-            // Clean up: delete original if it's different from target, then replace target with temp
-            if (File.Exists(filePath)) File.Delete(filePath);
-            if (File.Exists(targetPath) && targetPath != filePath) File.Delete(targetPath);
-            
-            File.Move(tempPath, targetPath);
+            // ProcessVideoAsync stages locally and publishes to targetPath atomically.
+            await VideoProcessorService.ProcessVideoAsync(filePath, targetPath, stripAudio, compressVideo, cancellationToken: cts.Token);
+
+            if (filePath != targetPath && File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
 
             // Update database metadata
             int newDuration = await MediaMetadataService.GetVideoDurationAsync(targetPath);
@@ -1540,9 +1536,10 @@ else
             string safeOriginalName = Path.GetFileName(selectedFile.Name);
             string fileName = $"{DateTime.UtcNow:yyyyMMddHHmmss}_{safeOriginalName}";
             string filePath = Path.Combine(contentPath, fileName);
+            string workPath = MediaFileStager.CreateWorkPath(filePath);
 
             await using (Stream stream = selectedFile.OpenReadStream(maxAllowedSize))
-            await using (FileStream fileStream = new(filePath, FileMode.Create))
+            await using (FileStream fileStream = new(workPath, FileMode.Create))
             {
                 await stream.CopyToAsync(fileStream);
             }
@@ -1553,46 +1550,60 @@ else
 
             int duration = 10;
             long finalSize = selectedFile.Size;
-            if (contentType == ContentType.Video)
-            {
-                duration = await MediaMetadataService.GetVideoDurationAsync(filePath);
-            }
 
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
-            ContentItem? contentItem = await context.ContentItems.FirstOrDefaultAsync(i => i.FileName == fileName);
-
-            if (contentItem == null)
+            // Hold the content-sync lock across the file publish + DB insert so the sync worker
+            // cannot scan the freshly published file and insert its own row first (see WatermarkVideoWorkerService).
+            await ContentSyncService.SyncLock.WaitAsync();
+            try
             {
-                contentItem = new ContentItem
+                await MediaFileStager.CommitAsync(workPath, filePath);
+
+                if (contentType == ContentType.Video)
                 {
-                    Name = Path.GetFileNameWithoutExtension(safeOriginalName),
-                    FileName = fileName,
-                    Type = contentType,
-                    FileSizeBytes = finalSize,
-                    DurationSeconds = duration,
-                    UploadedAt = DateTime.UtcNow
-                };
-                context.ContentItems.Add(contentItem);
+                    duration = await MediaMetadataService.GetVideoDurationAsync(filePath);
+                }
+
+                await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+                ContentItem? contentItem = await context.ContentItems.FirstOrDefaultAsync(i => i.FileName == fileName);
+
+                if (contentItem == null)
+                {
+                    contentItem = new ContentItem
+                    {
+                        Name = Path.GetFileNameWithoutExtension(safeOriginalName),
+                        FileName = fileName,
+                        Type = contentType,
+                        FileSizeBytes = finalSize,
+                        DurationSeconds = duration,
+                        UploadedAt = DateTime.UtcNow
+                    };
+                    context.ContentItems.Add(contentItem);
+                }
+                else
+                {
+                    contentItem.Name = Path.GetFileNameWithoutExtension(safeOriginalName);
+                    contentItem.Type = contentType;
+                    contentItem.FileSizeBytes = finalSize;
+                    contentItem.DurationSeconds = duration;
+                }
+
+                if (contentType == ContentType.Video)
+                {
+                    contentItem.ThumbnailFileName = await VideoProcessorService.TryCreateThumbnailAsync(filePath, contentPath);
+                }
+                else
+                {
+                    string? imageThumb = await ImageProcessorService.TryCreateThumbnailAsync(filePath, contentPath);
+                    contentItem.ThumbnailFileName = imageThumb ?? fileName;
+                }
+
+                await context.SaveChangesAsync();
             }
-            else
+            finally
             {
-                contentItem.Name = Path.GetFileNameWithoutExtension(safeOriginalName);
-                contentItem.Type = contentType;
-                contentItem.FileSizeBytes = finalSize;
-                contentItem.DurationSeconds = duration;
+                ContentSyncService.SyncLock.Release();
             }
 
-            if (contentType == ContentType.Video)
-            {
-                contentItem.ThumbnailFileName = await VideoProcessorService.TryCreateThumbnailAsync(filePath, contentPath);
-            }
-            else
-            {
-                string? imageThumb = await ImageProcessorService.TryCreateThumbnailAsync(filePath, contentPath);
-                contentItem.ThumbnailFileName = imageThumb ?? fileName;
-            }
-
-            await context.SaveChangesAsync();
             selectedFile = null;
             await LoadContent();
         }
@@ -1917,28 +1928,38 @@ else
                 }
             }
 
-            await VideoProcessorService.KenBurnsAsync(
-                inputPath, outputPath, this.kbImgW, this.kbImgH,
-                this.kbStartX / 100.0, this.kbStartY / 100.0, this.kbStartW / 100.0,
-                this.kbEndX / 100.0, this.kbEndY / 100.0, this.kbEndW / 100.0,
-                this.kbDuration, overlayPath, this.kbParallaxRate, cts.Token);
-
-            long fileSize = new FileInfo(outputPath).Length;
-
-            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(cts.Token);
-            ContentItem newItem = new()
+            // Hold the content-sync lock across the file publish + DB insert so the sync worker
+            // cannot scan the freshly published file and insert its own row first (see WatermarkVideoWorkerService).
+            await ContentSyncService.SyncLock.WaitAsync(cts.Token);
+            try
             {
-                Name = $"{this.kenBurnsItem.Name} (Ken Burns)",
-                FileName = outputFileName,
-                Type = ContentType.Video,
-                FileSizeBytes = fileSize,
-                DurationSeconds = this.kbDuration,
-                UploadedAt = DateTime.UtcNow,
-                SourceContentItemId = this.kenBurnsItem.Id,
-                ThumbnailFileName = await VideoProcessorService.TryCreateThumbnailAsync(outputPath, contentPath, cts.Token)
-            };
-            context.ContentItems.Add(newItem);
-            await context.SaveChangesAsync(cts.Token);
+                await VideoProcessorService.KenBurnsAsync(
+                    inputPath, outputPath, this.kbImgW, this.kbImgH,
+                    this.kbStartX / 100.0, this.kbStartY / 100.0, this.kbStartW / 100.0,
+                    this.kbEndX / 100.0, this.kbEndY / 100.0, this.kbEndW / 100.0,
+                    this.kbDuration, overlayPath, this.kbParallaxRate, cts.Token);
+
+                long fileSize = new FileInfo(outputPath).Length;
+
+                await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync(cts.Token);
+                ContentItem newItem = new()
+                {
+                    Name = $"{this.kenBurnsItem.Name} (Ken Burns)",
+                    FileName = outputFileName,
+                    Type = ContentType.Video,
+                    FileSizeBytes = fileSize,
+                    DurationSeconds = this.kbDuration,
+                    UploadedAt = DateTime.UtcNow,
+                    SourceContentItemId = this.kenBurnsItem.Id,
+                    ThumbnailFileName = await VideoProcessorService.TryCreateThumbnailAsync(outputPath, contentPath, cts.Token)
+                };
+                context.ContentItems.Add(newItem);
+                await context.SaveChangesAsync(cts.Token);
+            }
+            finally
+            {
+                ContentSyncService.SyncLock.Release();
+            }
 
             this.kenBurnsItem = null;
             await LoadContent();

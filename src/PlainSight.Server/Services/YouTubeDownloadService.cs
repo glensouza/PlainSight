@@ -13,6 +13,7 @@ public class YouTubeDownloadService(
     IConfiguration configuration,
     MediaMetadataService mediaMetadataService,
     VideoProcessorService videoProcessor,
+    MediaFileStager stager,
     ILogger<YouTubeDownloadService> logger)
 {
     private const long DefaultMaxDownloadBytes = 2L * 1024 * 1024 * 1024; // 2 GB
@@ -56,25 +57,25 @@ public class YouTubeDownloadService(
 
         string fileName = BuildFileName(video, streamInfo.Container.Name);
         string filePath = Path.Combine(contentPath, fileName);
-        string tempPath = filePath + ".tmp";
+        string workPath = stager.CreateWorkPath(filePath);
 
         try
         {
-            await youtube.Videos.Streams.DownloadAsync(streamInfo, tempPath, cancellationToken: ct);
-            File.Move(tempPath, filePath);
+            await youtube.Videos.Streams.DownloadAsync(streamInfo, workPath, cancellationToken: ct);
+            await stager.CommitAsync(workPath, filePath, ct);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "YouTube download failed for {Url}", videoUrl);
-            if (File.Exists(tempPath))
+            if (File.Exists(workPath))
             {
                 try
                 {
-                    File.Delete(tempPath);
+                    File.Delete(workPath);
                 }
                 catch (IOException cleanupEx)
                 {
-                    logger.LogWarning(cleanupEx, "Failed to delete partial download {TempPath}", tempPath);
+                    logger.LogWarning(cleanupEx, "Failed to delete partial download {WorkPath}", workPath);
                 }
             }
 

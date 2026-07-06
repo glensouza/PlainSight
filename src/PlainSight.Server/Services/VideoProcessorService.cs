@@ -4,7 +4,7 @@ using System.Text;
 
 namespace PlainSight.Server.Services;
 
-public class VideoProcessorService(ILogger<VideoProcessorService> logger)
+public class VideoProcessorService(ILogger<VideoProcessorService> logger, MediaFileStager stager)
 {
     public async Task ProcessVideoAsync(
         string inputPath,
@@ -19,6 +19,8 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
     {
         logger.LogInformation("Processing video: {InputPath} -> {OutputPath} (StripAudio: {StripAudio}, Compress: {Compress}, MaxHeight: {MaxHeight})",
             inputPath, outputPath, stripAudio, compress, maxHeight);
+
+        string workPath = stager.CreateWorkPath(outputPath);
 
         StringBuilder arguments = new();
         arguments.Append($"-y -i \"{inputPath}\" ");
@@ -46,64 +48,9 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
             arguments.Append(compress ? $"-c:a aac -b:a {audioBitrate} " : "-c:a copy ");
         }
 
-        arguments.Append($"-movflags +faststart -f mp4 \"{outputPath}\"");
+        arguments.Append($"-movflags +faststart -f mp4 \"{workPath}\"");
 
-        using Process process = new()
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "ffmpeg",
-                Arguments = arguments.ToString(),
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
-        };
-
-        StringBuilder ffmpegError = new();
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data != null)
-            {
-                ffmpegError.AppendLine(e.Data);
-                logger.LogDebug("FFmpeg: {Log}", e.Data);
-            }
-        };
-
-        if (!process.Start())
-        {
-            throw new InvalidOperationException("Failed to start FFmpeg process");
-        }
-
-        process.BeginErrorReadLine();
-
-        try
-        {
-            await process.WaitForExitAsync(cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            try
-            {
-                if (!process.HasExited)
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-            }
-            catch (InvalidOperationException)
-            {
-                /* process never started or already exited */
-            }
-
-            throw;
-        }
-
-        if (process.ExitCode != 0)
-        {
-            string errorDetails = ffmpegError.ToString();
-            logger.LogError("FFmpeg failed with exit code {ExitCode}. Output: {Output}", process.ExitCode, errorDetails);
-            throw new InvalidOperationException($"FFmpeg exited with code {process.ExitCode}. Details: {errorDetails}");
-        }
+        await this.RunFfmpegToWorkPathAsync(arguments.ToString(), workPath, outputPath, cancellationToken);
 
         logger.LogInformation("Video processing complete: {OutputPath}", outputPath);
     }
@@ -156,15 +103,12 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
         string yExpr = $"({sys}+({dys})*{tFactor})*({z0s}+({dzs})*{tFactor})";
         string zoompanFilter = $"zoompan=z='{zExpr}':x='{xExpr}':y='{yExpr}':d={totalFrames}:fps={fps}:s={imageWidth}x{imageHeight}";
 
-        // Write to a .tmp file so the content-sync worker (which runs every 30s) never picks up
-        // a partially-written mp4. Only the .mp4 extension is excluded from sync; .tmp is not a
-        // supported media extension and will be skipped.
-        string tempPath = outputPath + ".tmp";
+        string workPath = stager.CreateWorkPath(outputPath);
 
         string args;
         if (overlayPath == null)
         {
-            args = $"-y -loop 1 -i \"{inputPath}\" -vf \"{zoompanFilter}\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{tempPath}\"";
+            args = $"-y -loop 1 -i \"{inputPath}\" -vf \"{zoompanFilter}\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{workPath}\"";
         }
         else if (overlayParallaxRate <= 0)
         {
@@ -172,7 +116,7 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
             string scaleFilter = $"scale={imageWidth}:{imageHeight}";
             args = $"-y -loop 1 -i \"{inputPath}\" -loop 1 -i \"{overlayPath}\" " +
                    $"-filter_complex \"[0:v]{zoompanFilter}[bg];[1:v]{scaleFilter}[fg];[bg][fg]overlay=0:0[out]\" " +
-                   $"-map \"[out]\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{tempPath}\"";
+                   $"-map \"[out]\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{workPath}\"";
         }
         else
         {
@@ -190,21 +134,10 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
             string overlayZpFilter = $"zoompan=z='{op0s}+({odps})*{tFactor}':x='{oxExpr}':y='{oyExpr}':d={totalFrames}:fps={fps}:s={imageWidth}x{imageHeight}";
             args = $"-y -loop 1 -i \"{inputPath}\" -loop 1 -i \"{overlayPath}\" " +
                    $"-filter_complex \"[0:v]{zoompanFilter}[bg];[1:v]{overlayZpFilter}[fg];[bg][fg]overlay=0:0[out]\" " +
-                   $"-map \"[out]\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{tempPath}\"";
+                   $"-map \"[out]\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{workPath}\"";
         }
 
-        try
-        {
-            await this.RunFfmpegAsync(args, ct);
-            File.Move(tempPath, outputPath, overwrite: true);
-        }
-        finally
-        {
-            if (File.Exists(tempPath))
-            {
-                try { File.Delete(tempPath); } catch { /* stale temp — ignore */ }
-            }
-        }
+        await this.RunFfmpegToWorkPathAsync(args, workPath, outputPath, ct);
 
         logger.LogInformation("Ken Burns complete: {Output}", outputPath);
     }
@@ -310,22 +243,10 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
         arguments.Append(stripAudio ? "-an " : "-c:a aac -b:a 128k ");
         arguments.Append("-movflags +faststart -f mp4 ");
 
-        // Write to a .tmp file so the content-sync worker never picks up a partially-written mp4.
-        string tempPath = outputPath + ".tmp";
-        arguments.Append($"\"{tempPath}\"");
+        string workPath = stager.CreateWorkPath(outputPath);
+        arguments.Append($"\"{workPath}\"");
 
-        try
-        {
-            await this.RunFfmpegAsync(arguments.ToString(), ct);
-            File.Move(tempPath, outputPath, overwrite: true);
-        }
-        finally
-        {
-            if (File.Exists(tempPath))
-            {
-                try { File.Delete(tempPath); } catch { /* stale temp — ignore */ }
-            }
-        }
+        await this.RunFfmpegToWorkPathAsync(arguments.ToString(), workPath, outputPath, ct);
 
         logger.LogInformation("Trim/crop complete: {Output}", outputPath);
     }
@@ -334,9 +255,10 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
     {
         logger.LogInformation("Converting image to video: {InputPath} -> {OutputPath} ({Duration}s)", inputPath, outputPath, durationSeconds);
 
-        string args = $"-y -loop 1 -i \"{inputPath}\" -t {durationSeconds.ToString(CultureInfo.InvariantCulture)} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{outputPath}\"";
+        string workPath = stager.CreateWorkPath(outputPath);
+        string args = $"-y -loop 1 -i \"{inputPath}\" -t {durationSeconds.ToString(CultureInfo.InvariantCulture)} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{workPath}\"";
 
-        await this.RunFfmpegAsync(args, ct);
+        await this.RunFfmpegToWorkPathAsync(args, workPath, outputPath, ct);
 
         logger.LogInformation("Image-to-video conversion complete: {OutputPath}", outputPath);
     }
@@ -373,9 +295,10 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
     {
         logger.LogInformation("Extracting first frame: {InputPath} -> {OutputPath}", inputPath, outputPath);
 
-        string args = $"-y -i \"{inputPath}\" -vframes 1 -q:v 2 \"{outputPath}\"";
+        string workPath = stager.CreateWorkPath(outputPath);
+        string args = $"-y -i \"{inputPath}\" -vframes 1 -q:v 2 \"{workPath}\"";
 
-        await this.RunFfmpegAsync(args, ct);
+        await this.RunFfmpegToWorkPathAsync(args, workPath, outputPath, ct);
 
         logger.LogInformation("First frame extraction complete: {OutputPath}", outputPath);
     }
@@ -384,11 +307,39 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger)
     {
         logger.LogInformation("Extracting last frame: {InputPath} -> {OutputPath}", inputPath, outputPath);
 
-        string args = $"-y -sseof -1 -i \"{inputPath}\" -update 1 -q:v 2 \"{outputPath}\"";
+        string workPath = stager.CreateWorkPath(outputPath);
+        string args = $"-y -sseof -1 -i \"{inputPath}\" -update 1 -q:v 2 \"{workPath}\"";
 
-        await this.RunFfmpegAsync(args, ct);
+        await this.RunFfmpegToWorkPathAsync(args, workPath, outputPath, ct);
 
         logger.LogInformation("Last frame extraction complete: {OutputPath}", outputPath);
+    }
+
+    // Runs ffmpeg targeting a local work path, then publishes to the SMB share via MediaFileStager.
+    // Cleans up the local work file if ffmpeg itself fails (CommitAsync cleans up on its own errors).
+    private async Task RunFfmpegToWorkPathAsync(string args, string workPath, string outputPath, CancellationToken ct)
+    {
+        try
+        {
+            await this.RunFfmpegAsync(args, ct);
+            await stager.CommitAsync(workPath, outputPath, ct);
+        }
+        catch
+        {
+            if (File.Exists(workPath))
+            {
+                try
+                {
+                    File.Delete(workPath);
+                }
+                catch (IOException)
+                {
+                    /* best-effort cleanup of failed work file */
+                }
+            }
+
+            throw;
+        }
     }
 
     private async Task RunFfmpegAsync(string args, CancellationToken ct)

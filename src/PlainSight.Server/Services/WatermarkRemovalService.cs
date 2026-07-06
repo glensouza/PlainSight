@@ -7,7 +7,7 @@ using SkiaSharp;
 
 namespace PlainSight.Server.Services;
 
-public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, MediaMetadataService mediaMetadataService)
+public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, MediaMetadataService mediaMetadataService, MediaFileStager stager)
 {
     // Gemini watermark geometry, ported from kevintsai1202/GeminiWatermarkRemove (MIT).
     // The watermark is a fixed white star logo composited at a known size, bottom-right margin,
@@ -62,28 +62,51 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
     {
         logger.LogInformation("Removing Gemini watermark from image via reverse alpha blending: {InputPath}", inputPath);
 
-        await Task.Run(() =>
+        string workPath = stager.CreateWorkPath(outputPath);
+
+        try
         {
-            using SKBitmap bitmap = SKBitmap.Decode(inputPath) ?? throw new InvalidOperationException($"Failed to decode image: {inputPath}");
-
-            WatermarkDetection? detection = this.DetectWatermark(bitmap);
-            if (detection is { } located)
+            await Task.Run(() =>
             {
-                WatermarkMask mask = ResolveMask(located);
-                logger.LogInformation("Watermark located at ({X},{Y}) with gain {Gain}", located.X, located.Y, located.Gain);
-                ApplyRemoval(bitmap, mask, located.X, located.Y, located.Gain);
-                FeatherEdges(bitmap, mask, located.X, located.Y);
-            }
-            else
+                using SKBitmap bitmap = SKBitmap.Decode(inputPath) ?? throw new InvalidOperationException($"Failed to decode image: {inputPath}");
+
+                WatermarkDetection? detection = this.DetectWatermark(bitmap);
+                if (detection is { } located)
+                {
+                    WatermarkMask mask = ResolveMask(located);
+                    logger.LogInformation("Watermark located at ({X},{Y}) with gain {Gain}", located.X, located.Y, located.Gain);
+                    ApplyRemoval(bitmap, mask, located.X, located.Y, located.Gain);
+                    FeatherEdges(bitmap, mask, located.X, located.Y);
+                }
+                else
+                {
+                    logger.LogWarning("Image too small or no watermark detected; saving an unaltered copy");
+                }
+
+                using SKImage image = SKImage.FromBitmap(bitmap);
+                using SKData data = image.Encode(EncodeFormatFor(outputPath), 95);
+                using FileStream stream = File.Create(workPath);
+                data.SaveTo(stream);
+            }, ct);
+
+            await stager.CommitAsync(workPath, outputPath, ct);
+        }
+        catch
+        {
+            if (File.Exists(workPath))
             {
-                logger.LogWarning("Image too small or no watermark detected; saving an unaltered copy");
+                try
+                {
+                    File.Delete(workPath);
+                }
+                catch (IOException)
+                {
+                    /* best-effort cleanup of failed work file */
+                }
             }
 
-            using SKImage image = SKImage.FromBitmap(bitmap);
-            using SKData data = image.Encode(EncodeFormatFor(outputPath), 95);
-            using FileStream stream = File.Create(outputPath);
-            data.SaveTo(stream);
-        }, ct);
+            throw;
+        }
 
         logger.LogInformation("Image watermark removal complete: {OutputPath}", outputPath);
         return outputPath;
@@ -128,7 +151,8 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
         if (detections.Count == 0)
         {
             logger.LogWarning("No watermark detected across sample frames; copying unaltered: {InputPath}", inputPath);
-            await this.RunFfmpegAsync($"-y -i \"{inputPath}\" -c copy -movflags +faststart \"{outputPath}\"", ct);
+            string copyWorkPath = stager.CreateWorkPath(outputPath);
+            await this.RunFfmpegToWorkPathAsync($"-y -i \"{inputPath}\" -c copy -movflags +faststart \"{copyWorkPath}\"", copyWorkPath, outputPath, ct);
             return outputPath;
         }
 
@@ -147,13 +171,15 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
             string alpha = $"min({gain}*B/255,{MaxAlpha.ToString("0.##", CultureInfo.InvariantCulture)})";
             string expr = $"clip((A-{alpha}*255)/(1-{alpha}),0,255)";
 
+            string workPath = stager.CreateWorkPath(outputPath);
+
             StringBuilder args = new();
             // The edge mask is a single unlooped frame: framesync repeats it for every video frame and
             // ends the output with the finite [restored] base. maskedmerge has no `shortest` option (only
             // blend does), so termination relies on that finite primary input rather than a filter flag.
-            args.Append(CultureInfo.InvariantCulture, $"-y -i \"{inputPath}\" -loop 1 -i \"{maskPath}\" -i \"{edgeMaskPath}\" -filter_complex \"[0:v]format=gbrp[v];[1:v]format=gbrp[m];[v][m]blend=c0_expr='{expr}':c1_expr='{expr}':c2_expr='{expr}':shortest=1,format=yuv420p[restored];[restored]boxblur=2:1[blurred];[2:v]format=gray[edge];[restored][blurred][edge]maskedmerge[out]\" -map \"[out]\" -map 0:a? -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -c:a copy -movflags +faststart \"{outputPath}\"");
+            args.Append(CultureInfo.InvariantCulture, $"-y -i \"{inputPath}\" -loop 1 -i \"{maskPath}\" -i \"{edgeMaskPath}\" -filter_complex \"[0:v]format=gbrp[v];[1:v]format=gbrp[m];[v][m]blend=c0_expr='{expr}':c1_expr='{expr}':c2_expr='{expr}':shortest=1,format=yuv420p[restored];[restored]boxblur=2:1[blurred];[2:v]format=gray[edge];[restored][blurred][edge]maskedmerge[out]\" -map \"[out]\" -map 0:a? -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -c:a copy -movflags +faststart \"{workPath}\"");
 
-            await this.RunFfmpegAsync(args.ToString(), ct);
+            await this.RunFfmpegToWorkPathAsync(args.ToString(), workPath, outputPath, ct);
 
             logger.LogInformation("Video watermark removal complete: {OutputPath}", outputPath);
             return outputPath;
@@ -841,6 +867,33 @@ public class WatermarkRemovalService(ILogger<WatermarkRemovalService> logger, Me
             ".gif" => SKEncodedImageFormat.Gif,
             _ => SKEncodedImageFormat.Png
         };
+    }
+
+    // Runs ffmpeg targeting a local work path, then publishes to the SMB share via MediaFileStager.
+    // Cleans up the local work file if ffmpeg itself fails (CommitAsync cleans up on its own errors).
+    private async Task RunFfmpegToWorkPathAsync(string args, string workPath, string outputPath, CancellationToken ct)
+    {
+        try
+        {
+            await this.RunFfmpegAsync(args, ct);
+            await stager.CommitAsync(workPath, outputPath, ct);
+        }
+        catch
+        {
+            if (File.Exists(workPath))
+            {
+                try
+                {
+                    File.Delete(workPath);
+                }
+                catch (IOException)
+                {
+                    /* best-effort cleanup of failed work file */
+                }
+            }
+
+            throw;
+        }
     }
 
     private async Task RunFfmpegAsync(string args, CancellationToken ct)

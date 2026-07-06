@@ -40,6 +40,10 @@
                                 <div class="progress-bar-fill" style="width: @(progress)%"></div>
                             </div>
                             <div class="item-info">
+                                @if (CurrentItem.MediaCount > 1)
+                                {
+                                    <span class="badge bg-info text-dark me-2" title="Part of a multi-media announcement">@CurrentItem.MediaIndex/@CurrentItem.MediaCount announcement</span>
+                                }
                                 <span class="item-name text-truncate">@CurrentItem.DisplayName</span>
                                 <span class="item-timer ms-2">@Math.Ceiling(remainingTime)s</span>
                             </div>
@@ -81,6 +85,8 @@
     {
         public required ContentItem ContentItem { get; init; }
         public required string DisplayName { get; init; }
+        public required int MediaIndex { get; init; }
+        public required int MediaCount { get; init; }
     }
 
     private List<PreviewStep> orderedItems = [];
@@ -99,9 +105,17 @@
     {
         // Order and expiration-filter identically to what players are served (DeviceApi uses the same helper).
         orderedItems = PlaylistOrdering.SortAndFilter(Playlist, DateTime.UtcNow)
-            .SelectMany(i => i.Announcement.Media
-                .OrderBy(m => m.SortOrder)
-                .Select(m => new PreviewStep { ContentItem = m.ContentItem, DisplayName = $"{i.Announcement.Title} — {m.ContentItem.Name}" }))
+            .SelectMany(i =>
+            {
+                List<AnnouncementMedia> media = i.Announcement.Media.OrderBy(m => m.SortOrder).ToList();
+                return media.Select((m, index) => new PreviewStep
+                {
+                    ContentItem = m.ContentItem,
+                    DisplayName = $"{i.Announcement.Title} — {m.ContentItem.Name}",
+                    MediaIndex = index + 1,
+                    MediaCount = media.Count
+                });
+            })
             .ToList();
         if (orderedItems.Count > 0)
         {
