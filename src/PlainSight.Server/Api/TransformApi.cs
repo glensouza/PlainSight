@@ -14,6 +14,8 @@ namespace PlainSight.Server.Api;
 
 public static class TransformApi
 {
+    internal sealed record KenBurnsLayer(int ContentItemId, double ParallaxRate);
+
     internal sealed record KenBurnsRequest(
         double StartX,
         double StartY,
@@ -22,8 +24,7 @@ public static class TransformApi
         double EndY,
         double EndW,
         int DurationSeconds,
-        int? OverlayContentItemId,
-        double OverlayParallaxRate);
+        List<KenBurnsLayer>? Overlays);
 
     public static void MapTransformApi(this IEndpointRouteBuilder routes)
     {
@@ -228,6 +229,22 @@ public static class TransformApi
                 return Results.BadRequest(new { error = "Duration must be between 1 and 3600 seconds" });
             }
 
+            List<KenBurnsLayer> requestedOverlays = body.Overlays ?? [];
+            if (requestedOverlays.Count > 2)
+            {
+                return Results.BadRequest(new { error = "At most 2 overlay layers (graphics + text) are supported" });
+            }
+
+            if (requestedOverlays.Select(static o => o.ContentItemId).Distinct().Count() != requestedOverlays.Count)
+            {
+                return Results.BadRequest(new { error = "Overlay layers must reference distinct content items" });
+            }
+
+            if (requestedOverlays.Any(o => o.ContentItemId == id || o.ParallaxRate < 0 || o.ParallaxRate > 1))
+            {
+                return Results.BadRequest(new { error = "Overlay layers must differ from the source image and have a parallax rate between 0.0 and 1.0" });
+            }
+
             await using PlainSightDbContext dbContext = await dbFactory.CreateDbContextAsync(ct);
             ContentItem? item = await dbContext.ContentItems.FindAsync([id], ct);
             if (item == null)
@@ -248,18 +265,22 @@ public static class TransformApi
 
             (int imageWidth, int imageHeight) = await mediaMetadata.GetVideoDimensionsAsync(inputPath, ct);
 
-            string? overlayPath = null;
-            if (body.OverlayContentItemId.HasValue)
+            List<KenBurnsOverlayLayer> overlays = [];
+            foreach (KenBurnsLayer requestedOverlay in requestedOverlays)
             {
-                ContentItem? overlayItem = await dbContext.ContentItems.FindAsync([body.OverlayContentItemId.Value], ct);
-                if (overlayItem?.Type == ContentType.Image)
+                ContentItem? overlayItem = await dbContext.ContentItems.FindAsync([requestedOverlay.ContentItemId], ct);
+                if (overlayItem?.Type != ContentType.Image)
                 {
-                    string candidatePath = Path.Combine(contentPath, overlayItem.FileName);
-                    if (File.Exists(candidatePath))
-                    {
-                        overlayPath = candidatePath;
-                    }
+                    return Results.BadRequest(new { error = $"Overlay content item {requestedOverlay.ContentItemId} must be an image" });
                 }
+
+                string overlayCandidatePath = Path.Combine(contentPath, overlayItem.FileName);
+                if (!File.Exists(overlayCandidatePath))
+                {
+                    return Results.NotFound();
+                }
+
+                overlays.Add(new KenBurnsOverlayLayer(overlayCandidatePath, requestedOverlay.ParallaxRate));
             }
 
             string baseName = Path.GetFileNameWithoutExtension(item.FileName);
@@ -278,7 +299,7 @@ public static class TransformApi
                         inputPath, outputPath, imageWidth, imageHeight,
                         body.StartX, body.StartY, body.StartW,
                         body.EndX, body.EndY, body.EndW,
-                        body.DurationSeconds, overlayPath, body.OverlayParallaxRate, ct);
+                        body.DurationSeconds, overlays, ct);
 
                     long fileSize = new FileInfo(outputPath).Length;
 
