@@ -41,4 +41,9 @@ public class HeartbeatResponse
     /// Seconds between each screenshot in the burst triggered by a content-change event.
     /// </summary>
     public int? ScreenshotBurstIntervalSeconds { get; set; }
+
+    /// <summary>
+    /// Active emergency broadcast to display as a full-screen overlay, or null when none is active.
+    /// </summary>
+    public EmergencyBroadcastDto? Emergency { get; set; }
 }

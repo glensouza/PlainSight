@@ -156,6 +156,47 @@
             margin-top: 10px;
             opacity: 0.5;
         }
+
+        /* Emergency overlay sits above everything else (player, branding, idle, status) so a
+           broadcast is visible regardless of what was playing when it activated. */
+        #emergency-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 500;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background-color: #7f1d1d;
+        }
+
+        #emergency-text {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            color: #fff;
+            font-size: 64px;
+            font-weight: bold;
+            text-align: center;
+            padding: 60px;
+        }
+
+        #emergency-media-wrap {
+            display: none;
+            width: 100%;
+            height: 100%;
+        }
+
+        #emergency-image, #emergency-video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background-color: #000;
+        }
     </style>
 </head>
 <body>
@@ -196,6 +237,14 @@
         <div class="idle-subtext">Waiting for scheduled content...</div>
     </div>
 
+    <div id="emergency-overlay">
+        <div id="emergency-text"></div>
+        <div id="emergency-media-wrap">
+            <img id="emergency-image">
+            <video id="emergency-video" autoplay muted loop playsinline></video>
+        </div>
+    </div>
+
     <script>
         const vPlayers = [
             document.getElementById('v-player-1'),
@@ -215,6 +264,11 @@
         const errorEl = document.getElementById('error-message');
         const loadingEl = document.getElementById('loading');
         const idleEl = document.getElementById('idle-screen');
+        const emergencyOverlayEl = document.getElementById('emergency-overlay');
+        const emergencyTextEl = document.getElementById('emergency-text');
+        const emergencyMediaWrapEl = document.getElementById('emergency-media-wrap');
+        const emergencyImageEl = document.getElementById('emergency-image');
+        const emergencyVideoEl = document.getElementById('emergency-video');
 
         const bootStartedAt = performance.now();
         const ColdStartSplashMs = 10_000;
@@ -222,6 +276,7 @@
 
         let currentPlaylist = [];
         let brandingItem = null;
+        let emergencyItem = null;
         let currentIndex = 0;
 
         // Monotonic generation token: captured when an item starts playing. Every async
@@ -282,6 +337,44 @@
 
         function hideIdle() {
             idleEl.style.display = 'none';
+        }
+
+        // Renders the emergency overlay as a pure visual layer on top of whatever is already
+        // playing underneath, so stopping a broadcast resumes playback at the exact position
+        // it was in — no interaction with the playlist state machine.
+        function updateEmergencyOverlay() {
+            if (!emergencyItem) {
+                emergencyOverlayEl.style.display = 'none';
+                emergencyVideoEl.pause();
+                return;
+            }
+
+            emergencyOverlayEl.style.display = 'flex';
+
+            if (emergencyItem.fileName && isValidFilename(emergencyItem.fileName)) {
+                emergencyTextEl.style.display = 'none';
+                emergencyMediaWrapEl.style.display = 'block';
+                const src = contentSrc(emergencyItem.fileName);
+
+                if (isVideo(emergencyItem.fileName)) {
+                    emergencyImageEl.style.display = 'none';
+                    emergencyVideoEl.style.display = 'block';
+                    if (emergencyVideoEl.src !== src) {
+                        emergencyVideoEl.src = src;
+                    }
+                    emergencyVideoEl.play().catch(() => { /* autoplay may be blocked until a user gesture; muted loop retries on next poll */ });
+                } else {
+                    emergencyVideoEl.style.display = 'none';
+                    emergencyVideoEl.pause();
+                    emergencyImageEl.style.display = 'block';
+                    emergencyImageEl.src = src;
+                }
+            } else {
+                emergencyMediaWrapEl.style.display = 'none';
+                emergencyVideoEl.pause();
+                emergencyTextEl.style.display = 'flex';
+                emergencyTextEl.textContent = emergencyItem.message || '';
+            }
         }
 
         // Resolves once the video has painted a frame, so we never fade into a black element.
@@ -517,9 +610,16 @@
 
                 const incomingItems = data.items || [];
                 const incomingBranding = data.branding || null;
+                const incomingEmergency = data.emergency || null;
 
                 const hasItemsChanged = JSON.stringify(incomingItems) !== JSON.stringify(currentPlaylist);
                 const hasBrandingChanged = JSON.stringify(incomingBranding) !== JSON.stringify(brandingItem);
+                const hasEmergencyChanged = JSON.stringify(incomingEmergency) !== JSON.stringify(emergencyItem);
+
+                if (hasEmergencyChanged) {
+                    emergencyItem = incomingEmergency;
+                    updateEmergencyOverlay();
+                }
 
                 if (!hasItemsChanged && !hasBrandingChanged) return;
 
@@ -564,7 +664,10 @@
         }
 
         loadPlaylistFromServer();
-        setInterval(loadPlaylistFromServer, 30000);
+        // Polls the local (loopback) /api/playlist endpoint well under the 30s server heartbeat
+        // interval so an emergency broadcast reaches the screen shortly after the player process
+        // picks it up, rather than adding a second 30s hop on top of the heartbeat's own latency.
+        setInterval(loadPlaylistFromServer, 5000);
         updateStatus('Waiting for content...');
 
     </script>

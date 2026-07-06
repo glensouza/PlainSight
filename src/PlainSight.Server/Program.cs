@@ -98,6 +98,7 @@ builder.Services.AddSingleton<ScheduleCache>();
 builder.Services.AddScoped<ScheduleService>();
 builder.Services.AddScoped<BrandingService>();
 builder.Services.AddScoped<BrandingSyncService>();
+builder.Services.AddScoped<EmergencyBroadcastService>();
 builder.Services.AddHostedService<BrandingSyncWorkerService>();
 builder.Services.AddHostedService<AutoScreenshotService>();
 builder.Services.AddHostedService<DeviceMonitorService>();

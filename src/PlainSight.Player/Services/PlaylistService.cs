@@ -13,6 +13,7 @@ public class PlaylistService
     private List<PlaylistItemDto> playlist = [];
     private List<PlaylistItemDto> idlePlaylist = [];
     private PlaylistItemDto? brandingItem;
+    private EmergencyBroadcastDto? emergencyBroadcast;
     private string? currentFile;
 
     public PlaylistService(string contentPath, string idlePath, ILogger<PlaylistService> logger)
@@ -121,6 +122,22 @@ public class PlaylistService
         lock (this.@lock)
         {
             return this.brandingItem;
+        }
+    }
+
+    public void UpdateEmergencyBroadcast(EmergencyBroadcastDto? emergency)
+    {
+        lock (this.@lock)
+        {
+            this.emergencyBroadcast = emergency;
+        }
+    }
+
+    public EmergencyBroadcastDto? GetEmergencyBroadcast()
+    {
+        lock (this.@lock)
+        {
+            return this.emergencyBroadcast;
         }
     }
 

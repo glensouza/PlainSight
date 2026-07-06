@@ -182,7 +182,8 @@ app.MapGet("/api/playlist", (PlaylistService playlist) =>
             i.FileName,
             DurationSeconds = i.DurationSeconds > 0 ? i.DurationSeconds : 10
         }),
-        Branding = playlist.GetBrandingItem()
+        Branding = playlist.GetBrandingItem(),
+        Emergency = playlist.GetEmergencyBroadcast()
     }));
 
 // Direct live screenshot API called by the server

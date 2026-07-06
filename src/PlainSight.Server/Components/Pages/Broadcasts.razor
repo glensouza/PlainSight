@@ -1,0 +1,220 @@
+@page "/broadcasts"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IDbContextFactory<PlainSightDbContext> DbFactory
+@inject ILogger<Broadcasts> Logger
+
+<PageTitle>Emergency Broadcast — PlainSight</PageTitle>
+
+<div class="page-header">
+    <h1>Emergency Broadcast</h1>
+    <p class="text-muted mb-0">Instantly take over every screen (or a target group) with a message or full-screen media</p>
+</div>
+
+@if (activeBroadcast != null)
+{
+    <div class="card border-danger mb-4">
+        <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-broadcast"></i> Broadcast Active</span>
+            <button class="btn btn-light btn-lg fw-bold" @onclick="StopBroadcast" disabled="@isSaving">
+                @if (isSaving)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                }
+                Stop Broadcast
+            </button>
+        </div>
+        <div class="card-body">
+            <p class="mb-1"><strong>Message:</strong> @activeBroadcast.Message</p>
+            @if (activeBroadcast.ContentItem != null)
+            {
+                <p class="mb-1"><strong>Media:</strong> @activeBroadcast.ContentItem.Name</p>
+            }
+            <p class="mb-1"><strong>Target:</strong> @(activeBroadcast.GroupName ?? "All groups")</p>
+            <p class="mb-0"><strong>Expires:</strong> @(activeBroadcast.ExpiresAt.HasValue ? activeBroadcast.ExpiresAt.Value.ToLocalTime().ToString("g") : "Until stopped")</p>
+        </div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Start a Broadcast</h5>
+    </div>
+    <div class="card-body">
+        <div class="mb-3">
+            <label class="form-label">Message</label>
+            <textarea class="form-control" @bind="message" rows="2" placeholder="Service moved to the Fellowship Hall"></textarea>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Optional full-screen media (overrides the text message)</label>
+            <select class="form-select" @bind="contentItemId">
+                <option value="">None — show text only</option>
+                @if (contentItems != null)
+                {
+                    @foreach (ContentItem item in contentItems)
+                    {
+                        <option value="@item.Id">@item.Name</option>
+                    }
+                }
+            </select>
+        </div>
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Target group</label>
+                <select class="form-select" @bind="groupName">
+                    <option value="">All groups</option>
+                    @if (deviceGroups != null)
+                    {
+                        @foreach (DeviceGroup deviceGroup in deviceGroups)
+                        {
+                            <option value="@deviceGroup.Name">@deviceGroup.Name</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Duration</label>
+                <select class="form-select" @bind="durationMinutes">
+                    <option value="15">15 minutes</option>
+                    <option value="30">30 minutes</option>
+                    <option value="60">1 hour</option>
+                    <option value="0">Until stopped</option>
+                </select>
+            </div>
+        </div>
+        <button class="btn btn-danger btn-lg fw-bold" @onclick="ActivateBroadcast" disabled="@(isSaving || !CanActivate)">
+            @if (isSaving)
+            {
+                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+            }
+            <i class="bi bi-broadcast"></i> Activate Broadcast
+        </button>
+    </div>
+</div>
+
+@code {
+    private EmergencyBroadcast? activeBroadcast;
+    private List<ContentItem>? contentItems;
+    private List<DeviceGroup>? deviceGroups;
+    private string message = string.Empty;
+    private string contentItemId = string.Empty;
+    private string groupName = string.Empty;
+    private string durationMinutes = "15";
+    private bool isSaving;
+
+    private bool CanActivate => !string.IsNullOrWhiteSpace(this.message) || !string.IsNullOrEmpty(this.contentItemId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await this.LoadActiveBroadcastAsync();
+
+        await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+        this.contentItems = await context.ContentItems.OrderBy(c => c.Name).ToListAsync();
+        this.deviceGroups = await context.DeviceGroups.OrderBy(g => g.Name).ToListAsync();
+    }
+
+    private async Task LoadActiveBroadcastAsync()
+    {
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            DateTime utcNow = DateTime.UtcNow;
+            this.activeBroadcast = await context.EmergencyBroadcasts
+                .Include(b => b.ContentItem)
+                .Where(b => b.IsActive)
+                .Where(b => b.ExpiresAt == null || b.ExpiresAt > utcNow)
+                .OrderByDescending(b => b.ActivatedAt)
+                .FirstOrDefaultAsync();
+        }
+        catch (Exception ex)
+        {
+            this.Logger.LogError(ex, "Error loading active emergency broadcast");
+        }
+    }
+
+    private async Task ActivateBroadcast()
+    {
+        if (!this.CanActivate)
+        {
+            return;
+        }
+
+        this.isSaving = true;
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+
+            List<EmergencyBroadcast> currentlyActive = await context.EmergencyBroadcasts
+                .Where(b => b.IsActive)
+                .ToListAsync();
+            foreach (EmergencyBroadcast broadcast in currentlyActive)
+            {
+                broadcast.IsActive = false;
+                broadcast.UpdatedAt = DateTime.UtcNow;
+            }
+
+            DateTime now = DateTime.UtcNow;
+            int minutes = int.Parse(this.durationMinutes);
+
+            context.EmergencyBroadcasts.Add(new EmergencyBroadcast
+            {
+                Message = this.message,
+                ContentItemId = string.IsNullOrEmpty(this.contentItemId) ? null : int.Parse(this.contentItemId),
+                GroupName = string.IsNullOrEmpty(this.groupName) ? null : this.groupName,
+                IsActive = true,
+                ActivatedAt = now,
+                ExpiresAt = minutes > 0 ? now.AddMinutes(minutes) : null,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+
+            await context.SaveChangesAsync();
+
+            this.message = string.Empty;
+            this.contentItemId = string.Empty;
+            this.groupName = string.Empty;
+            this.durationMinutes = "15";
+
+            await this.LoadActiveBroadcastAsync();
+        }
+        catch (Exception ex)
+        {
+            this.Logger.LogError(ex, "Error activating emergency broadcast");
+        }
+        finally
+        {
+            this.isSaving = false;
+        }
+    }
+
+    private async Task StopBroadcast()
+    {
+        if (this.activeBroadcast == null)
+        {
+            return;
+        }
+
+        this.isSaving = true;
+        try
+        {
+            await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
+            EmergencyBroadcast? broadcast = await context.EmergencyBroadcasts.FindAsync(this.activeBroadcast.Id);
+            if (broadcast != null)
+            {
+                broadcast.IsActive = false;
+                broadcast.UpdatedAt = DateTime.UtcNow;
+                await context.SaveChangesAsync();
+            }
+
+            await this.LoadActiveBroadcastAsync();
+        }
+        catch (Exception ex)
+        {
+            this.Logger.LogError(ex, "Error stopping emergency broadcast");
+        }
+        finally
+        {
+            this.isSaving = false;
+        }
+    }
+}
