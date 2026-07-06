@@ -1,6 +1,7 @@
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Primitives;
 using PlainSight.Server.Data;
 
 namespace PlainSight.Server.Services;
@@ -10,6 +11,12 @@ public class VersionService(IDbContextFactory<PlainSightDbContext> dbFactory, IM
     // Resolved target versions are cached briefly because GetTargetVersionAsync runs on every
     // heartbeat for every device; a group assignment change propagates within this window.
     private static readonly TimeSpan TargetVersionCacheDuration = TimeSpan.FromSeconds(30);
+
+    // All cached target-version entries are linked to this token source so an admin action
+    // (assign/promote/delete) can flush every group's entry at once via InvalidateTargetVersions.
+    private readonly Lock invalidationLock = new();
+    private CancellationTokenSource invalidationTokenSource = new();
+
     public string GetServerVersion()
     {
         AssemblyInformationalVersionAttribute? attribute = Assembly.GetExecutingAssembly()
@@ -56,8 +63,26 @@ public class VersionService(IDbContextFactory<PlainSightDbContext> dbFactory, IM
         }
 
         string resolved = await this.ResolveTargetVersionAsync(deviceGroup, cancellationToken);
-        cache.Set(cacheKey, resolved, TargetVersionCacheDuration);
+
+        MemoryCacheEntryOptions options = new() { AbsoluteExpirationRelativeToNow = TargetVersionCacheDuration };
+        options.AddExpirationToken(new CancellationChangeToken(this.invalidationTokenSource.Token));
+        cache.Set(cacheKey, resolved, options);
         return resolved;
+    }
+
+    // Flushes every cached target-version entry so a just-saved group assignment takes effect on the
+    // next heartbeat instead of waiting out the ~30s TTL.
+    public void InvalidateTargetVersions()
+    {
+        CancellationTokenSource previous;
+        lock (this.invalidationLock)
+        {
+            previous = this.invalidationTokenSource;
+            this.invalidationTokenSource = new CancellationTokenSource();
+        }
+
+        previous.Cancel();
+        previous.Dispose();
     }
 
     private async Task<string> ResolveTargetVersionAsync(string deviceGroup, CancellationToken cancellationToken)

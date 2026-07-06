@@ -5,6 +5,7 @@
 @inject IConfiguration Configuration
 @inject ILogger<Versions> Logger
 @inject Services.Versioning.IPlayerVersionReconciler Reconciler
+@inject Services.VersionService VersionService
 @implements IDisposable
 
 <PageTitle>Versions — PlainSight</PageTitle>
@@ -408,8 +409,16 @@
 
             existing.TargetVersion = targetVersion;
             await context.SaveChangesAsync();
+            VersionService.InvalidateTargetVersions();
             groupError = null;
             await LoadAll();
+        }
+        catch (DbUpdateException ex)
+        {
+            // Concurrent creation of the same group name races past the AnyAsync check and trips the
+            // unique constraint on SaveChanges; surface a clear message instead of the generic one.
+            Logger.LogWarning(ex, "Conflict saving group version for {Group}", groupName);
+            groupError = $"A group named \"{groupName}\" already exists.";
         }
         catch (Exception ex)
         {
@@ -425,27 +434,26 @@
             return;
         }
 
+        string version = promoteVersion;
         promoting = true;
         groupError = null;
         try
         {
             await using PlainSightDbContext context = await DbFactory.CreateDbContextAsync();
 
-            bool versionExists = await context.PlayerVersions.AnyAsync(v => v.VersionNumber == promoteVersion);
+            bool versionExists = await context.PlayerVersions.AnyAsync(v => v.VersionNumber == version);
             if (!versionExists)
             {
-                groupError = $"Version {promoteVersion} does not exist";
+                groupError = $"Version {version} does not exist";
                 return;
             }
 
-            List<DeviceGroupVersion> all = await context.DeviceGroupVersions.ToListAsync();
-            foreach (DeviceGroupVersion g in all)
-            {
-                g.TargetVersion = promoteVersion;
-            }
+            // Atomic set-based UPDATE so a concurrent per-group edit can't be silently lost between a
+            // read and a change-tracked save.
+            await context.DeviceGroupVersions
+                .ExecuteUpdateAsync(s => s.SetProperty(g => g.TargetVersion, version));
 
-            await context.SaveChangesAsync();
-            promoteVersion = null;
+            VersionService.InvalidateTargetVersions();
             await LoadAll();
         }
         catch (Exception ex)
@@ -455,6 +463,7 @@
         }
         finally
         {
+            promoteVersion = null;
             promoting = false;
         }
     }
@@ -501,6 +510,7 @@
                 }
 
                 await context.SaveChangesAsync();
+                VersionService.InvalidateTargetVersions();
                 await LoadAll();
             }
         }
