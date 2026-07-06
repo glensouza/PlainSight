@@ -9,7 +9,14 @@ public class KioskService(
     IServer server,
     ILogger<KioskService> logger) : IHostedService
 {
+    private static readonly TimeSpan[] CrashBackoffDelays =
+    [
+        TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30)
+    ];
+
     private Process? chromiumProcess;
+    private int consecutiveCrashes;
+    private bool stopping;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -21,6 +28,8 @@ public class KioskService(
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        this.stopping = true;
+
         if (this.chromiumProcess == null)
         {
             return;
@@ -28,6 +37,7 @@ public class KioskService(
 
         try
         {
+            this.chromiumProcess.Exited -= this.OnChromiumExited;
             if (!this.chromiumProcess.HasExited)
             {
                 this.chromiumProcess.Kill(entireProcessTree: true);
@@ -43,6 +53,67 @@ public class KioskService(
             this.chromiumProcess.Dispose();
             this.chromiumProcess = null;
         }
+    }
+
+    // Called by WatchdogService when playback is stalled but the kiosk process is still alive
+    // (e.g. Chromium wedged) — kill and relaunch rather than waiting for a crash to be detected.
+    public void Restart()
+    {
+        logger.LogWarning("Restarting kiosk display server");
+
+        if (this.chromiumProcess != null)
+        {
+            try
+            {
+                this.chromiumProcess.Exited -= this.OnChromiumExited;
+                if (!this.chromiumProcess.HasExited)
+                {
+                    this.chromiumProcess.Kill(entireProcessTree: true);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Error killing existing kiosk process during restart");
+            }
+            finally
+            {
+                this.chromiumProcess.Dispose();
+                this.chromiumProcess = null;
+            }
+        }
+
+        this.consecutiveCrashes = 0;
+        this.LaunchChromium();
+    }
+
+    private void OnChromiumExited(object? sender, EventArgs e)
+    {
+        if (this.stopping)
+        {
+            return;
+        }
+
+        int? exitCode = null;
+        try
+        {
+            exitCode = this.chromiumProcess?.ExitCode;
+        }
+        catch (InvalidOperationException)
+        {
+            // Process handle unavailable; ignore, not needed for the log line below.
+        }
+
+        this.consecutiveCrashes++;
+        TimeSpan delay = CrashBackoffDelays[Math.Min(this.consecutiveCrashes - 1, CrashBackoffDelays.Length - 1)];
+        logger.LogWarning("Kiosk display server exited unexpectedly (exit code {ExitCode}); relaunching in {Delay}", exitCode, delay);
+
+        _ = Task.Delay(delay).ContinueWith(_ =>
+        {
+            if (!this.stopping)
+            {
+                this.LaunchDisplayServer();
+            }
+        }, TaskScheduler.Default);
     }
 
     private void LaunchChromium()
@@ -88,6 +159,11 @@ public class KioskService(
         try
         {
             this.chromiumProcess = Process.Start(info);
+            if (this.chromiumProcess != null)
+            {
+                this.chromiumProcess.EnableRaisingEvents = true;
+                this.chromiumProcess.Exited += this.OnChromiumExited;
+            }
             logger.LogInformation("Display server started (PID {Pid})", this.chromiumProcess?.Id);
         }
         catch (Exception ex)

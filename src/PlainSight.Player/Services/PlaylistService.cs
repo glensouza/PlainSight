@@ -15,6 +15,8 @@ public class PlaylistService
     private PlaylistItemDto? brandingItem;
     private EmergencyBroadcastDto? emergencyBroadcast;
     private string? currentFile;
+    private DateTime? currentFileSetAt;
+    private bool reloadRequested;
 
     public PlaylistService(string contentPath, string idlePath, ILogger<PlaylistService> logger)
     {
@@ -163,6 +165,65 @@ public class PlaylistService
         lock (this.@lock)
         {
             this.currentFile = filename;
+            this.currentFileSetAt = DateTime.UtcNow;
+        }
+    }
+
+    public DateTime? GetCurrentFileSetAt()
+    {
+        lock (this.@lock)
+        {
+            return this.currentFileSetAt;
+        }
+    }
+
+    public bool HasMainPlaylist()
+    {
+        lock (this.@lock)
+        {
+            return this.playlist.Count > 0;
+        }
+    }
+
+    // Only the main playlist is searched (returns null for idle/branding files). The watchdog
+    // relies on this: WatchdogService.CheckForStall() bails out when HasMainPlaylist() is false,
+    // so stall detection is intentionally scoped to scheduled content.
+    public int? GetExpectedDurationSeconds(string fileName)
+    {
+        lock (this.@lock)
+        {
+            PlaylistItemDto? item = this.playlist.FirstOrDefault(i => i.FileName == fileName);
+            return item != null ? (item.DurationSeconds > 0 ? item.DurationSeconds : 10) : null;
+        }
+    }
+
+    public void RequestReload()
+    {
+        lock (this.@lock)
+        {
+            this.reloadRequested = true;
+        }
+    }
+
+    public void ClearReloadRequested()
+    {
+        lock (this.@lock)
+        {
+            this.reloadRequested = false;
+        }
+    }
+
+    public bool ConsumeReloadRequested()
+    {
+        lock (this.@lock)
+        {
+            if (!this.reloadRequested)
+            {
+                return false;
+            }
+
+            this.reloadRequested = false;
+            return true;
         }
     }
 

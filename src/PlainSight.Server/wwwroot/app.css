@@ -47,6 +47,10 @@
     --ps-offline-dim: rgba(239, 68, 68, 0.16);
     --ps-offline-glow:rgba(239, 68, 68, 0.55);
 
+    --ps-stalled:     #A855F7;
+    --ps-stalled-dim: rgba(168, 85, 247, 0.16);
+    --ps-stalled-glow:rgba(168, 85, 247, 0.55);
+
     /* Legacy aliases (used in existing code) */
     --ps-accent:       var(--ps-cyan);
     --ps-accent-dark:  #0EA5C1;
@@ -679,6 +683,7 @@ select option {
 .pill--warn     { color: var(--ps-warn);    background: var(--ps-warn-dim);    border-color: rgba(245,158,11,0.35); }
 .pill--offline  { color: var(--ps-offline); background: var(--ps-offline-dim); border-color: rgba(239,68,68,0.35); }
 .pill--info     { color: var(--ps-cyan);    background: var(--ps-cyan-dim);    border-color: rgba(34,211,238,0.35); }
+.pill--stalled  { color: var(--ps-stalled); background: var(--ps-stalled-dim); border-color: rgba(168,85,247,0.35); }
 
 @keyframes pulse-led {
     0%, 100% { transform: scale(1);   opacity: 1;   }

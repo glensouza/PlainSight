@@ -74,7 +74,49 @@ internal sealed class DeviceMonitorService(
                     device.Name);
             }
 
-            if (newlyOffline.Count > 0 || recovered.Count > 0)
+            List<Device> stallCandidates = await context.Devices
+                .Where(d => d.LastSeen >= offlineThreshold
+                    && d.CurrentlyPlayingExpectedDurationSeconds != null
+                    && d.CurrentlyPlayingSince != null)
+                .ToListAsync(cancellationToken);
+
+            foreach (Device device in stallCandidates.Where(d => !d.IsStalledAlertSent && IsStalled(d, options.StalledMultiplier)))
+            {
+                bool sent = await this.TrySendEmailAsync(options, BuildStalledSubject(device), BuildStalledBody(device, options));
+                if (!sent)
+                {
+                    continue;
+                }
+
+                device.IsStalledAlertSent = true;
+                logger.LogInformation("Stalled alert sent for device {DeviceId} ({Name})", device.DeviceId, device.Name);
+            }
+
+            foreach (Device device in stallCandidates.Where(d => d.IsStalledAlertSent && !IsStalled(d, options.StalledMultiplier)))
+            {
+                bool sent = await this.TrySendEmailAsync(options, BuildStalledRecoverySubject(device), BuildStalledRecoveryBody(device));
+                if (!sent)
+                {
+                    continue;
+                }
+
+                device.IsStalledAlertSent = false;
+                logger.LogInformation("Device {DeviceId} ({Name}) recovered from stalled playback", device.DeviceId, device.Name);
+            }
+
+            // A device that goes offline (or loses its tracked playback item) while flagged as stalled
+            // would otherwise never clear the flag, since it drops out of stallCandidates above.
+            List<Device> staleStalledFlags = await context.Devices
+                .Where(d => d.IsStalledAlertSent
+                    && (d.LastSeen < offlineThreshold || d.CurrentlyPlayingExpectedDurationSeconds == null || d.CurrentlyPlayingSince == null))
+                .ToListAsync(cancellationToken);
+
+            foreach (Device device in staleStalledFlags)
+            {
+                device.IsStalledAlertSent = false;
+            }
+
+            if (newlyOffline.Count > 0 || recovered.Count > 0 || stallCandidates.Count > 0 || staleStalledFlags.Count > 0)
             {
                 await context.SaveChangesAsync(cancellationToken);
             }
@@ -144,5 +186,47 @@ internal sealed class DeviceMonitorService(
         Device ID   : {device.DeviceId}
         Group       : {device.Group}
         Last Seen   : {device.LastSeen:u} UTC
+        """;
+
+    private static bool IsStalled(Device device, double multiplier)
+    {
+        if (device.CurrentlyPlayingExpectedDurationSeconds is not > 0 || device.CurrentlyPlayingSince is null)
+        {
+            return false;
+        }
+
+        TimeSpan elapsed = DateTime.UtcNow - device.CurrentlyPlayingSince.Value;
+        return elapsed.TotalSeconds > device.CurrentlyPlayingExpectedDurationSeconds.Value * multiplier;
+    }
+
+    private static string BuildStalledSubject(Device device) =>
+        $"[PlainSight] Device {device.Name} playback appears STALLED";
+
+    private static string BuildStalledBody(Device device, AlertsOptions options) =>
+        $"""
+        A PlainSight device's playback hasn't advanced past its expected duration.
+
+        Device Name    : {device.Name}
+        Device ID      : {device.DeviceId}
+        Group          : {device.Group}
+        Current File   : {device.CurrentlyPlaying}
+        Playing Since  : {device.CurrentlyPlayingSince:u} UTC
+        Expected (sec) : {device.CurrentlyPlayingExpectedDurationSeconds}
+        Threshold      : {options.StalledMultiplier}x expected duration
+
+        Consider rebooting the device via the dashboard.
+        """;
+
+    private static string BuildStalledRecoverySubject(Device device) =>
+        $"[PlainSight] Device {device.Name} playback RECOVERED";
+
+    private static string BuildStalledRecoveryBody(Device device) =>
+        $"""
+        A PlainSight device's playback has resumed advancing normally.
+
+        Device Name   : {device.Name}
+        Device ID     : {device.DeviceId}
+        Group         : {device.Group}
+        Current File  : {device.CurrentlyPlaying}
         """;
 }

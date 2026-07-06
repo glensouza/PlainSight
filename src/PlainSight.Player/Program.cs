@@ -73,10 +73,13 @@ builder.Services.AddSingleton(sp =>
 
 string splashPath = builder.Configuration["SplashPath"] ?? "/opt/plainsight/splash.png";
 
+builder.Services.AddSingleton<KioskService>();
+
 builder.Services.AddHostedService<SplashGeneratorService>();
-builder.Services.AddHostedService<KioskService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<KioskService>());
 builder.Services.AddHostedService<PlayerWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LogShipperService>());
+builder.Services.AddHostedService<WatchdogService>();
 
 // Ensure storage directories exist
 string[] storagePaths = [contentPath, cachePath, idleSourcePath, idleCachePath, brandingSourcePath, brandingCachePath];
@@ -183,7 +186,8 @@ app.MapGet("/api/playlist", (PlaylistService playlist) =>
             DurationSeconds = i.DurationSeconds > 0 ? i.DurationSeconds : 10
         }),
         Branding = playlist.GetBrandingItem(),
-        Emergency = playlist.GetEmergencyBroadcast()
+        Emergency = playlist.GetEmergencyBroadcast(),
+        ReloadRequested = playlist.ConsumeReloadRequested()
     }));
 
 // Direct live screenshot API called by the server

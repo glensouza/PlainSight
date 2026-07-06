@@ -97,10 +97,12 @@ public static class DeviceApi
                 // Update Status
                 device.LastSeen = DateTime.UtcNow;
                 device.CurrentVersion = data.AppVersion;
-                device.CurrentlyPlaying = data.CurrentFileName;
+                if (device.CurrentlyPlaying != data.CurrentFileName)
+                {
+                    device.CurrentlyPlaying = data.CurrentFileName;
+                    device.CurrentlyPlayingSince = DateTime.UtcNow;
+                }
                 device.CallbackUrl = data.CallbackUrl;
-
-                await context.SaveChangesAsync(ct);
 
                 // Check for "Canary" Update assignment
                 string targetVersion = await versionService.GetTargetVersionAsync(device.Group, ct);
@@ -110,6 +112,12 @@ public static class DeviceApi
                 // Get active schedule and extract its playlist
                 Schedule? activeSchedule = await scheduleService.GetActiveScheduleAsync(device.Group, ct);
                 Playlist? activePlaylist = activeSchedule?.Playlist;
+                List<PlaylistItemDto>? sortedPlaylistItems = activePlaylist != null
+                    ? GetSortedPlaylistItems(activePlaylist, DateTime.UtcNow)
+                    : null;
+
+                device.CurrentlyPlayingExpectedDurationSeconds = sortedPlaylistItems?
+                    .FirstOrDefault(i => i.FileName == device.CurrentlyPlaying)?.DurationSeconds;
 
                 // Resolve branding
                 BrandingVideo? branding = await brandingService.GetActiveBrandingAsync(device.Group, ct);
@@ -180,9 +188,7 @@ public static class DeviceApi
                         ? versionRecord.Sha256Hash
                         : null,
                     AssignedApiKey = assignedApiKey,
-                    PlaylistItems = activePlaylist != null
-                        ? GetSortedPlaylistItems(activePlaylist, DateTime.UtcNow)
-                        : null,
+                    PlaylistItems = sortedPlaylistItems,
                     BrandingItem = branding != null ? new PlaylistItemDto { FileName = branding.FileName, DurationSeconds = branding.DurationSeconds } : null,
                     LiveMode = liveMode,
                     NdiSourceName = liveSourceName,
@@ -198,8 +204,9 @@ public static class DeviceApi
                 if (device.ScreenshotRequested)
                 {
                     device.ScreenshotRequested = false;
-                    await context.SaveChangesAsync(ct);
                 }
+
+                await context.SaveChangesAsync(ct);
 
                 return Results.Ok(response);
             }

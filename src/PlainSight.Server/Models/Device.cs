@@ -11,6 +11,9 @@ public class Device
     public DateTime LastSeen { get; set; }
     public string CurrentVersion { get; set; } = "0.0.0";
     public string? CurrentlyPlaying { get; set; }
+    public DateTime? CurrentlyPlayingSince { get; set; }
+    public int? CurrentlyPlayingExpectedDurationSeconds { get; set; }
+    public bool IsStalledAlertSent { get; set; }
 
     public string? CallbackUrl { get; set; }
 

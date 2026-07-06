@@ -91,6 +91,13 @@ else
                         <span class="led @(isOnline ? "led-pulse" : "")"></span>
                         @GetStatusLabel(statusKey)
                     </span>
+                    @if (isOnline && IsStalled(device))
+                    {
+                        <span class="pill pill--stalled" title="Playback hasn't advanced past its expected duration">
+                            <span class="led"></span>
+                            STALLED
+                        </span>
+                    }
                 </header>
 
                 <div class="ps-tile__screen" @onclick="() => ShowScreenshotHistory(device)" style="cursor:pointer;" title="View screenshot history">
@@ -685,6 +692,15 @@ else
         "warn"    => "DEGRADED",
         _         => "OFFLINE"
     };
+
+    private const double StalledMultiplier = 3.0;
+
+    private static bool IsStalled(Device device)
+    {
+        return device.CurrentlyPlayingExpectedDurationSeconds is > 0
+            && device.CurrentlyPlayingSince.HasValue
+            && (DateTime.UtcNow - device.CurrentlyPlayingSince.Value).TotalSeconds > device.CurrentlyPlayingExpectedDurationSeconds.Value * StalledMultiplier;
+    }
 
     private static bool IsLiveModeActive(Device device)
     {
