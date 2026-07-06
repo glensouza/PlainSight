@@ -104,8 +104,6 @@ public static class DeviceApi
                 }
                 device.CallbackUrl = data.CallbackUrl;
 
-                await context.SaveChangesAsync(ct);
-
                 // Check for "Canary" Update assignment
                 string targetVersion = await versionService.GetTargetVersionAsync(device.Group, ct);
                 PlayerVersion? versionRecord = await context.PlayerVersions

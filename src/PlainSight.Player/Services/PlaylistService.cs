@@ -185,6 +185,9 @@ public class PlaylistService
         }
     }
 
+    // Only the main playlist is searched (returns null for idle/branding files). The watchdog
+    // relies on this: WatchdogService.CheckForStall() bails out when HasMainPlaylist() is false,
+    // so stall detection is intentionally scoped to scheduled content.
     public int? GetExpectedDurationSeconds(string fileName)
     {
         lock (this.@lock)
@@ -199,6 +202,14 @@ public class PlaylistService
         lock (this.@lock)
         {
             this.reloadRequested = true;
+        }
+    }
+
+    public void ClearReloadRequested()
+    {
+        lock (this.@lock)
+        {
+            this.reloadRequested = false;
         }
     }
 

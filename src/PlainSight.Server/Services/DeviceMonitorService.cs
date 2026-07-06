@@ -94,6 +94,12 @@ internal sealed class DeviceMonitorService(
 
             foreach (Device device in stallCandidates.Where(d => d.IsStalledAlertSent && !IsStalled(d, options.StalledMultiplier)))
             {
+                bool sent = await this.TrySendEmailAsync(options, BuildStalledRecoverySubject(device), BuildStalledRecoveryBody(device));
+                if (!sent)
+                {
+                    continue;
+                }
+
                 device.IsStalledAlertSent = false;
                 logger.LogInformation("Device {DeviceId} ({Name}) recovered from stalled playback", device.DeviceId, device.Name);
             }
@@ -209,5 +215,18 @@ internal sealed class DeviceMonitorService(
         Threshold      : {options.StalledMultiplier}x expected duration
 
         Consider rebooting the device via the dashboard.
+        """;
+
+    private static string BuildStalledRecoverySubject(Device device) =>
+        $"[PlainSight] Device {device.Name} playback RECOVERED";
+
+    private static string BuildStalledRecoveryBody(Device device) =>
+        $"""
+        A PlainSight device's playback has resumed advancing normally.
+
+        Device Name   : {device.Name}
+        Device ID     : {device.DeviceId}
+        Group         : {device.Group}
+        Current File  : {device.CurrentlyPlaying}
         """;
 }

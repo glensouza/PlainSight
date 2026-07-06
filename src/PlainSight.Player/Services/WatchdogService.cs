@@ -97,6 +97,13 @@ public class WatchdogService(PlaylistService playlist, KioskService kiosk, ILogg
 
     private void Reset()
     {
+        if (this.reloadRequestedAt != null)
+        {
+            // Playback self-recovered before the browser consumed the reload request.
+            // Drop the stale flag so the next /api/playlist poll doesn't reload needlessly.
+            playlist.ClearReloadRequested();
+        }
+
         this.stalledFileName = null;
         this.reloadRequestedAt = null;
         this.kioskRestartedAt = null;
