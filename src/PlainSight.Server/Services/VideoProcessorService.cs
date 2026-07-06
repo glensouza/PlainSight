@@ -67,8 +67,7 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger, MediaF
         double endY,
         double endW,
         int durationSeconds,
-        string? overlayPath,
-        double overlayParallaxRate,
+        IReadOnlyList<KenBurnsOverlayLayer> overlays,
         CancellationToken ct = default)
     {
         logger.LogInformation(
@@ -106,34 +105,56 @@ public class VideoProcessorService(ILogger<VideoProcessorService> logger, MediaF
         string workPath = stager.CreateWorkPath(outputPath);
 
         string args;
-        if (overlayPath == null)
+        if (overlays.Count == 0)
         {
             args = $"-y -loop 1 -i \"{inputPath}\" -vf \"{zoompanFilter}\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{workPath}\"";
         }
-        else if (overlayParallaxRate <= 0)
-        {
-            // Static overlay: text/logo stays crisp while background pans/zooms
-            string scaleFilter = $"scale={imageWidth}:{imageHeight}";
-            args = $"-y -loop 1 -i \"{inputPath}\" -loop 1 -i \"{overlayPath}\" " +
-                   $"-filter_complex \"[0:v]{zoompanFilter}[bg];[1:v]{scaleFilter}[fg];[bg][fg]overlay=0:0[out]\" " +
-                   $"-map \"[out]\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{workPath}\"";
-        }
         else
         {
-            // Parallax overlay: moves at a fraction of the background movement
-            double op0 = 1.0 + (z0 - 1.0) * overlayParallaxRate;
-            double op1 = 1.0 + (z1 - 1.0) * overlayParallaxRate;
-            double osx = sx * overlayParallaxRate;
-            double osy = sy * overlayParallaxRate;
-            double odx = (ex - sx) * overlayParallaxRate;
-            double ody = (ey - sy) * overlayParallaxRate;
-            string op0s = op0.ToString("F6", CultureInfo.InvariantCulture);
-            string odps = (op1 - op0).ToString("F6", CultureInfo.InvariantCulture);
-            string oxExpr = $"({osx.ToString("F4", CultureInfo.InvariantCulture)}+({odx.ToString("F4", CultureInfo.InvariantCulture)})*{tFactor})*({op0s}+({odps})*{tFactor})";
-            string oyExpr = $"({osy.ToString("F4", CultureInfo.InvariantCulture)}+({ody.ToString("F4", CultureInfo.InvariantCulture)})*{tFactor})*({op0s}+({odps})*{tFactor})";
-            string overlayZpFilter = $"zoompan=z='{op0s}+({odps})*{tFactor}':x='{oxExpr}':y='{oyExpr}':d={totalFrames}:fps={fps}:s={imageWidth}x{imageHeight}";
-            args = $"-y -loop 1 -i \"{inputPath}\" -loop 1 -i \"{overlayPath}\" " +
-                   $"-filter_complex \"[0:v]{zoompanFilter}[bg];[1:v]{overlayZpFilter}[fg];[bg][fg]overlay=0:0[out]\" " +
+            StringBuilder inputs = new($"-loop 1 -i \"{inputPath}\" ");
+            StringBuilder filterComplex = new($"[0:v]{zoompanFilter}[bg];");
+            string previousLabel = "bg";
+            for (int i = 0; i < overlays.Count; i++)
+            {
+                KenBurnsOverlayLayer overlay = overlays[i];
+                inputs.Append($"-loop 1 -i \"{overlay.OverlayPath}\" ");
+
+                string fgLabel = $"fg{i}";
+                if (overlay.ParallaxRate <= 0)
+                {
+                    // Static layer: text/logo stays crisp while the background pans/zooms
+                    filterComplex.Append($"[{i + 1}:v]format=rgba,scale={imageWidth}:{imageHeight}[{fgLabel}];");
+                }
+                else
+                {
+                    // Parallax layer: moves at a fraction of the background movement
+                    double op0 = 1.0 + (z0 - 1.0) * overlay.ParallaxRate;
+                    double op1 = 1.0 + (z1 - 1.0) * overlay.ParallaxRate;
+                    double osx = sx * overlay.ParallaxRate;
+                    double osy = sy * overlay.ParallaxRate;
+                    double odx = (ex - sx) * overlay.ParallaxRate;
+                    double ody = (ey - sy) * overlay.ParallaxRate;
+                    string op0s = op0.ToString("F6", CultureInfo.InvariantCulture);
+                    string odps = (op1 - op0).ToString("F6", CultureInfo.InvariantCulture);
+                    string oxExpr = $"({osx.ToString("F4", CultureInfo.InvariantCulture)}+({odx.ToString("F4", CultureInfo.InvariantCulture)})*{tFactor})*({op0s}+({odps})*{tFactor})";
+                    string oyExpr = $"({osy.ToString("F4", CultureInfo.InvariantCulture)}+({ody.ToString("F4", CultureInfo.InvariantCulture)})*{tFactor})*({op0s}+({odps})*{tFactor})";
+                    string overlayZpFilter = $"zoompan=z='{op0s}+({odps})*{tFactor}':x='{oxExpr}':y='{oyExpr}':d={totalFrames}:fps={fps}:s={imageWidth}x{imageHeight}";
+                    filterComplex.Append($"[{i + 1}:v]format=rgba,{overlayZpFilter}[{fgLabel}];");
+                }
+
+                bool isLast = i == overlays.Count - 1;
+                string outLabel = isLast ? "out" : $"t{i}";
+                filterComplex.Append($"[{previousLabel}][{fgLabel}]overlay=0:0[{outLabel}]");
+                if (!isLast)
+                {
+                    filterComplex.Append(';');
+                }
+
+                previousLabel = outLabel;
+            }
+
+            args = $"-y {inputs}" +
+                   $"-filter_complex \"{filterComplex}\" " +
                    $"-map \"[out]\" -frames:v {totalFrames} -c:v libx264 -pix_fmt yuv420p -movflags +faststart -f mp4 \"{workPath}\"";
         }
 

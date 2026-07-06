@@ -695,9 +695,9 @@ else
                             <label class="form-label">Duration (seconds)</label>
                             <input type="number" class="form-control" min="1" max="3600" @bind="kbDuration" />
                         </div>
-                        <div class="col-md-8">
-                            <label class="form-label">Overlay image (optional — stays sharp on top)</label>
-                            <select class="form-select" @bind="kbOverlayId">
+                        <div class="col-md-6">
+                            <label class="form-label">Graphics layer (optional — mid parallax, transparent PNG)</label>
+                            <select class="form-select" @bind="kbGraphicsOverlayId">
                                 <option value="">— None —</option>
                                 @foreach (ContentItem ci in contentItems?.Where(static c => c.Type == ContentType.Image) ?? [])
                                 {
@@ -708,12 +708,33 @@ else
                                 }
                             </select>
                         </div>
-                        @if (!string.IsNullOrEmpty(kbOverlayId))
+                        <div class="col-md-6">
+                            <label class="form-label">Text layer (optional — stays sharp on top, transparent PNG)</label>
+                            <select class="form-select" @bind="kbTextOverlayId">
+                                <option value="">— None —</option>
+                                @foreach (ContentItem ci in contentItems?.Where(static c => c.Type == ContentType.Image) ?? [])
+                                {
+                                    if (ci.Id != kenBurnsItem.Id)
+                                    {
+                                        <option value="@ci.Id">@ci.Name (@ci.FileName)</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        @if (!string.IsNullOrEmpty(kbGraphicsOverlayId))
                         {
-                            <div class="col-12">
-                                <label class="form-label">Overlay parallax rate: @kbParallaxRate.ToString("P0")</label>
-                                <input type="range" class="form-range" min="0" max="1" step="0.05" @bind="kbParallaxRate" />
-                                <small class="text-muted">0% = static overlay (text stays sharp); 100% = moves same as background</small>
+                            <div class="col-md-6">
+                                <label class="form-label">Graphics parallax rate: @kbGraphicsParallaxRate.ToString("P0")</label>
+                                <input type="range" class="form-range" min="0" max="1" step="0.05" @bind="kbGraphicsParallaxRate" />
+                                <small class="text-muted">0% = static; 100% = moves same as background</small>
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(kbTextOverlayId))
+                        {
+                            <div class="col-md-6">
+                                <label class="form-label">Text parallax rate: @kbTextParallaxRate.ToString("P0")</label>
+                                <input type="range" class="form-range" min="0" max="1" step="0.05" @bind="kbTextParallaxRate" />
+                                <small class="text-muted">0% = static (text stays sharp); 100% = moves same as background</small>
                             </div>
                         }
                     </div>
@@ -1026,8 +1047,10 @@ else
     private double kbEndY = 10;
     private double kbEndW = 80;
     private int kbDuration = 10;
-    private string kbOverlayId = "";
-    private double kbParallaxRate;
+    private string kbGraphicsOverlayId = "";
+    private double kbGraphicsParallaxRate = 0.4;
+    private string kbTextOverlayId = "";
+    private double kbTextParallaxRate;
     private bool kbProcessing;
     private string? kbError;
     private int kbImgW;
@@ -1867,8 +1890,10 @@ else
         this.kbEndY = 10;
         this.kbEndW = 80;
         this.kbDuration = 10;
-        this.kbOverlayId = "";
-        this.kbParallaxRate = 0;
+        this.kbGraphicsOverlayId = "";
+        this.kbGraphicsParallaxRate = 0.4;
+        this.kbTextOverlayId = "";
+        this.kbTextParallaxRate = 0;
         this.kbProcessing = false;
         this.kbError = null;
 
@@ -1883,6 +1908,26 @@ else
             Logger.LogWarning(ex, "Could not determine image dimensions for Ken Burns preview; defaulting to 1920x1080");
             this.kbImgW = 1920;
             this.kbImgH = 1080;
+        }
+    }
+
+    private void AddKenBurnsOverlayLayer(List<KenBurnsOverlayLayer> overlays, string overlayId, double parallaxRate, string contentPath)
+    {
+        if (!int.TryParse(overlayId, out int id))
+        {
+            return;
+        }
+
+        ContentItem? overlayItem = this.contentItems?.FirstOrDefault(c => c.Id == id && c.Type == ContentType.Image);
+        if (overlayItem == null)
+        {
+            return;
+        }
+
+        string candidatePath = Path.Combine(contentPath, overlayItem.FileName);
+        if (File.Exists(candidatePath))
+        {
+            overlays.Add(new KenBurnsOverlayLayer(candidatePath, parallaxRate));
         }
     }
 
@@ -1903,6 +1948,12 @@ else
             return;
         }
 
+        if (!string.IsNullOrEmpty(this.kbGraphicsOverlayId) && this.kbGraphicsOverlayId == this.kbTextOverlayId)
+        {
+            this.kbError = "Graphics and text overlays must be distinct.";
+            return;
+        }
+
         this.kbProcessing = true;
         this.kbError = null;
         try
@@ -1914,19 +1965,9 @@ else
             string outputFileName = $"{baseName}_kenburns_{DateTime.UtcNow:yyyyMMddHHmmss}.mp4";
             string outputPath = Path.Combine(contentPath, outputFileName);
 
-            string? overlayPath = null;
-            if (int.TryParse(this.kbOverlayId, out int overlayId))
-            {
-                ContentItem? overlayItem = this.contentItems?.FirstOrDefault(c => c.Id == overlayId && c.Type == ContentType.Image);
-                if (overlayItem != null)
-                {
-                    string candidatePath = Path.Combine(contentPath, overlayItem.FileName);
-                    if (File.Exists(candidatePath))
-                    {
-                        overlayPath = candidatePath;
-                    }
-                }
-            }
+            List<KenBurnsOverlayLayer> overlays = [];
+            this.AddKenBurnsOverlayLayer(overlays, this.kbGraphicsOverlayId, this.kbGraphicsParallaxRate, contentPath);
+            this.AddKenBurnsOverlayLayer(overlays, this.kbTextOverlayId, this.kbTextParallaxRate, contentPath);
 
             // Hold the content-sync lock across the file publish + DB insert so the sync worker
             // cannot scan the freshly published file and insert its own row first (see WatermarkVideoWorkerService).
@@ -1937,7 +1978,7 @@ else
                     inputPath, outputPath, this.kbImgW, this.kbImgH,
                     this.kbStartX / 100.0, this.kbStartY / 100.0, this.kbStartW / 100.0,
                     this.kbEndX / 100.0, this.kbEndY / 100.0, this.kbEndW / 100.0,
-                    this.kbDuration, overlayPath, this.kbParallaxRate, cts.Token);
+                    this.kbDuration, overlays, cts.Token);
 
                 long fileSize = new FileInfo(outputPath).Length;
 

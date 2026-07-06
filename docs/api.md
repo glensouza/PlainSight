@@ -170,7 +170,7 @@ Extract a frame from a video and save as a new image content item.
 
 ### POST /api/content/{id:int}/ken-burns
 
-Generate a Ken Burns zoom-pan video from an image with optional overlay with parallax. Creates a new `ContentItem` linked via `SourceContentItemId`.
+Generate a Ken Burns zoom-pan video from an image with up to 2 optional overlay layers (e.g. graphics + text), each with its own parallax rate. Creates a new `ContentItem` linked via `SourceContentItemId`.
 
 **Request body** (`KenBurnsRequest`):
 ```json
@@ -182,12 +182,14 @@ Generate a Ken Burns zoom-pan video from an image with optional overlay with par
   "endY": 0.1,
   "endW": 1.0,
   "durationSeconds": 10,
-  "overlayContentItemId": null,
-  "overlayParallaxRate": 0.0
+  "overlays": [
+    { "contentItemId": 12, "parallaxRate": 0.4 },
+    { "contentItemId": 13, "parallaxRate": 0.0 }
+  ]
 }
 ```
 
-All rect values (`startX`/`startY`/`startW`/`endX`/`endY`/`endW`) are normalized 0.0–1.0 within the image, with the constraint `x + w <= 1` and `y` within image bounds. `durationSeconds` is 1–3600. `overlayParallaxRate` controls the parallax depth effect when an overlay is present.
+All rect values (`startX`/`startY`/`startW`/`endX`/`endY`/`endW`) are normalized 0.0–1.0 within the image, with the constraint `x + w <= 1` and `y` within image bounds. `durationSeconds` is 1–3600. `overlays` is optional (omit or send `[]`/`null` for no overlay), ordered bottom→top, max 2 entries; each `parallaxRate` is 0.0–1.0 (0 = static/pinned, 1 = moves with the background) and each `contentItemId` must reference a distinct image other than the source.
 
 **Response** (200):
 ```json
@@ -279,12 +281,13 @@ public class PlaylistItemDto
 
 ### KenBurnsRequest
 ```csharp
+internal sealed record KenBurnsLayer(int ContentItemId, double ParallaxRate);
+
 internal sealed record KenBurnsRequest(
     double StartX, double StartY, double StartW,
     double EndX, double EndY, double EndW,
     int DurationSeconds,
-    int? OverlayContentItemId,
-    double OverlayParallaxRate);
+    List<KenBurnsLayer>? Overlays);
 ```
 
 ---
