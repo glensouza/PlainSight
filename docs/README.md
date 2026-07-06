@@ -145,6 +145,7 @@ curl -sSL https://raw.githubusercontent.com/glensouza/PlainSight/main/deployment
 - [Content Management](guides/content-management.md) - Upload, organize, and manage media
 - [Media Transforms](guides/media-transforms.md) - Image-to-video, Ken Burns, video editing
 - [AI Media Workflow](guides/ai-media-workflow.md) - Gemini/Veo and SVD animation pipelines
+- [Gemini/Veo Video Prompts](gemini-video-prompts.md) - Prompt templates for animating announcement images
 - [Playlists, Schedules & Branding](guides/playlists-schedules-branding.md) - Content programming
 - [Live Video](guides/live-video.md) - NDI live mode and OBS integration
 - [YouTube Download](guides/youtube-download.md) - Downloading videos from YouTube

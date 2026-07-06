@@ -621,8 +621,14 @@ else
                         </video>
                     }
                 </div>
-                <div class="modal-footer py-1">
+                <div class="modal-footer py-1 d-flex justify-content-between">
                     <small class="text-muted">@previewFileName (@FormatFileSize(fileSize))</small>
+                    @if (isImage)
+                    {
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CopyAnimationPromptAsync" title="Copy the Gemini/Veo image-to-video animation prompt to the clipboard">
+                            <i class="bi bi-clipboard"></i> Copy animation prompt
+                        </button>
+                    }
                 </div>
             </div>
         </div>
@@ -1248,6 +1254,14 @@ else
     private void ClosePreview()
     {
         previewItem = null;
+    }
+
+    // Base image-to-video prompt kept in sync with docs/gemini-video-prompts.md.
+    private const string AnimationPrompt = "Animate this image into a seamless 10-second cinemagraph-style loop. Keep the camera completely locked — no pan, zoom, tilt, or rotation — and keep all text, logos, and faces perfectly static, sharp, and unchanged. Add only subtle ambient motion to the background and environment: drifting clouds, gently swaying foliage, soft moving light rays, floating dust particles, or shimmering water, whichever suits the scene. Keep the motion slow, smooth, and continuous, and make the final frame match the first so the clip loops seamlessly. Photorealistic, silent, no audio, no speech, no people moving, no new objects appearing, and no change to the overall style or composition.";
+
+    private async Task CopyAnimationPromptAsync()
+    {
+        await this.JS.InvokeVoidAsync("copyToClipboard", AnimationPrompt);
     }
 
     private void StartProcessing(ContentItem item)
