@@ -197,6 +197,51 @@
             object-fit: contain;
             background-color: #000;
         }
+
+        #ticker-overlay {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100vw;
+            height: auto;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            z-index: 70;
+            display: none;
+            padding: 15px 20px;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            border-top: 3px solid #3b82f6;
+            animation: tickerFadeIn 0.6s ease-in-out;
+        }
+
+        #ticker-text {
+            display: inline-block;
+            animation: tickerScroll 8s linear infinite;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        #ticker-overlay.fade #ticker-text {
+            animation: tickerFade 4s ease-in-out infinite;
+            white-space: normal;
+        }
+
+        @keyframes tickerFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes tickerScroll {
+            from { transform: translateX(100vw); }
+            to { transform: translateX(-100%); }
+        }
+
+        @keyframes tickerFade {
+            0%, 100% { opacity: 0; }
+            50% { opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -245,6 +290,10 @@
         </div>
     </div>
 
+    <div id="ticker-overlay">
+        <div id="ticker-text"></div>
+    </div>
+
     <script>
         const vPlayers = [
             document.getElementById('v-player-1'),
@@ -269,6 +318,8 @@
         const emergencyMediaWrapEl = document.getElementById('emergency-media-wrap');
         const emergencyImageEl = document.getElementById('emergency-image');
         const emergencyVideoEl = document.getElementById('emergency-video');
+        const tickerOverlayEl = document.getElementById('ticker-overlay');
+        const tickerTextEl = document.getElementById('ticker-text');
 
         const bootStartedAt = performance.now();
         const ColdStartSplashMs = 10_000;
@@ -277,6 +328,9 @@
         let currentPlaylist = [];
         let brandingItem = null;
         let emergencyItem = null;
+        let tickerMessages = [];
+        let currentTickerIndex = 0;
+        let tickerRotationTimer = null;
         let currentIndex = 0;
 
         // Monotonic generation token: captured when an item starts playing. Every async
@@ -375,6 +429,32 @@
                 emergencyTextEl.style.display = 'flex';
                 emergencyTextEl.textContent = emergencyItem.message || '';
             }
+        }
+
+        function updateTickerOverlay() {
+            clearTimeout(tickerRotationTimer);
+
+            if (!tickerMessages || tickerMessages.length === 0) {
+                tickerOverlayEl.style.display = 'none';
+                return;
+            }
+
+            tickerOverlayEl.style.display = 'block';
+            currentTickerIndex = 0;
+            rotateTickerMessage();
+        }
+
+        function rotateTickerMessage() {
+            if (!tickerMessages || tickerMessages.length === 0) {
+                tickerOverlayEl.style.display = 'none';
+                return;
+            }
+
+            const msg = tickerMessages[currentTickerIndex];
+            tickerTextEl.textContent = msg.text;
+
+            currentTickerIndex = (currentTickerIndex + 1) % tickerMessages.length;
+            tickerRotationTimer = setTimeout(rotateTickerMessage, 4000);
         }
 
         // Resolves once the video has painted a frame, so we never fade into a black element.
@@ -617,14 +697,21 @@
                 const incomingItems = data.items || [];
                 const incomingBranding = data.branding || null;
                 const incomingEmergency = data.emergency || null;
+                const incomingTicker = data.ticker || [];
 
                 const hasItemsChanged = JSON.stringify(incomingItems) !== JSON.stringify(currentPlaylist);
                 const hasBrandingChanged = JSON.stringify(incomingBranding) !== JSON.stringify(brandingItem);
                 const hasEmergencyChanged = JSON.stringify(incomingEmergency) !== JSON.stringify(emergencyItem);
+                const hasTickerChanged = JSON.stringify(incomingTicker) !== JSON.stringify(tickerMessages);
 
                 if (hasEmergencyChanged) {
                     emergencyItem = incomingEmergency;
                     updateEmergencyOverlay();
+                }
+
+                if (hasTickerChanged) {
+                    tickerMessages = incomingTicker;
+                    updateTickerOverlay();
                 }
 
                 if (!hasItemsChanged && !hasBrandingChanged) return;

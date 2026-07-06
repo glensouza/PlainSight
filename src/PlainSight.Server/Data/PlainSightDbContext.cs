@@ -23,6 +23,7 @@ public class PlainSightDbContext(DbContextOptions<PlainSightDbContext> options) 
     public DbSet<Announcement> Announcements => this.Set<Announcement>();
     public DbSet<AnnouncementMedia> AnnouncementMedia => this.Set<AnnouncementMedia>();
     public DbSet<EmergencyBroadcast> EmergencyBroadcasts => this.Set<EmergencyBroadcast>();
+    public DbSet<TickerMessage> TickerMessages => this.Set<TickerMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

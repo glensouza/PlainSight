@@ -1,0 +1,270 @@
+@page "/ticker-messages"
+@rendermode InteractiveServer
+
+@using PlainSight.Server.Data
+@using PlainSight.Server.Models
+@using Microsoft.EntityFrameworkCore
+
+@inject PlainSightDbContext DbContext
+@inject ILogger<TickerMessages> Logger
+
+<PageTitle>Ticker Messages</PageTitle>
+
+<div class="page-header d-flex align-items-center justify-content-between">
+    <h1>Ticker Messages</h1>
+    <button class="btn btn-sm btn-outline-success" @onclick="OpenAddModal">
+        <i class="bi bi-plus-circle"></i> New Message
+    </button>
+</div>
+
+<div class="card">
+    <div class="card-header bg-info bg-opacity-10">
+        <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-chat-dots"></i>
+            <span>Active Ticker Messages</span>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        @if (this.messages?.Count > 0)
+        {
+            <div class="table-responsive">
+                <table class="table table-striped table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">Order</th>
+                            <th>Message Text</th>
+                            <th style="width: 100px;">Active</th>
+                            <th style="width: 150px;">Target Group</th>
+                            <th style="width: 150px;">Starts At</th>
+                            <th style="width: 150px;">Expires At</th>
+                            <th style="width: 100px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (TickerMessage msg in this.messages.OrderBy(m => m.SortOrder))
+                        {
+                            <tr>
+                                <td><span class="badge bg-secondary">@msg.SortOrder</span></td>
+                                <td>@msg.Text</td>
+                                <td>
+                                    @if (msg.IsActive)
+                                    {
+                                        <span class="badge bg-success">Yes</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary">No</span>
+                                    }
+                                </td>
+                                <td>@(msg.TargetGroup ?? "(All Groups)")</td>
+                                <td>@(msg.StartsAt?.ToString("g") ?? "-")</td>
+                                <td>@(msg.ExpiresAt?.ToString("g") ?? "-")</td>
+                                <td>
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button class="btn btn-outline-primary" @onclick="() => OpenEditModal(msg)">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-outline-danger" @onclick="() => DeleteMessage(msg.Id)">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="p-4 text-center text-muted">
+                <i class="bi bi-inbox" style="font-size: 2rem; opacity: 0.5;"></i>
+                <p class="mt-2">No ticker messages yet</p>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="messageModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info bg-opacity-10">
+                <h5 class="modal-title">@(this.editingId == null ? "New Ticker Message" : "Edit Ticker Message")</h5>
+                <button type="button" class="btn-close" @onclick="CloseModal"></button>
+            </div>
+            <div class="modal-body">
+                <form>
+                    <div class="mb-3">
+                        <label class="form-label">Message Text</label>
+                        <input type="text" class="form-control form-control-sm" @bind="this.formText" placeholder="e.g., Potluck Sunday after service" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Sort Order</label>
+                        <input type="number" class="form-control form-control-sm" @bind="this.formSortOrder" min="0" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Target Group</label>
+                        <input type="text" class="form-control form-control-sm" @bind="this.formTargetGroup" placeholder="e.g., MainLobby (leave blank for all)" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Starts At (UTC)</label>
+                        <input type="datetime-local" class="form-control form-control-sm" @bind="this.formStartsAt" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Expires At (UTC)</label>
+                        <input type="datetime-local" class="form-control form-control-sm" @bind="this.formExpiresAt" />
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" @bind="this.formIsActive" id="isActiveCheck" />
+                            <label class="form-check-label" for="isActiveCheck">
+                                Active
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="CloseModal">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm" @onclick="SaveMessage">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<TickerMessage>? messages;
+    private int? editingId;
+
+    private string formText = string.Empty;
+    private int formSortOrder;
+    private string? formTargetGroup;
+    private DateTime? formStartsAt;
+    private DateTime? formExpiresAt;
+    private bool formIsActive = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await this.LoadMessages();
+    }
+
+    private async Task LoadMessages()
+    {
+        this.messages = await this.DbContext.TickerMessages.ToListAsync();
+    }
+
+    private void OpenAddModal()
+    {
+        this.editingId = null;
+        this.formText = string.Empty;
+        this.formSortOrder = (this.messages?.Count ?? 0);
+        this.formTargetGroup = null;
+        this.formStartsAt = null;
+        this.formExpiresAt = null;
+        this.formIsActive = true;
+
+        this.ShowModal("messageModal");
+    }
+
+    private void OpenEditModal(TickerMessage msg)
+    {
+        this.editingId = msg.Id;
+        this.formText = msg.Text;
+        this.formSortOrder = msg.SortOrder;
+        this.formTargetGroup = msg.TargetGroup;
+        this.formStartsAt = msg.StartsAt;
+        this.formExpiresAt = msg.ExpiresAt;
+        this.formIsActive = msg.IsActive;
+
+        this.ShowModal("messageModal");
+    }
+
+    private async Task SaveMessage()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(this.formText))
+            {
+                return;
+            }
+
+            if (this.editingId == null)
+            {
+                TickerMessage newMsg = new TickerMessage
+                {
+                    Text = this.formText,
+                    SortOrder = this.formSortOrder,
+                    TargetGroup = this.formTargetGroup,
+                    StartsAt = this.formStartsAt,
+                    ExpiresAt = this.formExpiresAt,
+                    IsActive = this.formIsActive,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                this.DbContext.TickerMessages.Add(newMsg);
+            }
+            else
+            {
+                TickerMessage? existing = await this.DbContext.TickerMessages.FindAsync(this.editingId);
+                if (existing != null)
+                {
+                    existing.Text = this.formText;
+                    existing.SortOrder = this.formSortOrder;
+                    existing.TargetGroup = this.formTargetGroup;
+                    existing.StartsAt = this.formStartsAt;
+                    existing.ExpiresAt = this.formExpiresAt;
+                    existing.IsActive = this.formIsActive;
+                    existing.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            await this.DbContext.SaveChangesAsync();
+            await this.LoadMessages();
+            this.CloseModal();
+        }
+        catch (Exception ex)
+        {
+            this.Logger.LogError(ex, "Error saving ticker message");
+        }
+    }
+
+    private async Task DeleteMessage(int id)
+    {
+        try
+        {
+            TickerMessage? msg = await this.DbContext.TickerMessages.FindAsync(id);
+            if (msg != null)
+            {
+                this.DbContext.TickerMessages.Remove(msg);
+                await this.DbContext.SaveChangesAsync();
+                await this.LoadMessages();
+            }
+        }
+        catch (Exception ex)
+        {
+            this.Logger.LogError(ex, "Error deleting ticker message");
+        }
+    }
+
+    private void ShowModal(string modalId)
+    {
+        this.InvokeAsync(() =>
+        {
+            IJSRuntime js = this.JS;
+            js.InvokeVoidAsync("showModal", modalId);
+        });
+    }
+
+    private void CloseModal()
+    {
+        this.InvokeAsync(() =>
+        {
+            IJSRuntime js = this.JS;
+            js.InvokeVoidAsync("hideModal", "messageModal");
+        });
+    }
+
+    [Inject]
+    private IJSRuntime JS { get; set; } = null!;
+}

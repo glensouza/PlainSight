@@ -73,6 +73,7 @@ public class PlayerWorker(
                     this.ApplyLiveMode(response);
                     this.ApplyLogConfig(response);
                     playlist.UpdateEmergencyBroadcast(response.Emergency);
+                    playlist.UpdateTickerMessages(response.TickerMessages);
                 }
                 else
                 {
