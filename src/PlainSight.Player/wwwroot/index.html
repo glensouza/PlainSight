@@ -608,6 +608,12 @@
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
 
+                if (data.reloadRequested) {
+                    console.warn('Watchdog requested a page reload');
+                    location.reload();
+                    return;
+                }
+
                 const incomingItems = data.items || [];
                 const incomingBranding = data.branding || null;
                 const incomingEmergency = data.emergency || null;
