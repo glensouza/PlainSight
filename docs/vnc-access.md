@@ -1,162 +1,155 @@
 # VNC Access to Raspberry Pi Players
 
-The players run Chromium in kiosk mode under **labwc**, which is a **Wayland** compositor
-(user `pi`, autologin → `exec labwc`, `WAYLAND_DISPLAY=wayland-0`). Because the screen is
-composited by Wayland, the classic X11 tools (`x11vnc`, RealVNC's legacy server) cannot
-capture it. The right tool is **`wayvnc`**, which uses the same `wlr-screencopy` protocol the
-player's `grim` screenshots already rely on, so it mirrors the live signage output.
+The players run Chromium in kiosk mode under **labwc**, a **Wayland** compositor (user `pi`,
+autologin → `exec labwc`, `WAYLAND_DISPLAY=wayland-0`). Because the screen is composited by
+Wayland, the classic X11 tools (`x11vnc`, RealVNC's legacy server) cannot capture it. The
+right tool is **`wayvnc`**, which uses the same `wlr-screencopy` protocol the player's `grim`
+screenshots rely on, so it mirrors the live signage output.
 
 Player hostnames (mDNS): `plainsight-sanctuary.local` (`10.0.10.200`),
 `plainsight-office.local` (`10.0.10.232`).
 
-## The short version (Raspberry Pi OS Trixie)
+## Primary way in: Live View on the Devices page
 
-On Raspberry Pi OS **Trixie** (Debian 13, the current player image), wayvnc is the OS's
-**built-in VNC server** and is managed for you. Installing the package is the whole setup:
+The admin site streams a player's live screen into the browser — no VNC client to install.
+On the **Devices** page, each online device has a **Live View** button (Admin only) that opens
+a full-window, **view-only** viewer which **auto-scales to fit** your browser window and
+connects on its own (no password prompt).
+
+Under the hood:
+
+- The server exposes an Admin-authorized WebSocket endpoint, `/api/device/{deviceId}/vnc`,
+  that proxies raw bytes to the player's `wayvnc` on port `5900`. The target host comes from
+  the device's `CallbackUrl` (reported in its heartbeat).
+- The browser client is **noVNC** (bundled offline under
+  `src/PlainSight.Server/wwwroot/lib/novnc`, v1.7.0), rendering to a `<canvas>`.
+- The endpoint accepts both `GET` and `CONNECT` methods. Over HTTPS the server speaks HTTP/2,
+  and browsers open WebSockets as an HTTP/2 Extended `CONNECT` rather than a `GET`; accepting
+  both is what makes Live View work over HTTP/2.
+
+Security of this path: the browser↔server hop is normal `wss` protected by the admin login
+cookie (Admin role required). The server↔player hop is plain TCP on the LAN.
+
+> VNC streams full frames, so a screen playing motion video is bandwidth-heavy per open
+> viewer. Live View is for spot-checking a device, not leaving many tiles streaming at once.
+
+## Player-side setup (per Pi)
+
+`wayvnc` is installed as part of the [Raspberry Pi setup](raspberry-pi-setup.md) (it is in the
+dependency list). Installing the package auto-enables a systemd service (`wayvnc.service`) that
+runs on boot as a dedicated `vnc` user and captures the live HDMI output.
+
+The player must be configured to accept the connection from noVNC. Out of the box wayvnc
+negotiates an encrypted RSA-AES / PAM login that the browser client cannot complete, so the
+players are configured to accept **unauthenticated** connections. Write `/etc/wayvnc/config`:
 
 ```bash
-ssh pi@plainsight-sanctuary.local
-sudo apt install -y wayvnc
+sudo tee /etc/wayvnc/config >/dev/null <<'EOF'
+use_relative_paths=true
+address=::
+enable_auth=false
+EOF
+sudo systemctl restart wayvnc.service
 ```
 
-The `wayvnc` package installs and **auto-enables** a systemd service (`wayvnc.service`,
-preset `enabled`) that:
-
-- starts on every boot (`Restart=always`), running as a dedicated `vnc` user;
-- captures the **live HDMI output** via GPU (`wayvnc --gpu`), so you see the actual signage;
-- listens on **all interfaces, port 5900** (`address=::` in `/etc/wayvnc/config`);
-- is **authenticated + encrypted out of the box** — `enable_auth=true` + `enable_pam=true`,
-  with TLS/RSA keys generated automatically on first boot by `wayvnc-generate-keys.service`.
-
-Verify it came up enabled and running:
+Verify:
 
 ```bash
-systemctl is-enabled wayvnc.service      # expect: enabled
-systemctl status wayvnc.service --no-pager
-ss -tlnp | grep 5900                      # expect *:5900 owned by wayvnc
-```
-
-If for some reason it is not enabled (older image, or VNC was toggled off), enable it:
-
-```bash
-sudo systemctl enable --now wayvnc.service
+systemctl is-enabled wayvnc.service     # expect: enabled
+systemctl is-active wayvnc.service      # expect: active
+ss -tlnp | grep 5900                     # expect *:5900
 ```
 
 > **Do not** add a `wayvnc` line to `~/.config/labwc/autostart`. The systemd service already
-> owns port 5900; a second instance from autostart would just fail to bind. Startup is handled.
+> owns port 5900; a second instance would fail to bind. Startup is handled.
 
-## Connecting
+### Why unauthenticated, and the trade-off
 
-Because the built-in service is already authenticated over an encrypted channel, you can
-connect **directly over the LAN — no SSH tunnel required**.
+`enable_auth=false` means port 5900 accepts VNC from any host on the LAN with no password.
+This is deliberate:
 
-Point a VNC viewer at:
+- The player's screen is **public signage content** — anyone can already see it on the wall,
+  so unauthenticated *viewing* leaks nothing.
+- The browser Live View is the intended entry point, and it *is* authenticated (admin login).
+
+The real residual risk is that someone on the LAN could open a VNC client and send **input**
+to the Pi. On a trusted church/office network that is acceptable; **keep these players off
+untrusted networks**. If you need it locked down, see [Hardening options](#hardening-options).
+
+## Alternative: a desktop VNC viewer
+
+Because auth is disabled, any VNC viewer connects with **no password**. Point it at:
 
 ```
 plainsight-sanctuary.local:5900      (or 10.0.10.200:5900)
 plainsight-office.local:5900         (or 10.0.10.232:5900)
 ```
 
-Log in with the Pi's normal login: username **`pi`** and its password (PAM authenticates
-against the system account). You will see exactly what is on the HDMI output — the live
-signage.
-
 ### Fitting the 1920×1080 screen to your window
 
-The signage runs at 1920×1080, so on a smaller monitor you want the viewer to scale the
-remote screen down to fit. Support for this **varies by viewer and build**:
+The signage runs at 1920×1080, so on a smaller monitor you want the viewer to scale to fit.
+Support varies by client:
 
-- **RealVNC Viewer** — reliable fit-to-window. Recommended desktop client.
-- **TigerVNC Viewer** — *if* your build ships the Options → **Screen** tab, set **Scaling
-  factor** to **Auto**. Some Windows TigerVNC packages omit that tab entirely, in which case
-  there is no scaling option — use RealVNC Viewer instead.
-- **In-app Live View** (Devices page) — the built-in noVNC viewer scales to the browser
-  window automatically (`scaleViewport`), so there is nothing to configure. See below.
+- **In-app Live View** — scales automatically (`scaleViewport`); nothing to configure.
+  Preferred, and free.
+- **TigerVNC Viewer** — *if* your build has the Options → **Screen** tab, set **Scaling
+  factor** to **Auto**. Some Windows TigerVNC packages omit that tab, in which case there is no
+  scaling option.
+- **RealVNC Viewer** — scales reliably, but recent versions require a paid subscription to
+  connect, so it is no longer a free option.
 
-## In-app Live View (Devices page)
+Given the desktop-client caveats, the in-app Live View is the recommended way to view a player.
 
-The admin site can render the live signage in the browser without any external viewer. Each
-online device tile has a **Live View** action (Admin only) that opens a full-window,
-view-only noVNC canvas which auto-scales to fit.
+## Hardening options
 
-How it works: the server exposes an Admin-authorized WebSocket proxy at
-`/api/device/{deviceId}/vnc` that pipes bytes to the player's wayvnc on `:5900` (the target
-host comes from the device's `CallbackUrl`). The proxy is a **dumb byte pipe** — wayvnc's
-RSA-AES/TLS handshake stays end-to-end with noVNC, so no player credentials pass through the
-server. You are prompted for the Pi's username (`pi`) and password in the viewer; nothing is
-stored server-side. noVNC is bundled offline under `wwwroot/lib/novnc` (v1.7.0).
+If unauthenticated LAN access is unacceptable in your environment:
 
-> Note: VNC streams full frames, so a screen playing motion video is bandwidth-heavy per open
-> viewer. Live View is intended for spot-checking a device, not leaving many tiles streaming.
+- **Bind wayvnc to localhost** (`address=localhost` in `/etc/wayvnc/config`) and reach it over
+  an SSH tunnel for direct desktop-viewer use:
 
-## Configuration reference
+  ```powershell
+  ssh -L 5900:localhost:5900 pi@plainsight-sanctuary.local
+  ```
 
-The service reads `/etc/wayvnc/config`. On a stock Trixie player it looks like:
+  Note this **disables the in-app Live View**, because the server reaches the player over the
+  LAN, not localhost.
 
-```ini
-use_relative_paths=true
-address=::
-enable_auth=true
-enable_pam=true
-private_key_file=tls_key.pem
-certificate_file=tls_cert.pem
-rsa_private_key_file=rsa_key.pem
-```
-
-Relevant systemd units:
-
-| Unit | Role |
-|---|---|
-| `wayvnc.service` | The VNC server; runs `/usr/sbin/wayvnc-run.sh` as user `vnc` |
-| `wayvnc-generate-keys.service` | Generates the TLS cert + RSA key on first start (required dep) |
-| `wayvnc-control.service` | Control socket (`wayvncctl`) |
-
-After editing the config, restart the service: `sudo systemctl restart wayvnc.service`.
-
-### Optional: restrict to localhost + SSH tunnel
-
-The default binds to the LAN. It is authenticated, but if you would rather the port not be
-reachable on the network at all, set `address=localhost` in `/etc/wayvnc/config`,
-`sudo systemctl restart wayvnc.service`, and reach it through an SSH tunnel:
-
-```powershell
-ssh -L 5900:localhost:5900 pi@plainsight-sanctuary.local
-```
-
-Then point the viewer at `localhost:5900`.
+- **Authenticate at the proxy instead of the player** — a future option is to have the server
+  perform the wayvnc RSA-AES handshake upstream and present an unauthenticated stream only to
+  the already-authenticated browser, so the players could keep `enable_auth=true`. This is not
+  implemented; it requires an RSA-AES RFB client on the server.
 
 ## Troubleshooting
 
 ### `apt install` fails with "No space left on device" but `df -h /` shows free space
 
-apt writes its temporary index files to **`/tmp`**, which on the player is a RAM-backed
-`tmpfs` (2 GB), separate from the root filesystem. If a process filled `/tmp` (or left a
-large deleted-but-open file there), apt gets `ENOSPC` even though `/` has gigabytes free.
-Check the tmpfs specifically:
+apt writes temporary index files to **`/tmp`**, a RAM-backed `tmpfs` (2 GB) separate from the
+root filesystem. If a process filled `/tmp` (or left a large deleted-but-open file there), apt
+gets `ENOSPC` even though `/` has gigabytes free:
 
 ```bash
 df -h /tmp        # if Use% is 100%, this is the cause, not the SD card
 ```
 
-Because `/tmp` is RAM-backed, a **reboot clears it completely** and restarts whatever was
-holding the space:
+`/tmp` is RAM-backed, so a **reboot clears it** and restarts whatever was holding the space:
 
 ```bash
 sudo reboot
 ```
 
-Then retry `sudo apt install -y wayvnc`. (The SD card itself is fine as long as
+Then retry the install. (The SD card is fine as long as
 `dmesg | grep -iE 'mmc|read-only|I/O error'` is clean and `/` is not near full.)
 
-### Nothing is listening on 5900
+### Live View shows "Disconnected"
 
 ```bash
-systemctl status wayvnc.service --no-pager
-journalctl -u wayvnc.service -n 30 --no-pager
+# On the player:
+systemctl is-active wayvnc.service       # must be active
+ss -tlnp | grep 5900                      # must be listening on *:5900
+grep enable_auth /etc/wayvnc/config       # must be enable_auth=false
 ```
 
-A common cause is `wayvnc-generate-keys.service` not having produced the TLS/RSA keys yet;
-it runs as a dependency, so `sudo systemctl restart wayvnc.service` usually resolves it.
+Also confirm the device is **online** in the Devices page (Live View only appears for online
+devices) and that the server host can reach the player's IP on port 5900.
 
 See the [wayvnc README](https://github.com/any1/wayvnc) for the full list of config keys.
-</content>
