@@ -115,8 +115,12 @@ sudo apt install -y \
   swayidle \
   swaybg \
   wlopm \
+  wayvnc \
   curl
 ```
+
+`wayvnc` provides the VNC server used by the admin **Live View** feature (see
+[Remote viewing (VNC)](#remote-viewing-vnc) below and [docs/vnc-access.md](vnc-access.md)).
 
 #### Step 3: Create Directories
 
@@ -265,6 +269,42 @@ sudo journalctl -u plainsight.service -f
 2. Navigate to Devices
 3. You should see your new device listed
 4. Set the device name and group
+
+## Remote viewing (VNC)
+
+The admin site's **Live View** button (on each online device in the Devices page) streams the
+player's live screen into the browser. It talks to `wayvnc` on the Pi, so each player needs
+`wayvnc` installed (it is in the dependency list above) and configured to accept the
+connection.
+
+Installing the `wayvnc` package already enables a systemd service (`wayvnc.service`) that runs
+on boot and captures the live HDMI output. By default that service is password-protected with
+a scheme the browser client (noVNC) cannot negotiate, so set it to accept unauthenticated
+connections — the admin server is the only thing that reaches it, and the browser↔server link
+is already authenticated:
+
+```bash
+sudo tee /etc/wayvnc/config >/dev/null <<'EOF'
+use_relative_paths=true
+address=::
+enable_auth=false
+EOF
+sudo systemctl restart wayvnc.service
+```
+
+Verify it is listening:
+
+```bash
+systemctl is-active wayvnc.service     # expect: active
+ss -tlnp | grep 5900                    # expect *:5900
+```
+
+> **Security note:** with `enable_auth=false`, port 5900 accepts unauthenticated VNC from any
+> host on the LAN. The signage screen is public content, so this is acceptable on a trusted
+> church/office network; keep these players off untrusted networks. See
+> [docs/vnc-access.md](vnc-access.md) for the full rationale and alternatives.
+
+After this, open the admin site, go to **Devices**, and click **Live View** on the device.
 
 ## Updating the Player
 

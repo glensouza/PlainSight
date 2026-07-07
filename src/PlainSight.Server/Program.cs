@@ -184,6 +184,12 @@ if (!app.Environment.IsDevelopment())
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
+app.UseWebSockets();
+// UseRouting must run after UseWebSockets so a WebSocket upgrade (including the HTTP/2
+// Extended CONNECT form browsers use over HTTPS) is recognized before endpoint routing
+// matches the request method; otherwise the CONNECT never matches the MapGet VNC endpoint.
+app.UseRouting();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -222,6 +228,7 @@ app.MapOpenApi().RequireAuthorization(new AuthorizeAttribute { Roles = "Admin" }
 app.MapScalarApiReference().RequireAuthorization(new AuthorizeAttribute { Roles = "Admin" });
 
 app.MapDeviceApi();
+app.MapVncProxy();
 app.MapContentApi();
 app.MapUpdateApi();
 app.MapTransformApi();

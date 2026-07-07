@@ -223,6 +223,31 @@ else
                     </button>
                     <AuthorizeView Roles="Admin">
                         <Authorized>
+                            @if (isOnline)
+                            {
+                                <a class="ps-action"
+                                   href="/devices/@Uri.EscapeDataString(device.DeviceId)/vnc"
+                                   target="_blank"
+                                   rel="noopener"
+                                   title="Live VNC view (opens in a new tab)">
+                                    <i class="bi bi-display"></i>
+                                    <span>Live View</span>
+                                </a>
+                                <button class="ps-action ps-action--warn"
+                                        @onclick="() => PromptReboot(device)"
+                                        disabled="@rebootingDevices.Contains(device.DeviceId)"
+                                        title="Reboot this player">
+                                    @if (rebootingDevices.Contains(device.DeviceId))
+                                    {
+                                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-arrow-clockwise"></i>
+                                    }
+                                    <span>Reboot</span>
+                                </button>
+                            }
                             <button class="ps-action ps-action--warn"
                                     @onclick="() => ResetApiKey(device.DeviceId)"
                                     disabled="@resettingApiKey.Contains(device.DeviceId)"
@@ -493,6 +518,44 @@ else
     </div>
 }
 
+@if (rebootConfirmDevice != null)
+{
+    <div class="modal fade show d-block"
+         tabindex="-1"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="reboot-confirm-title"
+         style="background:rgba(4,8,14,0.7);">
+        <div class="modal-dialog modal-dialog-centered" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 id="reboot-confirm-title" class="modal-title text-warning">
+                        <i class="bi bi-arrow-clockwise me-1"></i> Confirm Reboot
+                    </h5>
+                </div>
+                <div class="modal-body">
+                    Reboot <strong>@rebootConfirmDevice.Name</strong>? The screen will go dark for
+                    about a minute while the player restarts.
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CancelReboot" disabled="@isRebooting">Cancel</button>
+                    <button class="btn btn-warning" @onclick="ExecuteRebootAsync" disabled="@isRebooting">
+                        @if (isRebooting)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-arrow-clockwise me-1"></i>
+                        }
+                        Reboot
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @if (selectedDeviceIds.Count > 0)
 {
     <div class="bulk-action-bar">
@@ -628,6 +691,9 @@ else
     private string? deleteConfirmMessage;
     private Func<Task>? deleteConfirmAction;
     private bool isDeleting;
+    private readonly HashSet<string> rebootingDevices = [];
+    private Device? rebootConfirmDevice;
+    private bool isRebooting;
     private bool showSetupInstructions;
 
     private void ShowSetupInstructions() => showSetupInstructions = true;
@@ -996,6 +1062,90 @@ else
         finally
         {
             this.requestingScreenshot.Remove(deviceId);
+            this.StateHasChanged();
+        }
+    }
+
+    private void PromptReboot(Device device)
+    {
+        this.rebootConfirmDevice = device;
+    }
+
+    private void CancelReboot()
+    {
+        this.rebootConfirmDevice = null;
+    }
+
+    private async Task ExecuteRebootAsync()
+    {
+        if (this.rebootConfirmDevice == null)
+        {
+            return;
+        }
+
+        string deviceId = this.rebootConfirmDevice.DeviceId;
+        this.isRebooting = true;
+        try
+        {
+            await this.RebootDeviceAsync(deviceId);
+        }
+        finally
+        {
+            this.isRebooting = false;
+            this.rebootConfirmDevice = null;
+            this.StateHasChanged();
+        }
+    }
+
+    private async Task RebootDeviceAsync(string deviceId)
+    {
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted to reboot device {DeviceId}", deviceId);
+            return;
+        }
+
+        this.rebootingDevices.Add(deviceId);
+        try
+        {
+            await using PlainSightDbContext context = await this.DbFactory.CreateDbContextAsync();
+            Device? device = await context.Devices.FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+            if (device == null || string.IsNullOrEmpty(device.CallbackUrl))
+            {
+                this.Logger.LogWarning("Cannot reboot {DeviceId}: no callback URL on record", deviceId);
+                this.bulkResultMessage = "Cannot reboot: the device has never reported a reachable address.";
+                this.bulkResultIsSuccess = false;
+                return;
+            }
+
+            HttpClient client = this.HttpClientFactory.CreateClient("player");
+            using HttpRequestMessage req = new(HttpMethod.Post, $"{device.CallbackUrl}/api/reboot");
+            if (!string.IsNullOrEmpty(device.ApiKey))
+            {
+                req.Headers.Add("X-Api-Key", device.ApiKey);
+            }
+            HttpResponseMessage response = await client.SendAsync(req);
+            if (response.IsSuccessStatusCode)
+            {
+                this.bulkResultMessage = $"Reboot triggered on {device.Name}. The screen will go dark for about a minute.";
+                this.bulkResultIsSuccess = true;
+            }
+            else
+            {
+                this.Logger.LogWarning("Reboot call to {Url} returned {Status}", device.CallbackUrl, response.StatusCode);
+                this.bulkResultMessage = $"Reboot request to {device.Name} failed ({(int)response.StatusCode}).";
+                this.bulkResultIsSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            this.Logger.LogError(ex, "Error rebooting device {DeviceId}", deviceId);
+            this.bulkResultMessage = "Error triggering reboot; the player may be unreachable.";
+            this.bulkResultIsSuccess = false;
+        }
+        finally
+        {
+            this.rebootingDevices.Remove(deviceId);
             this.StateHasChanged();
         }
     }
