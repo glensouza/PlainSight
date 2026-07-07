@@ -1113,6 +1113,8 @@ else
             if (device == null || string.IsNullOrEmpty(device.CallbackUrl))
             {
                 this.Logger.LogWarning("Cannot reboot {DeviceId}: no callback URL on record", deviceId);
+                this.bulkResultMessage = "Cannot reboot: the device has never reported a reachable address.";
+                this.bulkResultIsSuccess = false;
                 return;
             }
 
@@ -1123,14 +1125,23 @@ else
                 req.Headers.Add("X-Api-Key", device.ApiKey);
             }
             HttpResponseMessage response = await client.SendAsync(req);
-            if (!response.IsSuccessStatusCode)
+            if (response.IsSuccessStatusCode)
+            {
+                this.bulkResultMessage = $"Reboot triggered on {device.Name}. The screen will go dark for about a minute.";
+                this.bulkResultIsSuccess = true;
+            }
+            else
             {
                 this.Logger.LogWarning("Reboot call to {Url} returned {Status}", device.CallbackUrl, response.StatusCode);
+                this.bulkResultMessage = $"Reboot request to {device.Name} failed ({(int)response.StatusCode}).";
+                this.bulkResultIsSuccess = false;
             }
         }
         catch (Exception ex)
         {
             this.Logger.LogError(ex, "Error rebooting device {DeviceId}", deviceId);
+            this.bulkResultMessage = "Error triggering reboot; the player may be unreachable.";
+            this.bulkResultIsSuccess = false;
         }
         finally
         {

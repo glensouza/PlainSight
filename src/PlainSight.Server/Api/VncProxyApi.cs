@@ -17,6 +17,7 @@ public static class VncProxyApi
 {
     private const int VncPort = 5900;
     private const int BufferSize = 32 * 1024;
+    private const int ConnectTimeoutSeconds = 8;
 
     public static void MapVncProxy(this IEndpointRouteBuilder routes)
     {
@@ -48,23 +49,26 @@ public static class VncProxyApi
             }
 
             string host = callbackUri.Host;
-            string? subProtocol = httpContext.WebSockets.WebSocketRequestedProtocols.Contains("binary") ? "binary" : null;
 
-            using TcpClient tcp = new();
+            // Cap the wait on an unreachable player so the browser overlay fails fast instead of
+            // hanging on the OS TCP timeout (~20-30s). A cancelled request token (browser gone)
+            // propagates and lets the framework abort the request.
+            using TcpClient tcp = new() { NoDelay = true };
             try
             {
-                await tcp.ConnectAsync(host, VncPort, ct);
+                using CancellationTokenSource connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                connectCts.CancelAfter(TimeSpan.FromSeconds(ConnectTimeoutSeconds));
+                await tcp.ConnectAsync(host, VncPort, connectCts.Token);
             }
-            catch (SocketException ex)
+            catch (Exception ex) when (ex is SocketException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
             {
                 logger.LogWarning(ex, "VNC proxy could not reach {Host}:{Port} for device {DeviceId}", host, VncPort, deviceId);
                 httpContext.Response.StatusCode = StatusCodes.Status502BadGateway;
                 return;
             }
 
-            using WebSocket socket = subProtocol is null
-                ? await httpContext.WebSockets.AcceptWebSocketAsync()
-                : await httpContext.WebSockets.AcceptWebSocketAsync(subProtocol);
+            // noVNC's websock.js does not request a subprotocol, so accept without one.
+            using WebSocket socket = await httpContext.WebSockets.AcceptWebSocketAsync();
 
             logger.LogInformation("VNC proxy connected admin to {Host}:{Port} for device {DeviceId}", host, VncPort, deviceId);
 

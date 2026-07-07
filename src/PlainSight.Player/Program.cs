@@ -257,6 +257,13 @@ app.MapPost("/api/screenshot/capture", (
     return Results.Accepted();
 });
 
+// Rate-limit state for the reboot endpoint: one reboot per cooldown window. Since wayvnc runs
+// unauthenticated on the LAN and the API key travels in cleartext over HTTP, this cooldown blunts
+// a request from being replayed into a reboot-loop denial of service.
+Lock rebootLock = new();
+DateTimeOffset lastRebootAt = DateTimeOffset.MinValue;
+const int RebootCooldownSeconds = 30;
+
 // Server-triggered reboot: verify the API key, then reboot the Pi. The player runs as the pi
 // user with passwordless sudo (configured by install.sh), so `sudo reboot` succeeds. Returns
 // 202 immediately and reboots a moment later so the HTTP response flushes first.
@@ -270,6 +277,15 @@ app.MapPost("/api/reboot", (HttpContext ctx, HeartbeatService heartbeat, ILogger
         {
             return Results.Unauthorized();
         }
+    }
+
+    lock (rebootLock)
+    {
+        if ((DateTimeOffset.UtcNow - lastRebootAt).TotalSeconds < RebootCooldownSeconds)
+        {
+            return Results.StatusCode(429);
+        }
+        lastRebootAt = DateTimeOffset.UtcNow;
     }
 
     logger.LogWarning("Reboot requested via /api/reboot; rebooting in 1s");
