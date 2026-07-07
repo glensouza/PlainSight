@@ -185,6 +185,10 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.UseHttpsRedirection();
 
 app.UseWebSockets();
+// UseRouting must run after UseWebSockets so a WebSocket upgrade (including the HTTP/2
+// Extended CONNECT form browsers use over HTTPS) is recognized before endpoint routing
+// matches the request method; otherwise the CONNECT never matches the MapGet VNC endpoint.
+app.UseRouting();
 
 app.UseAuthentication();
 app.UseAuthorization();

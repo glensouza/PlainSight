@@ -22,7 +22,9 @@ public static class VncProxyApi
     {
         RouteGroupBuilder group = routes.MapGroup("/api/device");
 
-        group.MapGet("/{deviceId}/vnc", async (string deviceId, HttpContext httpContext, PlainSightDbContext context, ILoggerFactory loggerFactory, CancellationToken ct) =>
+        // GET is the HTTP/1.1 WebSocket upgrade; CONNECT is the HTTP/2 Extended CONNECT form
+        // browsers use over HTTPS. Accept both so the endpoint matches regardless of protocol.
+        group.MapMethods("/{deviceId}/vnc", ["GET", "CONNECT"], async (string deviceId, HttpContext httpContext, PlainSightDbContext context, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             ILogger logger = loggerFactory.CreateLogger("VncProxy");
 
