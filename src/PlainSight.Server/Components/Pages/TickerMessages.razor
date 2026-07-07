@@ -58,8 +58,8 @@
                                     }
                                 </td>
                                 <td>@(msg.TargetGroup ?? "(All Groups)")</td>
-                                <td>@(msg.StartsAt?.ToString("g") ?? "-")</td>
-                                <td>@(msg.ExpiresAt?.ToString("g") ?? "-")</td>
+                                <td>@FormatLocal(msg.StartsAt)</td>
+                                <td>@FormatLocal(msg.ExpiresAt)</td>
                                 <td>
                                     <div class="btn-group btn-group-sm" role="group">
                                         <button class="btn btn-outline-primary" @onclick="() => OpenEditModal(msg)">
@@ -111,11 +111,11 @@
                         <input type="text" class="form-control form-control-sm" @bind="this.formTargetGroup" placeholder="e.g., MainLobby (leave blank for all)" />
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Starts At (UTC)</label>
+                        <label class="form-label">Starts At (local time)</label>
                         <input type="datetime-local" class="form-control form-control-sm" @bind="this.formStartsAt" />
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Expires At (UTC)</label>
+                        <label class="form-label">Expires At (local time)</label>
                         <input type="datetime-local" class="form-control form-control-sm" @bind="this.formExpiresAt" />
                     </div>
                     <div class="mb-3">
@@ -178,8 +178,8 @@
         this.formText = msg.Text;
         this.formSortOrder = msg.SortOrder;
         this.formTargetGroup = msg.TargetGroup;
-        this.formStartsAt = msg.StartsAt;
-        this.formExpiresAt = msg.ExpiresAt;
+        this.formStartsAt = ToLocal(msg.StartsAt);
+        this.formExpiresAt = ToLocal(msg.ExpiresAt);
         this.formIsActive = msg.IsActive;
 
         this.showModal = true;
@@ -201,8 +201,8 @@
                     Text = this.formText,
                     SortOrder = this.formSortOrder,
                     TargetGroup = this.formTargetGroup,
-                    StartsAt = this.formStartsAt,
-                    ExpiresAt = this.formExpiresAt,
+                    StartsAt = ToUtc(this.formStartsAt),
+                    ExpiresAt = ToUtc(this.formExpiresAt),
                     IsActive = this.formIsActive,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -217,8 +217,8 @@
                     existing.Text = this.formText;
                     existing.SortOrder = this.formSortOrder;
                     existing.TargetGroup = this.formTargetGroup;
-                    existing.StartsAt = this.formStartsAt;
-                    existing.ExpiresAt = this.formExpiresAt;
+                    existing.StartsAt = ToUtc(this.formStartsAt);
+                    existing.ExpiresAt = ToUtc(this.formExpiresAt);
                     existing.IsActive = this.formIsActive;
                     existing.UpdatedAt = DateTime.UtcNow;
                 }
@@ -256,4 +256,16 @@
     {
         this.showModal = false;
     }
+
+    // The datetime-local input carries wall-clock time the admin typed; treat it as the server's
+    // local time and store UTC so the heartbeat window filter (which compares to DateTime.UtcNow)
+    // matches. Stored values are timestamptz (UTC), so convert back to local for the form/table.
+    private static DateTime? ToUtc(DateTime? local)
+        => local is null ? null : DateTime.SpecifyKind(local.Value, DateTimeKind.Local).ToUniversalTime();
+
+    private static DateTime? ToLocal(DateTime? utc)
+        => utc is null ? null : DateTime.SpecifyKind(utc.Value, DateTimeKind.Utc).ToLocalTime();
+
+    private static string FormatLocal(DateTime? utc)
+        => ToLocal(utc)?.ToString("g") ?? "-";
 }
