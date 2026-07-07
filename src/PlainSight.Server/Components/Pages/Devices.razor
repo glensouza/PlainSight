@@ -518,7 +518,7 @@ else
     </div>
 }
 
-@if (rebootConfirmDevice != null)
+@if (rebootConfirmMessage != null)
 {
     <div class="modal fade show d-block"
          tabindex="-1"
@@ -534,8 +534,7 @@ else
                     </h5>
                 </div>
                 <div class="modal-body">
-                    Reboot <strong>@rebootConfirmDevice.Name</strong>? The screen will go dark for
-                    about a minute while the player restarts.
+                    @rebootConfirmMessage
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" @onclick="CancelReboot" disabled="@isRebooting">Cancel</button>
@@ -636,6 +635,22 @@ else
 
                     <span class="bulk-action-bar__sep d-none d-md-inline">|</span>
 
+                    <button class="btn btn-sm btn-warning"
+                            @onclick="PromptBulkReboot"
+                            disabled="@isBulkRebooting">
+                        @if (isBulkRebooting)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-arrow-clockwise"></i>
+                        }
+                        Reboot (@selectedDeviceIds.Count)
+                    </button>
+
+                    <span class="bulk-action-bar__sep d-none d-md-inline">|</span>
+
                     <button class="btn btn-sm btn-danger" @onclick="PromptBulkDelete">
                         <i class="bi bi-trash"></i>
                         Delete (@selectedDeviceIds.Count)
@@ -692,8 +707,10 @@ else
     private Func<Task>? deleteConfirmAction;
     private bool isDeleting;
     private readonly HashSet<string> rebootingDevices = [];
-    private Device? rebootConfirmDevice;
+    private string? rebootConfirmMessage;
+    private Func<Task>? rebootConfirmAction;
     private bool isRebooting;
+    private bool isBulkRebooting;
     private bool showSetupInstructions;
 
     private void ShowSetupInstructions() => showSetupInstructions = true;
@@ -1068,31 +1085,110 @@ else
 
     private void PromptReboot(Device device)
     {
-        this.rebootConfirmDevice = device;
+        this.rebootConfirmMessage = $"Reboot {device.Name}? The screen will go dark for about a minute while the player restarts.";
+        this.rebootConfirmAction = () => this.RebootDeviceAsync(device.DeviceId);
+    }
+
+    private void PromptBulkReboot()
+    {
+        int count = this.selectedDeviceIds.Count;
+        this.rebootConfirmMessage = $"Reboot {count} device(s)? Each screen will go dark for about a minute while the player restarts.";
+        this.rebootConfirmAction = this.BulkRebootAsync;
     }
 
     private void CancelReboot()
     {
-        this.rebootConfirmDevice = null;
+        this.rebootConfirmMessage = null;
+        this.rebootConfirmAction = null;
     }
 
     private async Task ExecuteRebootAsync()
     {
-        if (this.rebootConfirmDevice == null)
+        if (this.rebootConfirmAction == null)
         {
             return;
         }
 
-        string deviceId = this.rebootConfirmDevice.DeviceId;
         this.isRebooting = true;
         try
         {
-            await this.RebootDeviceAsync(deviceId);
+            await this.rebootConfirmAction();
         }
         finally
         {
             this.isRebooting = false;
-            this.rebootConfirmDevice = null;
+            this.rebootConfirmMessage = null;
+            this.rebootConfirmAction = null;
+            this.StateHasChanged();
+        }
+    }
+
+    private async Task BulkRebootAsync()
+    {
+        if (!await this.IsAdminAsync())
+        {
+            this.Logger.LogWarning("Non-admin user attempted a bulk reboot");
+            return;
+        }
+
+        if (this.selectedDeviceIds.Count == 0)
+        {
+            return;
+        }
+
+        this.isBulkRebooting = true;
+        try
+        {
+            await using PlainSightDbContext context = await this.DbFactory.CreateDbContextAsync();
+            List<Device> targetDevices = await context.Devices
+                .Where(d => this.selectedDeviceIds.Contains(d.DeviceId))
+                .ToListAsync();
+
+            HttpClient client = this.HttpClientFactory.CreateClient("player");
+
+            List<Task<bool>> tasks = targetDevices
+                .Select(async d =>
+                {
+                    if (string.IsNullOrEmpty(d.CallbackUrl))
+                    {
+                        return false;
+                    }
+                    try
+                    {
+                        using HttpRequestMessage req = new(HttpMethod.Post, $"{d.CallbackUrl}/api/reboot");
+                        if (!string.IsNullOrEmpty(d.ApiKey))
+                        {
+                            req.Headers.Add("X-Api-Key", d.ApiKey);
+                        }
+                        HttpResponseMessage resp = await client.SendAsync(req);
+                        return resp.IsSuccessStatusCode;
+                    }
+                    catch (Exception ex)
+                    {
+                        this.Logger.LogWarning(ex, "Bulk reboot call failed for {DeviceId}", d.DeviceId);
+                        return false;
+                    }
+                })
+                .ToList();
+
+            bool[] results = await Task.WhenAll(tasks);
+            int triggered = results.Count(static delivered => delivered);
+            int failed = results.Length - triggered;
+
+            this.bulkResultMessage = failed == 0
+                ? $"Reboot triggered on {triggered} device(s)."
+                : $"Reboot triggered on {triggered} device(s); {failed} unreachable or refused.";
+            this.bulkResultIsSuccess = failed == 0;
+        }
+        catch (Exception ex)
+        {
+            this.Logger.LogError(ex, "Error requesting bulk reboot");
+            this.bulkResultMessage = "Error requesting bulk reboot.";
+            this.bulkResultIsSuccess = false;
+        }
+        finally
+        {
+            this.isBulkRebooting = false;
             this.StateHasChanged();
         }
     }
