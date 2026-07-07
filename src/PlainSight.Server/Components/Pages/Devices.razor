@@ -223,6 +223,17 @@ else
                     </button>
                     <AuthorizeView Roles="Admin">
                         <Authorized>
+                            @if (isOnline)
+                            {
+                                <a class="ps-action"
+                                   href="/devices/@Uri.EscapeDataString(device.DeviceId)/vnc"
+                                   target="_blank"
+                                   rel="noopener"
+                                   title="Live VNC view (opens in a new tab)">
+                                    <i class="bi bi-display"></i>
+                                    <span>Live View</span>
+                                </a>
+                            }
                             <button class="ps-action ps-action--warn"
                                     @onclick="() => ResetApiKey(device.DeviceId)"
                                     disabled="@resettingApiKey.Contains(device.DeviceId)"

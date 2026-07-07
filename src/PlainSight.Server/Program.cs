@@ -184,6 +184,8 @@ if (!app.Environment.IsDevelopment())
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
+app.UseWebSockets();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -222,6 +224,7 @@ app.MapOpenApi().RequireAuthorization(new AuthorizeAttribute { Roles = "Admin" }
 app.MapScalarApiReference().RequireAuthorization(new AuthorizeAttribute { Roles = "Admin" });
 
 app.MapDeviceApi();
+app.MapVncProxy();
 app.MapContentApi();
 app.MapUpdateApi();
 app.MapTransformApi();
