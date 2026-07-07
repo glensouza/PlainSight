@@ -6,7 +6,8 @@ composited by Wayland, the classic X11 tools (`x11vnc`, RealVNC's legacy server)
 capture it. The right tool is **`wayvnc`**, which uses the same `wlr-screencopy` protocol the
 player's `grim` screenshots already rely on, so it mirrors the live signage output.
 
-Player hostnames (mDNS): `plainsight-sanctuary.local` (`10.0.10.200`), `plainsight-office.local`.
+Player hostnames (mDNS): `plainsight-sanctuary.local` (`10.0.10.200`),
+`plainsight-office.local` (`10.0.10.232`).
 
 ## The short version (Raspberry Pi OS Trixie)
 
@@ -49,15 +50,44 @@ sudo systemctl enable --now wayvnc.service
 Because the built-in service is already authenticated over an encrypted channel, you can
 connect **directly over the LAN — no SSH tunnel required**.
 
-In **RealVNC Viewer** or **TigerVNC Viewer**, connect to:
+Point a VNC viewer at:
 
 ```
 plainsight-sanctuary.local:5900      (or 10.0.10.200:5900)
+plainsight-office.local:5900         (or 10.0.10.232:5900)
 ```
 
 Log in with the Pi's normal login: username **`pi`** and its password (PAM authenticates
 against the system account). You will see exactly what is on the HDMI output — the live
 signage.
+
+### Fitting the 1920×1080 screen to your window
+
+The signage runs at 1920×1080, so on a smaller monitor you want the viewer to scale the
+remote screen down to fit. Support for this **varies by viewer and build**:
+
+- **RealVNC Viewer** — reliable fit-to-window. Recommended desktop client.
+- **TigerVNC Viewer** — *if* your build ships the Options → **Screen** tab, set **Scaling
+  factor** to **Auto**. Some Windows TigerVNC packages omit that tab entirely, in which case
+  there is no scaling option — use RealVNC Viewer instead.
+- **In-app Live View** (Devices page) — the built-in noVNC viewer scales to the browser
+  window automatically (`scaleViewport`), so there is nothing to configure. See below.
+
+## In-app Live View (Devices page)
+
+The admin site can render the live signage in the browser without any external viewer. Each
+online device tile has a **Live View** action (Admin only) that opens a full-window,
+view-only noVNC canvas which auto-scales to fit.
+
+How it works: the server exposes an Admin-authorized WebSocket proxy at
+`/api/device/{deviceId}/vnc` that pipes bytes to the player's wayvnc on `:5900` (the target
+host comes from the device's `CallbackUrl`). The proxy is a **dumb byte pipe** — wayvnc's
+RSA-AES/TLS handshake stays end-to-end with noVNC, so no player credentials pass through the
+server. You are prompted for the Pi's username (`pi`) and password in the viewer; nothing is
+stored server-side. noVNC is bundled offline under `wwwroot/lib/novnc` (v1.7.0).
+
+> Note: VNC streams full frames, so a screen playing motion video is bandwidth-heavy per open
+> viewer. Live View is intended for spot-checking a device, not leaving many tiles streaming.
 
 ## Configuration reference
 
