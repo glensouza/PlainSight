@@ -52,6 +52,7 @@ sudo apt install -y \
   swayidle \
   swaybg \
   wlopm \
+  wayvnc \
   unclutter \
   fonts-dejavu-core \
   curl
@@ -187,6 +188,20 @@ swayidle -w timeout 31536000 'wlopm --off \*' resume 'wlopm --on \*' &
 EOF
 
 chmod +x ~/.config/labwc/autostart
+
+# Configure wayvnc for the admin "Live View" feature.
+# The wayvnc package auto-enables wayvnc.service (captures the live HDMI output on :5900).
+# Its default auth (RSA-AES/PAM) can't be negotiated by the browser client, so accept
+# unauthenticated connections — the admin server is the only thing that reaches it and the
+# browser<->server link is already authenticated. The signage screen is public content.
+# See docs/vnc-access.md for the rationale and hardening options.
+echo "Configuring wayvnc for Live View..."
+sudo tee /etc/wayvnc/config > /dev/null << 'EOF'
+use_relative_paths=true
+address=::
+enable_auth=false
+EOF
+# Service picks up the config on the final reboot (labwc/Wayland is not running yet here).
 
 # Create the display startup script that KioskService calls at runtime.
 # It waits for XWayland to be ready, then launches Chromium on the physical screen.
