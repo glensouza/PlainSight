@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
 using PlainSight.Player;
@@ -250,6 +251,38 @@ app.MapPost("/api/screenshot/capture", (
         catch (Exception ex)
         {
             logger.LogError(ex, "Manual screenshot capture failed");
+        }
+    });
+
+    return Results.Accepted();
+});
+
+// Server-triggered reboot: verify the API key, then reboot the Pi. The player runs as the pi
+// user with passwordless sudo (configured by install.sh), so `sudo reboot` succeeds. Returns
+// 202 immediately and reboots a moment later so the HTTP response flushes first.
+app.MapPost("/api/reboot", (HttpContext ctx, HeartbeatService heartbeat, ILogger<Program> logger) =>
+{
+    string? storedKey = heartbeat.GetApiKey();
+    if (storedKey != null)
+    {
+        string? incomingKey = ctx.Request.Headers["X-Api-Key"].FirstOrDefault();
+        if (string.IsNullOrEmpty(incomingKey) || incomingKey != storedKey)
+        {
+            return Results.Unauthorized();
+        }
+    }
+
+    logger.LogWarning("Reboot requested via /api/reboot; rebooting in 1s");
+    _ = Task.Run(async () =>
+    {
+        await Task.Delay(TimeSpan.FromSeconds(1));
+        try
+        {
+            using Process? process = Process.Start(new ProcessStartInfo("sudo", "reboot") { UseShellExecute = false });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to invoke reboot");
         }
     });
 
