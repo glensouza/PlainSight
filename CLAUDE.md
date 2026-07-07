@@ -6,25 +6,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PlainSight is a distributed digital signage system built for churches. It uses server-side rendering to convert websites to video, then streams content to Raspberry Pi players over SMB. Players self-update by polling the server heartbeat API.
 
-## Recent Features & Fixes (Issues #96–108)
-
-This batch of issues (merged ~July 2026) significantly expanded the platform's capabilities:
-
-| Issue | Feature | Key Files |
-|-------|---------|-----------|
-| #96 | **Announcement Entity**: Replaced companion-clip self-pairing with an `Announcement` grouping related media (image + video, ordered, with expiration) | `PlainSightDbContext`, `Announcement.cs`, `PlaylistItem.cs` (composite FK logic) |
-| #97 | **Watermark Removal**: Multi-frame detection + CRF 18 encode + position refinement for Veo and Gemini video cleanup | `WatermarkVideoWorkerService`, `SvdGenerationWorkerService` |
-| #98 | **Content Expiration**: Expire-by-date on items, auto-sort playlists by event date at serve time, auto-delete expired content after grace period | `ContentItem.ExpiresAt`, `Playlist.SortMode` (enum: `Manual` / `ByEventDate`), `ExpirationCleanupWorkerService` |
-| #99 | **Ken Burns 3-layer parallax**: Extended the image-to-video Ken Burns transform from a single optional overlay to a generic loop-based composition of up to 2 overlay layers (graphics + text) over the panning/zooming background; each overlay is static or parallax-scaled via `ParallaxRate` | `VideoProcessorService.KenBurnsAsync`, `KenBurnsOverlayLayer`, `TransformApi` (`/api/content/{id}/ken-burns`), `Content.razor` |
-| #100 | **Edit Modal Companion**: Allow setting/changing Announcement when editing video output | Blazor `EditModal.razor`, `VideoEditorService` |
-| #104 | **Playback State Machine Hardening**: Fixed race condition causing player to skip/cut-short items; replaced `isSwapping` guard with monotonic `playToken` | `index.html` (`playToken`, state machine logic) |
-| #105 | **Emergency Broadcast**: Instant full-screen takeover on all/targeted screens, overlays above playlist content (z-index 500) | `EmergencyBroadcastService`, `EmergencyBroadcastController`, player overlay CSS |
-| #106 | **Player Watchdog + Self-Healing**: Detects stalled playback, logs diagnostic emails, reloads page or restarts kiosk via systemd | `PlaybackWatchdogService`, heartbeat field `reloadRequested` |
-| #107 | **DB-driven Version Management + Canary**: `VersionService.GetTargetVersionAsync` resolves the target version from the DB (group pin → `Default` pin → newest ingested `PlayerVersion`), cached ~30 s; Versions page manages real `PlayerVersion` rows + per-group assignments with a one-click "Promote to all groups"; rollback works because the player applies any `updateFileName` on version mismatch | `VersionService`, `DeviceApi` (heartbeat `UpdateFileName`), `Versions.razor`, `ManifestReconciler` |
-| #108 | **Ticker Overlay**: Scrolling/fading text band (4s rotation), active/time-window/group filtering, server-driven sorting | `TickerMessage` entity, `TickerMessages.razor` admin page, player overlay (z-index 70, below emergency) |
-
-Also merged: #102 (media atomic writes), #103 (companion preview fix), #109–113 (documentation).
-
 ## Commands
 
 ```bash
@@ -97,11 +78,12 @@ Player → `POST /api/device/heartbeat` → server upserts Device record → res
 
 ### REST API summary
 
-Content management (upload, delete, rename, playlists, schedules) is performed directly through Blazor server-side logic, not REST. The REST surface is player-facing and transform-only.
+Content management (upload, delete, rename, playlists, schedules) is performed directly through Blazor server-side logic, not REST. The REST surface is player-facing, transform-only, plus one admin-facing WebSocket proxy for Live View.
 
 | Method | Path | Description |
 |---|---|---|
 | POST | `/api/device/heartbeat` | Player telemetry; returns `{ requestScreenshot, updateFileName, expectedSha256, assignedApiKey, playlistItems, brandingItem, emergency, tickerMessages, liveMode, ndiSourceName, reloadRequested, logMinLevel, logShipIntervalSeconds, screenshotBurstCount, screenshotBurstIntervalSeconds }` |
+| GET/CONNECT | `/api/device/{deviceId}/vnc` | Live View: admin-only (`Roles = "Admin"`) WebSocket that proxies a raw byte pipe between noVNC in the browser and the player's wayvnc TCP socket (`:5900`). Accepts both HTTP/1.1 `GET` upgrade and HTTP/2 Extended `CONNECT`; `UseWebSockets()` must run before `UseRouting()` for CONNECT to match. See `VncProxyApi.cs` and `docs/vnc-access.md`. |
 | POST | `/api/device/{deviceId}/logs` | Player log upload (JSON `DeviceLogBatchDto`, capped at 500 entries, `X-Api-Key` required) |
 | POST | `/api/device/{deviceId}/screenshot/notify` | Player notifies server a screenshot was written to SMB (`multipart/form-data` with `fileName` field, `X-Api-Key` required) |
 | GET | `/api/media/content/{fileName}` | Serve content file from SMB share |
@@ -115,6 +97,8 @@ Content management (upload, delete, rename, playlists, schedules) is performed d
 | GET | `/api/updates/{version}/binary` | Download specific player version binary (public, no auth) |
 
 Device endpoints (`/heartbeat`, `/logs`, `/screenshot/notify`) use `X-Api-Key` header with trust-on-first-use: a new device gets a key assigned via `assignedApiKey` on its first heartbeat; all later calls must present it or receive `401 Problem`.
+
+The **player** also self-hosts endpoints the server calls directly by `CallbackUrl` (both `X-Api-Key`-guarded, both rate-limited with a per-window `Lock` cooldown): `POST /api/screenshot/capture` (5s cooldown) and `POST /api/reboot` (30s cooldown → `sudo reboot`, relying on the passwordless sudo `install.sh` grants). The Devices page exposes both as admin-only actions alongside Live View.
 
 ### Blazor pages
 
